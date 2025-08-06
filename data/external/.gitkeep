@@ -1,0 +1,2 @@
+# This file ensures the data/external directory is tracked by git
+# External datasets (CIVIC, TCGA, CPTAC) will be stored here
