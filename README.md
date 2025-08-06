@@ -66,6 +66,9 @@ make run-phase2
 
 # 6. Run Phase 3 confidence scoring demo
 make run-phase3
+
+# 7. Run LangChain integration demo (requires API keys)
+make run-langchain
 ```
 
 ### Alternative Setup with pip

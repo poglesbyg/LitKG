@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test lint format clean run-phase1 run-examples run-phase3
+.PHONY: help install install-dev setup test lint format clean run-phase1 run-examples run-phase3 run-langchain
 
 # Default target
 help:
@@ -29,6 +29,7 @@ help:
 	@echo "  run-ml       Run ML/HuggingFace integration example"
 	@echo "  run-phase2   Run Phase 2 hybrid GNN architecture demo"
 	@echo "  run-phase3   Run Phase 3 confidence scoring demo"
+	@echo "  run-langchain Run LangChain integration demo"
 	@echo ""
 	@echo "CLI Commands:"
 	@echo "  cli-help     Show CLI help"
@@ -78,7 +79,7 @@ typecheck:
 run-phase1:
 	PYTHONPATH=$(PWD)/src uv run python scripts/phase1_integration.py
 
-run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3
+run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3 run-langchain
 
 run-lit:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_literature_processing.py
@@ -97,6 +98,9 @@ run-phase2:
 
 run-phase3:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_phase3_confidence_scoring.py
+
+run-langchain:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_langchain_integration.py
 
 # CLI commands (working)
 cli-setup:
