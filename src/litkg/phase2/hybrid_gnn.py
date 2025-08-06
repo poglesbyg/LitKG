@@ -710,22 +710,19 @@ class HybridGNNModel(nn.Module, LoggerMixin):
         lit_x: torch.Tensor,
         lit_edge_index: torch.Tensor,
         lit_edge_attr: torch.Tensor,
-        lit_batch: Optional[torch.Tensor] = None,
         
         # Knowledge graph inputs
         kg_x: torch.Tensor,
         kg_edge_index: torch.Tensor,
         kg_edge_attr: torch.Tensor,
         kg_relation_types: torch.Tensor,
+        
+        # Optional parameters with defaults
+        lit_batch: Optional[torch.Tensor] = None,
         kg_batch: Optional[torch.Tensor] = None,
-        
-        # Entity pairs for relation prediction
         entity_pairs: Optional[torch.Tensor] = None,
-        
-        # Optional features
         temporal_features: Optional[torch.Tensor] = None,
         entity_types: Optional[torch.Tensor] = None,
-        
         return_attention: bool = False
     ) -> Dict[str, torch.Tensor]:
         """

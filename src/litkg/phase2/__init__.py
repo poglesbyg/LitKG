@@ -29,6 +29,7 @@ from .graph_construction import (
 
 from .training import (
     HybridGNNTrainer,
+    TrainingConfig,
     ContrastiveLoss,
     MultiTaskLoss,
     EvaluationMetrics
@@ -37,7 +38,8 @@ from .training import (
 from .data_loader import (
     HybridGraphDataset,
     GraphBatchSampler,
-    DataCollator
+    DataCollator,
+    create_data_loaders
 )
 
 __all__ = [
@@ -62,6 +64,7 @@ __all__ = [
     
     # Training Infrastructure
     "HybridGNNTrainer",
+    "TrainingConfig",
     "ContrastiveLoss",
     "MultiTaskLoss",
     "EvaluationMetrics",
@@ -69,5 +72,6 @@ __all__ = [
     # Data Loading
     "HybridGraphDataset",
     "GraphBatchSampler",
-    "DataCollator"
+    "DataCollator",
+    "create_data_loaders"
 ]
