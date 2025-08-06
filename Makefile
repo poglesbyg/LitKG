@@ -27,6 +27,7 @@ help:
 	@echo "  run-kg       Run KG preprocessing example"
 	@echo "  run-link     Run entity linking example"
 	@echo "  run-ml       Run ML/HuggingFace integration example"
+	@echo "  run-phase2   Run Phase 2 hybrid GNN architecture demo"
 	@echo ""
 	@echo "CLI Commands:"
 	@echo "  cli-help     Show CLI help"
@@ -76,7 +77,7 @@ typecheck:
 run-phase1:
 	PYTHONPATH=$(PWD)/src uv run python scripts/phase1_integration.py
 
-run-examples: run-lit run-kg run-link run-ml
+run-examples: run-lit run-kg run-link run-ml run-phase2
 
 run-lit:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_literature_processing.py
@@ -89,6 +90,9 @@ run-link:
 
 run-ml:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_ml_integration.py
+
+run-phase2:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_phase2_hybrid_gnn.py
 
 # CLI commands (working)
 cli-setup:
