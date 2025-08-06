@@ -100,7 +100,7 @@ def load_config(config_path: Optional[str] = None) -> LitKGConfig:
     """
     if config_path is None:
         # Get the project root directory
-        project_root = Path(__file__).parent.parent.parent
+        project_root = Path(__file__).parent.parent.parent.parent
         config_path = project_root / "config" / "config.yaml"
     
     config_path = Path(config_path)

@@ -56,7 +56,7 @@ def install_scispacy_models():
     
     for model in models:
         url = f"https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.3/{model}-0.5.3.tar.gz"
-        command = f"pip install {url}"
+        command = f"uv pip install {url}"
         description = f"Installing {model}"
         
         if not run_command(command, description):

@@ -208,10 +208,8 @@ def cmd_literature(args) -> int:
     """Handle literature processing command."""
     try:
         from .phase1.literature_processor import LiteratureProcessor
-        from .utils.config import load_config
         
-        config = load_config(args.config)
-        processor = LiteratureProcessor(config)
+        processor = LiteratureProcessor(args.config)
         
         documents = processor.process_query(
             query=args.query,
@@ -232,10 +230,8 @@ def cmd_kg(args) -> int:
     """Handle knowledge graph processing command."""
     try:
         from .phase1.kg_preprocessor import KGPreprocessor
-        from .utils.config import load_config
         
-        config = load_config(args.config)
-        processor = KGPreprocessor(config)
+        processor = KGPreprocessor(args.config)
         
         # Download and process data
         processor.download_all_data()
@@ -258,19 +254,16 @@ def cmd_link(args) -> int:
         from .phase1.literature_processor import LiteratureProcessor
         from .phase1.kg_preprocessor import KGPreprocessor
         from .phase1.entity_linker import EntityLinker
-        from .utils.config import load_config
-        
-        config = load_config(args.config)
         
         # Load data
-        lit_processor = LiteratureProcessor(config)
-        kg_processor = KGPreprocessor(config)
+        lit_processor = LiteratureProcessor(args.config)
+        kg_processor = KGPreprocessor(args.config)
         
         documents = lit_processor.load_results(args.literature)
         kg_processor.load_integrated_graph(args.kg)
         
         # Perform linking
-        entity_linker = EntityLinker(config)
+        entity_linker = EntityLinker(args.config)
         entity_linker.load_kg_entities(kg_processor)
         
         results = entity_linker.batch_link_documents(documents)
