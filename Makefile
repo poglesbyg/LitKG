@@ -26,6 +26,7 @@ help:
 	@echo "  run-lit      Run literature processing example"
 	@echo "  run-kg       Run KG preprocessing example"
 	@echo "  run-link     Run entity linking example"
+	@echo "  run-ml       Run ML/HuggingFace integration example"
 	@echo ""
 	@echo "Utility Commands:"
 	@echo "  clean        Clean cache and temporary files"
@@ -70,7 +71,7 @@ typecheck:
 run-phase1:
 	PYTHONPATH=$(PWD)/src uv run python scripts/phase1_integration.py
 
-run-examples: run-lit run-kg run-link
+run-examples: run-lit run-kg run-link run-ml
 
 run-lit:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_literature_processing.py
@@ -80,6 +81,9 @@ run-kg:
 
 run-link:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_entity_linking.py
+
+run-ml:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_ml_integration.py
 
 # CLI commands (once installed)
 cli-setup:
