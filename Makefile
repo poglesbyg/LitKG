@@ -28,6 +28,11 @@ help:
 	@echo "  run-link     Run entity linking example"
 	@echo "  run-ml       Run ML/HuggingFace integration example"
 	@echo ""
+	@echo "CLI Commands:"
+	@echo "  cli-help     Show CLI help"
+	@echo "  cli-setup    Setup models and environment"
+	@echo "  cli-phase1   Run Phase 1 pipeline"
+	@echo ""
 	@echo "Utility Commands:"
 	@echo "  clean        Clean cache and temporary files"
 	@echo "  docs         Build documentation"
@@ -85,15 +90,15 @@ run-link:
 run-ml:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_ml_integration.py
 
-# CLI commands (once installed)
+# CLI commands (working)
 cli-setup:
-	uv run litkg setup
+	uv run python scripts/litkg_cli.py setup
 
 cli-phase1:
-	uv run litkg phase1 --queries "BRCA1 cancer" "TP53 mutation"
+	uv run python scripts/litkg_cli.py phase1 --queries "BRCA1 cancer" "TP53 mutation"
 
 cli-help:
-	uv run litkg --help
+	uv run python scripts/litkg_cli.py --help
 
 # Utilities
 clean:

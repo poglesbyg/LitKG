@@ -106,8 +106,7 @@ make run-phase1
 # Or directly with uv
 uv run python scripts/phase1_integration.py
 
-# Note: CLI temporarily uses direct script execution due to dependency resolution
-# CLI integration coming in next update
+# Note: CLI now fully functional with dependency compatibility fixes
 ```
 
 ### Individual Components
@@ -147,7 +146,21 @@ results = entity_linker.batch_link_documents(documents)
 ```
 
 ### Command Line Interface
-*Note: CLI integration is temporarily disabled due to dependency resolution. Use Make commands or direct script execution for now. Full CLI coming in next update.*
+```bash
+# Show CLI help
+make cli-help
+
+# Setup models and environment
+make cli-setup
+
+# Run complete Phase 1 pipeline
+make cli-phase1
+
+# Or use directly:
+uv run python scripts/litkg_cli.py --help
+uv run python scripts/litkg_cli.py literature --query "BRCA1 breast cancer" --max-results 10
+uv run python scripts/litkg_cli.py kg --sources civic tcga
+```
 
 ## Documentation
 
