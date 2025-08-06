@@ -39,7 +39,7 @@ Start with cancer genomics (TCGA + CIVIC + cancer literature subset) for focused
 
 ✅ **Phase 1 Complete**: Literature processing, KG preprocessing, and entity linking
 ✅ **Phase 2 Complete**: Hybrid GNN architecture with cross-modal attention
-🚧 **Phase 3 In Progress**: Novel knowledge discovery and validation
+🚧 **Phase 3 In Progress**: Confidence scoring and novel knowledge discovery
 
 ## Installation and Setup
 
@@ -63,6 +63,9 @@ make run-phase1
 
 # 5. Run Phase 2 hybrid GNN demo
 make run-phase2
+
+# 6. Run Phase 3 confidence scoring demo
+make run-phase3
 ```
 
 ### Alternative Setup with pip

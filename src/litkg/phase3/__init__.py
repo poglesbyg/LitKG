@@ -23,26 +23,27 @@ from .confidence_scoring import (
     CrossModalConfidenceIntegrator
 )
 
-from .novelty_detection import (
-    NoveltyDetector,
-    NoveltyMetrics,
-    TemporalNoveltyAnalyzer,
-    SemanticNoveltyAnalyzer
-)
+# Note: Additional modules will be implemented in future phases
+# from .novelty_detection import (
+#     NoveltyDetector,
+#     NoveltyMetrics,
+#     TemporalNoveltyAnalyzer,
+#     SemanticNoveltyAnalyzer
+# )
 
-from .hypothesis_generation import (
-    HypothesisGenerator,
-    HypothesisRanker,
-    BiologicalPlausibilityChecker,
-    TestabilityAssessor
-)
+# from .hypothesis_generation import (
+#     HypothesisGenerator,
+#     HypothesisRanker,
+#     BiologicalPlausibilityChecker,
+#     TestabilityAssessor
+# )
 
-from .validation import (
-    ValidationFramework,
-    CrossValidationManager,
-    TemporalValidation,
-    ExperimentalValidation
-)
+# from .validation import (
+#     ValidationFramework,
+#     CrossValidationManager,
+#     TemporalValidation,
+#     ExperimentalValidation
+# )
 
 __all__ = [
     # Confidence Scoring
@@ -51,23 +52,12 @@ __all__ = [
     "ConfidenceMetrics",
     "LiteratureConfidenceAssessor",
     "ExperimentalConfidenceAssessor",
-    "CrossModalConfidenceIntegrator",
+    "CrossModalConfidenceIntegrator"
     
-    # Novelty Detection
-    "NoveltyDetector",
-    "NoveltyMetrics",
-    "TemporalNoveltyAnalyzer", 
-    "SemanticNoveltyAnalyzer",
-    
-    # Hypothesis Generation
-    "HypothesisGenerator",
-    "HypothesisRanker",
-    "BiologicalPlausibilityChecker",
-    "TestabilityAssessor",
-    
-    # Validation
-    "ValidationFramework",
-    "CrossValidationManager",
-    "TemporalValidation",
-    "ExperimentalValidation"
+    # Future modules will be added here:
+    # "NoveltyDetector",
+    # "NoveltyMetrics", 
+    # "HypothesisGenerator",
+    # "ValidationFramework",
+    # etc.
 ]

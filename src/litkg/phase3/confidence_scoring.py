@@ -256,7 +256,7 @@ class CrossModalConfidenceIntegrator(nn.Module, LoggerMixin):
     
     def __init__(
         self,
-        hidden_dim: int = 256,
+        hidden_dim: int = 768,  # Match embedding dimension
         num_integration_heads: int = 4
     ):
         super().__init__()
@@ -428,8 +428,8 @@ class ConfidenceScorer(LoggerMixin):
             # Initialize default values
             lit_confidence = torch.tensor([[0.0]], device=self.device)
             exp_confidence = torch.tensor([[0.0]], device=self.device)
-            lit_features = torch.zeros(1, 256, device=self.device)
-            exp_features = torch.zeros(1, 256, device=self.device)
+            lit_features = torch.zeros(1, 768, device=self.device)  # Match embedding dimension
+            exp_features = torch.zeros(1, 768, device=self.device)  # Match embedding dimension
             
             # Assess literature confidence if available
             if literature_data is not None:
