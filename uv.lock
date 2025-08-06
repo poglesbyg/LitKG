@@ -3075,6 +3075,19 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-ollama"
+version = "0.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "langchain-core" },
+    { name = "ollama" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/82/67/93429a78d6fd40e2addf27e881db37e7f0076d712ffe9759ca0d5e10910e/langchain_ollama-0.3.6.tar.gz", hash = "sha256:4270c4b30b3f3d10850cb9a1183b8c77d616195e0d9717ac745ef7f7f6cc2b6e", size = 30479, upload-time = "2025-07-22T17:26:59.605Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/c5/1e559f5b43d62850ea2b44097afc944f38894eac00e7feef3b42f0428916/langchain_ollama-0.3.6-py3-none-any.whl", hash = "sha256:b339bd3fcf913b8d606ad426ef39e7122695532507fcd85aa96271b3f33dc3df", size = 24535, upload-time = "2025-07-22T17:26:58.556Z" },
+]
+
+[[package]]
 name = "langchain-openai"
 version = "0.3.28"
 source = { registry = "https://pypi.org/simple" }
@@ -3266,10 +3279,12 @@ dependencies = [
     { name = "chromadb" },
     { name = "datasets" },
     { name = "faiss-cpu" },
+    { name = "httpx" },
     { name = "langchain" },
     { name = "langchain-anthropic" },
     { name = "langchain-community" },
     { name = "langchain-huggingface" },
+    { name = "langchain-ollama" },
     { name = "langchain-openai" },
     { name = "langsmith" },
     { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -3280,6 +3295,8 @@ dependencies = [
     { name = "networkx", version = "3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "nltk" },
     { name = "numpy" },
+    { name = "ollama" },
+    { name = "openai" },
     { name = "pandas" },
     { name = "plotly" },
     { name = "pubchempy" },
@@ -3368,6 +3385,7 @@ requires-dist = [
     { name = "faiss-cpu", specifier = ">=1.7.4" },
     { name = "faiss-gpu", marker = "extra == 'gpu'", specifier = ">=1.7.2" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "httpx", specifier = ">=0.24.0" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.25.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.12.0" },
     { name = "jupyter", marker = "extra == 'dev'", specifier = ">=1.0.0" },
@@ -3375,6 +3393,7 @@ requires-dist = [
     { name = "langchain-anthropic", specifier = ">=0.0.5" },
     { name = "langchain-community", specifier = ">=0.0.10" },
     { name = "langchain-huggingface", specifier = ">=0.0.5" },
+    { name = "langchain-ollama", specifier = ">=0.1.0" },
     { name = "langchain-openai", specifier = ">=0.0.5" },
     { name = "langsmith", specifier = ">=0.0.60" },
     { name = "litkg-integrate", extras = ["dev", "docs", "openai", "graph-ml"], marker = "extra == 'all'" },
@@ -3387,6 +3406,8 @@ requires-dist = [
     { name = "networkx", specifier = ">=3.1" },
     { name = "nltk", specifier = ">=3.8.1" },
     { name = "numpy", specifier = ">=1.24.0,<2.0.0" },
+    { name = "ollama", specifier = ">=0.2.0" },
+    { name = "openai", specifier = ">=1.0.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=0.27.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "plotly", specifier = ">=5.15.0" },
@@ -4706,6 +4727,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
+name = "ollama"
+version = "0.5.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/21/31/381d5429fffb088b55c0ace6d4c441dc355cf801620d7288813f77e9193a/ollama-0.5.2.tar.gz", hash = "sha256:7a575a90416a816231f216dbd10c3480b107218a90388c061fdf20d7ab7fe990", size = 43092, upload-time = "2025-08-05T23:02:08.404Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/10/d8a4e0468394e1093d32421bacd1e87452aa96b60a55f5f70766af5406f8/ollama-0.5.2-py3-none-any.whl", hash = "sha256:48ee9aed1c8f4cf2e4237b6d4cc36c328f1abc40da4aa6edf52698f757bc4164", size = 13423, upload-time = "2025-08-05T23:02:07.191Z" },
 ]
 
 [[package]]

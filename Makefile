@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test lint format clean run-phase1 run-examples run-phase3 run-langchain
+.PHONY: help install install-dev setup test lint format clean run-phase1 run-examples run-phase3 run-langchain run-discovery run-ollama
 
 # Default target
 help:
@@ -30,6 +30,8 @@ help:
 	@echo "  run-phase2   Run Phase 2 hybrid GNN architecture demo"
 	@echo "  run-phase3   Run Phase 3 confidence scoring demo"
 	@echo "  run-langchain Run LangChain integration demo"
+	@echo "  run-discovery Run complete novel discovery system demo"
+	@echo "  run-ollama   Run Ollama local LLM integration demo"
 	@echo ""
 	@echo "CLI Commands:"
 	@echo "  cli-help     Show CLI help"
@@ -79,7 +81,7 @@ typecheck:
 run-phase1:
 	PYTHONPATH=$(PWD)/src uv run python scripts/phase1_integration.py
 
-run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3 run-langchain
+run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3 run-langchain run-discovery run-ollama
 
 run-lit:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_literature_processing.py
@@ -101,6 +103,12 @@ run-phase3:
 
 run-langchain:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_langchain_integration.py
+
+run-discovery:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_novel_discovery_system.py
+
+run-ollama:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_ollama_integration.py
 
 # CLI commands (working)
 cli-setup:

@@ -1,17 +1,17 @@
 """
-Phase 3: Novel Knowledge Discovery and Validation
+Phase 3: Novel Knowledge Discovery and Validation - COMPLETE
 
 This phase focuses on using the integrated hybrid GNN from Phase 2 to:
 1. Develop confidence scoring metrics for different types of evidence
-2. Predict novel relationships and generate hypotheses
-3. Validate predictions against held-out data
+2. Predict novel relationships and generate hypotheses with AI agents
+3. Validate predictions against held-out data and expert assessment
 4. Quantify uncertainty and distinguish contradictory evidence
 
 Key Components:
 - ConfidenceScorer: Multi-faceted confidence assessment
-- NoveltyDetector: Identify truly novel vs. known relationships
-- HypothesisGenerator: Generate testable hypotheses from model predictions
-- ValidationFramework: Cross-validate against recent literature and experimental data
+- NoveltyDetectionSystem: AI-powered discovery of novel relationships
+- HypothesisGenerationSystem: LLM-powered hypothesis generation and validation
+- ComprehensiveValidationSystem: Multi-method validation with expert interface
 """
 
 from .confidence_scoring import (
@@ -23,27 +23,34 @@ from .confidence_scoring import (
     CrossModalConfidenceIntegrator
 )
 
-# Note: Additional modules will be implemented in future phases
-# from .novelty_detection import (
-#     NoveltyDetector,
-#     NoveltyMetrics,
-#     TemporalNoveltyAnalyzer,
-#     SemanticNoveltyAnalyzer
-# )
+from .novelty_detection import (
+    NovelRelation,
+    DiscoveryPattern,
+    NovelRelationPredictor,
+    PatternDiscoveryEngine,
+    BiologicalPlausibilityChecker,
+    NoveltyDetectionSystem
+)
 
-# from .hypothesis_generation import (
-#     HypothesisGenerator,
-#     HypothesisRanker,
-#     BiologicalPlausibilityChecker,
-#     TestabilityAssessor
-# )
+from .hypothesis_generation import (
+    BiomedicalHypothesis,
+    ExperimentalDesign,
+    HypothesisGenerator,
+    HypothesisValidationAgent,
+    HypothesisGenerationSystem,
+    BiologicalReasoningTool,
+    LiteratureValidationTool,
+    ExperimentalDesignTool
+)
 
-# from .validation import (
-#     ValidationFramework,
-#     CrossValidationManager,
-#     TemporalValidation,
-#     ExperimentalValidation
-# )
+from .validation import (
+    ValidationResult,
+    ExpertAssessment,
+    LiteratureCrossValidator,
+    TemporalValidator,
+    ExpertValidationInterface,
+    ComprehensiveValidationSystem
+)
 
 __all__ = [
     # Confidence Scoring
@@ -52,12 +59,31 @@ __all__ = [
     "ConfidenceMetrics",
     "LiteratureConfidenceAssessor",
     "ExperimentalConfidenceAssessor",
-    "CrossModalConfidenceIntegrator"
+    "CrossModalConfidenceIntegrator",
     
-    # Future modules will be added here:
-    # "NoveltyDetector",
-    # "NoveltyMetrics", 
-    # "HypothesisGenerator",
-    # "ValidationFramework",
-    # etc.
+    # Novelty Detection
+    "NovelRelation",
+    "DiscoveryPattern",
+    "NovelRelationPredictor",
+    "PatternDiscoveryEngine",
+    "BiologicalPlausibilityChecker",
+    "NoveltyDetectionSystem",
+    
+    # Hypothesis Generation
+    "BiomedicalHypothesis",
+    "ExperimentalDesign", 
+    "HypothesisGenerator",
+    "HypothesisValidationAgent",
+    "HypothesisGenerationSystem",
+    "BiologicalReasoningTool",
+    "LiteratureValidationTool",
+    "ExperimentalDesignTool",
+    
+    # Validation
+    "ValidationResult",
+    "ExpertAssessment",
+    "LiteratureCrossValidator",
+    "TemporalValidator", 
+    "ExpertValidationInterface",
+    "ComprehensiveValidationSystem"
 ]
