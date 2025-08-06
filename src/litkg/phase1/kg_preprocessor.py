@@ -78,7 +78,7 @@ class OntologyMapper(LoggerMixin):
     def _load_cached_mappings(self):
         """Load cached ontology mappings."""
         cache_dir = get_data_dir() / "cache"
-        cache_dir.mkdir(exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
         
         umls_cache = cache_dir / "umls_mapping.pkl"
         go_cache = cache_dir / "go_mapping.pkl"
@@ -825,7 +825,9 @@ class KnowledgeGraphBuilder(LoggerMixin):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Save as pickle for NetworkX graph
-        nx.write_gpickle(self.graph, str(output_path).replace('.json', '.gpickle'))
+        import pickle
+        with open(str(output_path).replace('.json', '.gpickle'), 'wb') as f:
+            pickle.dump(self.graph, f)
         
         # Save as JSON for human readability
         graph_data = {

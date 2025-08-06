@@ -391,7 +391,7 @@ class HybridGNNTrainer(LoggerMixin):
             mode='min',
             factor=0.5,
             patience=config.patience // 2,
-            verbose=True
+            # verbose parameter deprecated in newer PyTorch versions
         )
         
         # Loss function

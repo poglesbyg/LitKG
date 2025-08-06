@@ -128,13 +128,13 @@ def load_config(config_path: Optional[str] = None) -> LitKGConfig:
 
 def get_data_dir() -> Path:
     """Get the data directory path."""
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).parent.parent.parent.parent
     return project_root / "data"
 
 
 def get_cache_dir() -> Path:
     """Get the cache directory path."""
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).parent.parent.parent.parent
     cache_dir = project_root / "cache"
     cache_dir.mkdir(exist_ok=True)
     return cache_dir
@@ -142,7 +142,7 @@ def get_cache_dir() -> Path:
 
 def get_logs_dir() -> Path:
     """Get the logs directory path."""
-    project_root = Path(__file__).parent.parent.parent
+    project_root = Path(__file__).parent.parent.parent.parent
     logs_dir = project_root / "logs"
     logs_dir.mkdir(exist_ok=True)
     return logs_dir

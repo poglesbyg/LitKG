@@ -445,7 +445,7 @@ class Phase1Integrator:
         if type_coverage < 0.8:
             self.logger.info("- Expand knowledge graph coverage for missing entity types")
         
-        if stats["entity_linking"]["linking_rate"] < 0.5:
+        if self.integration_stats["entity_linking"]["linking_rate"] < 0.5:
             self.logger.info("- Improve fuzzy matching thresholds")
         
         self.logger.info("- Ready for hybrid GNN training")

@@ -243,19 +243,19 @@ def demonstrate_model_architecture():
     
     # Literature graph
     lit_x = torch.randn(20, 768 + 10 + 2)  # 20 nodes
-    lit_edge_index = torch.randint(0, 20, (2, 30))
+    lit_edge_index = torch.randint(0, 20, (2, 30), dtype=torch.long)
     lit_edge_attr = torch.randn(30, 1 + 10 + 1)
     lit_batch = torch.zeros(20, dtype=torch.long)
     
     # KG graph
     kg_x = torch.randn(15, 768 + 10 + 2)  # 15 nodes
-    kg_edge_index = torch.randint(0, 15, (2, 25))
+    kg_edge_index = torch.randint(0, 15, (2, 25), dtype=torch.long)
     kg_edge_attr = torch.randn(25, 1 + 10 + 1)
-    kg_relation_types = torch.randint(0, 10, (25,))
+    kg_relation_types = torch.randn(25, 10)  # Relation embeddings, not indices
     kg_batch = torch.zeros(15, dtype=torch.long)
     
-    # Entity pairs for relation prediction
-    entity_pairs = torch.tensor([[0, 0], [1, 1]], dtype=torch.long)
+    # Entity pairs for relation prediction (ensure indices are within bounds)
+    entity_pairs = torch.tensor([[0, 0]], dtype=torch.long)  # Only use valid indices
     
     try:
         # Forward pass
