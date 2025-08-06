@@ -1,0 +1,242 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "litkg-integrate"
+version = "0.1.0"
+description = "Literature-Augmented Knowledge Graph Discovery System"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "LitKG Team", email = "team@litkg.org"},
+]
+maintainers = [
+    {name = "LitKG Team", email = "team@litkg.org"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = [
+    # Core ML/DL frameworks
+    "torch>=2.0.0",
+    "torch-geometric>=2.3.0",
+    "transformers>=4.30.0",
+    "datasets>=2.14.0",
+    
+    # Biomedical NLP
+    "scispacy>=0.5.3",
+    "spacy>=3.6.0",
+    
+    # Graph processing
+    "networkx>=3.1",
+    "python-igraph>=0.10.0",
+    
+    # Data processing
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.3.0",
+    
+    # Biomedical data access
+    "biopython>=1.81",
+    "pubchempy>=1.0.4",
+    "requests>=2.31.0",
+    
+    # Database and storage
+    "neo4j>=5.11.0",
+    "pymongo>=4.4.1",
+    
+    # Text processing and similarity
+    "sentence-transformers>=2.2.0",
+    "faiss-cpu>=1.7.4",
+    "nltk>=3.8.1",
+    "python-Levenshtein>=0.21.0",
+    
+    # Web scraping and APIs
+    "beautifulsoup4>=4.12.0",
+    "selenium>=4.10.0",
+    
+    # Evaluation and metrics
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "plotly>=5.15.0",
+    "wandb>=0.15.0",
+    
+    # Configuration and utilities
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0.0",
+    
+    # AI API integration (Anthropic Claude preferred)
+    "anthropic>=0.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+    "jupyter>=1.0.0",
+    "ipykernel>=6.25.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.2.0",
+    "mkdocstrings[python]>=0.22.0",
+]
+openai = [
+    "openai>=0.27.0",
+]
+gpu = [
+    "faiss-gpu>=1.7.2",
+]
+graph-ml = [
+    "dgl>=1.1.0; sys_platform != 'darwin'",
+    "torch-geometric>=2.3.0",
+]
+all = [
+    "litkg-integrate[dev,docs,openai,graph-ml]",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/litkg-integrate"
+Documentation = "https://litkg-integrate.readthedocs.io"
+Repository = "https://github.com/your-org/litkg-integrate"
+"Bug Tracker" = "https://github.com/your-org/litkg-integrate/issues"
+
+[project.scripts]
+litkg = "litkg.cli:main"
+litkg-setup = "scripts.setup_models:main"
+litkg-phase1 = "scripts.phase1_integration:main"
+
+[tool.hatch.build]
+directory = "src"
+
+[tool.hatch.build.targets.wheel]
+packages = ["litkg"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/scripts",
+    "/config",
+    "/docs",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+]
+
+# Black configuration
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 100
+known_first_party = ["litkg"]
+
+# pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src/litkg",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+# mypy configuration
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = [
+    "Bio.*",
+    "scispacy.*",
+    "spacy.*",
+    "torch_geometric.*",
+    "dgl.*",
+    "igraph.*",
+    "faiss.*",
+    "wandb.*",
+    "neo4j.*",
+    "pymongo.*",
+    "pubchempy.*",
+]
+ignore_missing_imports = true
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

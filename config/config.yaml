@@ -1,0 +1,139 @@
+# LitKG-Integrate Configuration
+
+# Phase 1: Foundation
+phase1:
+  literature:
+    # Biomedical LLM models
+    models:
+      pubmedbert: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
+      biobert: "dmis-lab/biobert-base-cased-v1.1"
+      scispacy_model: "en_core_sci_md"
+    
+    # PubMed API settings
+    pubmed:
+      email: "your-email@domain.com"  # Required for PubMed API
+      api_key: null  # Optional but recommended
+      max_results: 10000
+      batch_size: 100
+    
+    # Text processing
+    text_processing:
+      max_length: 512
+      overlap: 50
+      min_entity_confidence: 0.7
+  
+  knowledge_graphs:
+    # Data sources
+    civic:
+      url: "https://civicdb.org/downloads"
+      version: "latest"
+    tcga:
+      url: "https://portal.gdc.cancer.gov/"
+      data_types: ["clinical", "mutation", "expression"]
+    cptac:
+      url: "https://proteomics.cancer.gov/programs/cptac"
+      data_types: ["proteomics", "clinical"]
+    
+    # Ontology mapping
+    ontologies:
+      umls:
+        version: "2023AA"
+        api_key: null
+      gene_ontology:
+        version: "latest"
+        url: "http://geneontology.org/docs/download-ontology/"
+  
+  entity_linking:
+    fuzzy_matching:
+      threshold: 0.85
+      method: "levenshtein"
+    disambiguation:
+      context_window: 100
+      confidence_threshold: 0.8
+
+# Phase 2: Integration Engine
+phase2:
+  gnn:
+    # Architecture
+    architecture:
+      hidden_dim: 256
+      num_layers: 3
+      dropout: 0.1
+      attention_heads: 8
+    
+    # Cross-modal attention
+    cross_modal:
+      literature_weight: 0.6
+      experimental_weight: 0.4
+      adaptive_weighting: true
+    
+    # Training
+    training:
+      batch_size: 32
+      learning_rate: 0.001
+      num_epochs: 100
+      early_stopping_patience: 10
+  
+  confidence_scoring:
+    metrics:
+      - "source_reliability"
+      - "evidence_strength"
+      - "temporal_consistency"
+      - "cross_validation"
+    weights:
+      literature: 0.4
+      experimental: 0.6
+
+# Phase 3: Discovery & Validation
+phase3:
+  prediction:
+    # Link prediction
+    link_prediction:
+      negative_sampling_ratio: 1.0
+      evaluation_split: 0.2
+      k_fold: 5
+    
+    # Hypothesis generation
+    hypothesis:
+      novelty_threshold: 0.7
+      confidence_threshold: 0.8
+      max_hypotheses: 1000
+  
+  validation:
+    # Cross-validation settings
+    holdout_years: 2  # Use last 2 years as validation set
+    validation_sources:
+      - "pubmed"
+      - "clinical_trials"
+      - "preprints"
+
+# General settings
+general:
+  # Logging
+  logging:
+    level: "INFO"
+    file: "logs/litkg.log"
+  
+  # Caching
+  cache:
+    enabled: true
+    directory: "cache/"
+    ttl: 86400  # 24 hours
+  
+  # Parallel processing
+  parallel:
+    num_workers: 4
+    gpu_enabled: true
+    device: "auto"  # auto, cpu, cuda:0, etc.
+  
+  # AI API settings (Anthropic Claude preferred)
+  ai_api:
+    provider: "anthropic"  # anthropic, openai
+    anthropic:
+      api_key: null  # Set via environment variable
+      model: "claude-3-sonnet-20240229"
+      max_tokens: 4096
+    openai:
+      api_key: null  # Fallback option
+      model: "gpt-4"
+      max_tokens: 4096
