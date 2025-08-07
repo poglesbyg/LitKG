@@ -78,6 +78,11 @@ class MultiHeadAttention(nn.Module):
             output: Attended output [batch_size, seq_len, d_model]
             attention_weights: Attention weights if return_attention=True
         """
+        # Accept 2D or 3D: [batch, seq, dim] or [seq, dim] or [batch, dim]
+        if query.dim() == 2:
+            query = query.unsqueeze(0)
+            key = key.unsqueeze(0)
+            value = value.unsqueeze(0)
         batch_size, seq_len = query.size(0), query.size(1)
         residual = query
         
@@ -105,6 +110,10 @@ class MultiHeadAttention(nn.Module):
         # Output projection and residual connection
         output = self.w_o(context)
         output = self.layer_norm(output + residual)
+        if return_attention:
+            return output, attention_weights
+        else:
+            return output, None
         
         if return_attention:
             return output, attention_weights

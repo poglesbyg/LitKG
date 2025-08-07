@@ -438,10 +438,15 @@ class GNNTrainer(LoggerMixin):
         epoch_losses = defaultdict(float)
         
         for batch_idx, batch in enumerate(train_loader):
-            # Move batch to device
-            lit_graph = batch['lit_graph'].to(self.device)
-            kg_graph = batch['kg_graph'].to(self.device)
-            labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
+            # Move batch to device. Support flat batch dicts as used in tests
+            if 'lit_graph' in batch:
+                lit_graph = batch['lit_graph'].to(self.device)
+                kg_graph = batch['kg_graph'].to(self.device)
+            else:
+                # Build minimal Data objects
+                lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
+                kg_graph = Data(x=batch['kg_x'].to(self.device), edge_index=batch['kg_edge_index'].to(self.device))
+            labels = {k: v.to(self.device) for k, v in batch.get('labels', {}).items()}
             
             # Forward pass
             self.optimizer.zero_grad()
@@ -533,9 +538,13 @@ class GNNTrainer(LoggerMixin):
     def validation_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         self.model.eval()
         with torch.no_grad():
-            lit_graph = batch['lit_graph'].to(self.device)
-            kg_graph = batch['kg_graph'].to(self.device)
-            labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
+            if 'lit_graph' in batch:
+                lit_graph = batch['lit_graph'].to(self.device)
+                kg_graph = batch['kg_graph'].to(self.device)
+            else:
+                lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
+                kg_graph = Data(x=batch['kg_x'].to(self.device), edge_index=batch['kg_edge_index'].to(self.device))
+            labels = {k: v.to(self.device) for k, v in batch.get('labels', {}).items()}
             outputs = self.model(
                 lit_x=lit_graph.x,
                 lit_edge_index=lit_graph.edge_index,

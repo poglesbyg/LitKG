@@ -703,6 +703,8 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             dropout=dropout,
             fusion_strategy=fusion_strategy
         )
+        # Back-compat: expose cross_modal_attention attribute that forwards to fusion
+        self.cross_modal_attention = self.fusion
         
         # Relation predictor
         self.relation_predictor = RelationPredictor(
@@ -769,9 +771,13 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             Dictionary containing model outputs
         """
         # Encode literature graph
-        lit_edge_attr = lit_edge_attr if lit_edge_attr is not None else torch.zeros(lit_edge_index.size(1), self.hidden_dim, device=lit_x.device)
-        kg_edge_attr = kg_edge_attr if kg_edge_attr is not None else torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
-        kg_relation_types = kg_relation_types if kg_relation_types is not None else torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
+        # Default edge features to projected dims expected by encoders
+        if lit_edge_attr is None:
+            lit_edge_attr = torch.zeros(lit_edge_index.size(1), self.hidden_dim, device=lit_x.device)
+        if kg_edge_attr is None:
+            kg_edge_attr = torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
+        if kg_relation_types is None:
+            kg_relation_types = torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
 
         lit_outputs = self.lit_encoder(
             x=lit_x,

@@ -1,29 +1,29 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="89" skipped="1" tests="183" time="74.111" timestamp="2025-08-07T17:10:04.965627-04:00" hostname="Pauls-MacBook-Pro.local"><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_config_dataclass" time="0.001" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_init" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_add_message" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_max_length" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_update" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_history_formatting" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_summary" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_initialization" time="1.173" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_chat_without_langchain" time="0.001" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_knowledge_retrieval" time="0.901" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_hypothesis_generation" time="1.026" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_follow_up_questions" time="1.024" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_conversation_summary" time="1.024" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_reset_conversation" time="0.958" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_type_enum" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_capability_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_request_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_response_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_coordinator_init" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_registration" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_classification" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_selection" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_execution" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_performance_tracking" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_conversational_interface_init" time="0.989" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_start_conversation" time="0.890" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_conversational_chat" time="0.898" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_end_conversation" time="0.924" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_multi_agent_workflow_init" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_start" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_execution" time="0.001" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_status" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_orchestrator_system_status" time="0.889" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_rag_agent_with_orchestrator" time="0.925" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_multi_turn_conversation" time="0.983" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_workflow_with_multiple_agents" time="0.001" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_agent_performance_optimization" time="0.001" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_llm_provider_enum" time="0.000"><failure message="AttributeError: HUGGINGFACE">tests/test_llm_integration.py:25: in test_llm_provider_enum
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="84" skipped="1" tests="183" time="74.739" timestamp="2025-08-07T17:26:07.924568-04:00" hostname="Pauls-MacBook-Pro.local"><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_config_dataclass" time="0.001" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_init" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_add_message" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_memory_max_length" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_update" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_conversation_history_formatting" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_biomedical_context_summary" time="0.000" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_initialization" time="1.258" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_chat_without_langchain" time="0.001" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_knowledge_retrieval" time="1.210" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_hypothesis_generation" time="0.882" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_follow_up_questions" time="0.892" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_conversation_summary" time="0.908" /><testcase classname="tests.test_agents.TestBiomedicalRAGAgent" name="test_rag_agent_reset_conversation" time="0.866" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_type_enum" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_capability_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_request_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_response_dataclass" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_coordinator_init" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_registration" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_classification" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_selection" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_task_execution" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_performance_tracking" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_conversational_interface_init" time="0.954" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_start_conversation" time="0.965" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_conversational_chat" time="1.016" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_end_conversation" time="0.898" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_multi_agent_workflow_init" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_start" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_execution" time="0.001" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_workflow_status" time="0.000" /><testcase classname="tests.test_agents.TestAgentOrchestrator" name="test_agent_orchestrator_system_status" time="0.857" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_rag_agent_with_orchestrator" time="0.907" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_multi_turn_conversation" time="0.933" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_workflow_with_multiple_agents" time="0.001" /><testcase classname="tests.test_agents.TestAgentsIntegration" name="test_agent_performance_optimization" time="0.000" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_llm_provider_enum" time="0.000"><failure message="AttributeError: HUGGINGFACE">tests/test_llm_integration.py:25: in test_llm_provider_enum
     assert LLMProvider.HUGGINGFACE.value == "huggingface"
            ^^^^^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/enum.py:786: in __getattr__
     raise AttributeError(name) from None
 E   AttributeError: HUGGINGFACE</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_llm_response_dataclass" time="0.000"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'">tests/test_llm_integration.py:30: in test_llm_response_dataclass
     response = LLMResponse(
-E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_biomedical_llm_interface_init" time="0.014" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_client_initialization" time="0.014"><failure message="AttributeError: 'BiomedicalLLMInterface' object has no attribute '_initialize_openai_client'">tests/test_llm_integration.py:61: in test_client_initialization
+E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_biomedical_llm_interface_init" time="0.014" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_client_initialization" time="0.013"><failure message="AttributeError: 'BiomedicalLLMInterface' object has no attribute '_initialize_openai_client'">tests/test_llm_integration.py:61: in test_client_initialization
     interface._initialize_openai_client()
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'BiomedicalLLMInterface' object has no attribute '_initialize_openai_client'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_model_selection" time="0.031"><failure message="assert None is not None">tests/test_llm_integration.py:79: in test_model_selection
+E   AttributeError: 'BiomedicalLLMInterface' object has no attribute '_initialize_openai_client'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_model_selection" time="0.032"><failure message="assert None is not None">tests/test_llm_integration.py:79: in test_model_selection
     assert model_info is not None
-E   assert None is not None</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_generate_text" time="0.014" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_usage_tracking" time="0.013"><failure message="TypeError: BiomedicalLLMInterface._update_usage_stats() takes 4 positional arguments but 5 were given">tests/test_llm_integration.py:116: in test_usage_tracking
+E   assert None is not None</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_generate_text" time="0.013" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_usage_tracking" time="0.012"><failure message="TypeError: BiomedicalLLMInterface._update_usage_stats() takes 4 positional arguments but 5 were given">tests/test_llm_integration.py:116: in test_usage_tracking
     interface._update_usage_stats(LLMProvider.OPENAI, "gpt-3.5-turbo", 30, 0.001)
-E   TypeError: BiomedicalLLMInterface._update_usage_stats() takes 4 positional arguments but 5 were given</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_error_handling" time="45.433" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_unified_llm_manager_init" time="0.012"><failure message="AssertionError: assert False&#10; +  where False = hasattr(&lt;litkg.llm_integration.unified_llm_interface.UnifiedLLMManager object at 0x35ae12c90&gt;, 'model_selector')">tests/test_llm_integration.py:147: in test_unified_llm_manager_init
+E   TypeError: BiomedicalLLMInterface._update_usage_stats() takes 4 positional arguments but 5 were given</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_error_handling" time="45.865" /><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_unified_llm_manager_init" time="0.013"><failure message="AssertionError: assert False&#10; +  where False = hasattr(&lt;litkg.llm_integration.unified_llm_interface.UnifiedLLMManager object at 0x36373eb10&gt;, 'model_selector')">tests/test_llm_integration.py:147: in test_unified_llm_manager_init
     assert hasattr(manager, 'model_selector')
 E   AssertionError: assert False
-E    +  where False = hasattr(&lt;litkg.llm_integration.unified_llm_interface.UnifiedLLMManager object at 0x35ae12c90&gt;, 'model_selector')</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_biomedical_task_processing" time="0.012"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'">tests/test_llm_integration.py:155: in test_biomedical_task_processing
+E    +  where False = hasattr(&lt;litkg.llm_integration.unified_llm_interface.UnifiedLLMManager object at 0x36373eb10&gt;, 'model_selector')</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_biomedical_task_processing" time="0.013"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'">tests/test_llm_integration.py:155: in test_biomedical_task_processing
     mock_response = LLMResponse(
-E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_batch_processing" time="0.012"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'cost' and 'metadata'">tests/test_llm_integration.py:192: in test_batch_processing
+E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_llm_integration.TestUnifiedLLMInterface" name="test_batch_processing" time="0.013"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'cost' and 'metadata'">tests/test_llm_integration.py:192: in test_batch_processing
     LLMResponse("Response 1", LLMProvider.OPENAI, "gpt-3.5", {}, {}),
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'cost' and 'metadata'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_ollama_manager_init" time="0.013" /><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_ollama_client_initialization" time="0.001" /><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_list_models" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'list_models'">tests/test_llm_integration.py:243: in test_list_models
+E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'cost' and 'metadata'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_ollama_manager_init" time="0.015" /><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_ollama_client_initialization" time="0.001" /><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_list_models" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'list_models'">tests/test_llm_integration.py:243: in test_list_models
     models = manager.list_models()
              ^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'OllamaManager' object has no attribute 'list_models'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_pull_model" time="0.012"><failure message="AssertionError: expected call not found.&#10;Expected: pull('llama3.1:8b')&#10;  Actual: pull('llama3.1:8b', stream=True)">tests/test_llm_integration.py:263: in test_pull_model
+E   AttributeError: 'OllamaManager' object has no attribute 'list_models'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_pull_model" time="0.014"><failure message="AssertionError: expected call not found.&#10;Expected: pull('llama3.1:8b')&#10;  Actual: pull('llama3.1:8b', stream=True)">tests/test_llm_integration.py:263: in test_pull_model
     mock_pull.assert_called_once_with("llama3.1:8b")
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:951: in assert_called_once_with
     return self.assert_called_with(*args, **kwargs)
@@ -32,27 +32,27 @@ E   AttributeError: 'OllamaManager' object has no attribute 'list_models'</failu
     raise AssertionError(_error_message()) from cause
 E   AssertionError: expected call not found.
 E   Expected: pull('llama3.1:8b')
-E     Actual: pull('llama3.1:8b', stream=True)</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_generate_text" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'generate'">tests/test_llm_integration.py:284: in test_generate_text
+E     Actual: pull('llama3.1:8b', stream=True)</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_generate_text" time="0.014"><failure message="AttributeError: 'OllamaManager' object has no attribute 'generate'">tests/test_llm_integration.py:284: in test_generate_text
     response = manager.generate(
                ^^^^^^^^^^^^^^^^
-E   AttributeError: 'OllamaManager' object has no attribute 'generate'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_chat_interface" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'chat'">tests/test_llm_integration.py:311: in test_chat_interface
+E   AttributeError: 'OllamaManager' object has no attribute 'generate'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_chat_interface" time="0.014"><failure message="AttributeError: 'OllamaManager' object has no attribute 'chat'">tests/test_llm_integration.py:311: in test_chat_interface
     response = manager.chat(
                ^^^^^^^^^^^^
-E   AttributeError: 'OllamaManager' object has no attribute 'chat'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_model_info" time="0.012"><failure message="TypeError: 'ModelInfo' object is not subscriptable">tests/test_llm_integration.py:341: in test_model_info
+E   AttributeError: 'OllamaManager' object has no attribute 'chat'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_model_info" time="0.014"><failure message="TypeError: 'ModelInfo' object is not subscriptable">tests/test_llm_integration.py:341: in test_model_info
     assert info["details"]["parameter_size"] == "8B"
            ^^^^^^^^^^^^^^^
-E   TypeError: 'ModelInfo' object is not subscriptable</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_error_handling" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'list_models'">tests/test_llm_integration.py:352: in test_error_handling
+E   TypeError: 'ModelInfo' object is not subscriptable</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_error_handling" time="0.014"><failure message="AttributeError: 'OllamaManager' object has no attribute 'list_models'">tests/test_llm_integration.py:352: in test_error_handling
     models = manager.list_models()
              ^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'OllamaManager' object has no attribute 'list_models'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_streaming_generation" time="0.012"><failure message="AttributeError: 'OllamaManager' object has no attribute 'generate_stream'">tests/test_llm_integration.py:370: in test_streaming_generation
+E   AttributeError: 'OllamaManager' object has no attribute 'list_models'</failure></testcase><testcase classname="tests.test_llm_integration.TestOllamaIntegration" name="test_streaming_generation" time="0.014"><failure message="AttributeError: 'OllamaManager' object has no attribute 'generate_stream'">tests/test_llm_integration.py:370: in test_streaming_generation
     responses = list(manager.generate_stream(
                      ^^^^^^^^^^^^^^^^^^^^^^^
 E   AttributeError: 'OllamaManager' object has no attribute 'generate_stream'</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_model_recommendation_dataclass" time="0.000"><failure message="TypeError: ModelRecommendation.__init__() got an unexpected keyword argument 'model'">tests/test_llm_integration.py:384: in test_model_recommendation_dataclass
     recommendation = ModelRecommendation(
-E   TypeError: ModelRecommendation.__init__() got an unexpected keyword argument 'model'</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_model_selector_init" time="0.000"><failure message="AssertionError: assert False&#10; +  where False = hasattr(&lt;litkg.llm_integration.model_selection.ModelSelector object at 0x3abe28850&gt;, 'model_capabilities')">tests/test_llm_integration.py:402: in test_model_selector_init
+E   TypeError: ModelRecommendation.__init__() got an unexpected keyword argument 'model'</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_model_selector_init" time="0.000"><failure message="AssertionError: assert False&#10; +  where False = hasattr(&lt;litkg.llm_integration.model_selection.ModelSelector object at 0x3ba3a4590&gt;, 'model_capabilities')">tests/test_llm_integration.py:402: in test_model_selector_init
     assert hasattr(selector, 'model_capabilities')
 E   AssertionError: assert False
-E    +  where False = hasattr(&lt;litkg.llm_integration.model_selection.ModelSelector object at 0x3abe28850&gt;, 'model_capabilities')</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_task_based_selection" time="0.000"><failure message="AttributeError: 'ModelSelector' object has no attribute 'select_model_for_task'">tests/test_llm_integration.py:427: in test_task_based_selection
+E    +  where False = hasattr(&lt;litkg.llm_integration.model_selection.ModelSelector object at 0x3ba3a4590&gt;, 'model_capabilities')</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_task_based_selection" time="0.000"><failure message="AttributeError: 'ModelSelector' object has no attribute 'select_model_for_task'">tests/test_llm_integration.py:427: in test_task_based_selection
     recommendation = selector.select_model_for_task(
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E   AttributeError: 'ModelSelector' object has no attribute 'select_model_for_task'</failure></testcase><testcase classname="tests.test_llm_integration.TestModelSelection" name="test_cost_optimization" time="0.000"><failure message="AttributeError: 'ModelSelector' object has no attribute 'optimize_for_cost'">tests/test_llm_integration.py:441: in test_cost_optimization
@@ -74,119 +74,100 @@ E   AttributeError: 'ModelSelector' object has no attribute 'compare_models'</fa
     mock_generate.return_value = LLMResponse(
 E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_llm_integration.TestLLMIntegrationIntegration" name="test_multi_provider_fallback" time="0.013"><failure message="TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'">tests/test_llm_integration.py:695: in test_multi_provider_fallback
     LLMResponse(
-E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_literature_processor_init" time="0.106" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_process_document" time="0.056" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_extract_entities" time="0.055" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_extract_relations" time="0.060" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_process_batch" time="0.058" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_document_processor_init" time="0.000" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_clean_text" time="0.000" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_split_sentences" time="0.000" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_tokenize" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_entity_extractor_init" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_extract_biomedical_entities" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_normalize_entities" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_filter_entities" time="0.000" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_kg_preprocessor_init" time="0.003"><failure message="AssertionError: assert LitKGConfig(p...openai': {}})) == {'cache_dir':...rs': 4}}, ...}&#10;  &#10;  Full diff:&#10;  #x1B[0m#x1B[92m+ LitKGConfig(phase1=Phase1Config(literature=LiteratureConfig(models={}, pubmed={}, text_processing={}), knowledge_graphs=KnowledgeGraphConfig(civic={}, tcga={}, cptac={}, ontologies={'umls': {}}), entity_linking=EntityLinkingConfig(fuzzy_matching={}, disambiguation={})), phase2=Phase2Config(gnn=GNNConfig(architecture={}, cross_modal={}, training={}), confidence_scoring=ConfidenceScoringConfig(metrics=[], weights={})), phase3=Phase3Config(prediction=PredictionConfig(link_prediction={}, hypothesis={}), validation=ValidationConfig(holdout_years=2, valid...&#10;  &#10;  ...Full output truncated (70 lines hidden), use '-vv' to show">tests/test_phase1.py:200: in test_kg_preprocessor_init
+E   TypeError: LLMResponse.__init__() missing 2 required positional arguments: 'response_time' and 'cost'</failure></testcase><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_literature_processor_init" time="0.104" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_process_document" time="0.057" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_extract_entities" time="0.056" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_extract_relations" time="0.055" /><testcase classname="tests.test_phase1.TestLiteratureProcessor" name="test_process_batch" time="0.056" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_document_processor_init" time="0.000" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_clean_text" time="0.000" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_split_sentences" time="0.001" /><testcase classname="tests.test_phase1.TestDocumentProcessor" name="test_tokenize" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_entity_extractor_init" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_extract_biomedical_entities" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_normalize_entities" time="0.000" /><testcase classname="tests.test_phase1.TestEntityExtractor" name="test_filter_entities" time="0.000" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_kg_preprocessor_init" time="0.003"><failure message="AssertionError: assert LitKGConfig(p...openai': {}})) == {'cache_dir':...rs': 4}}, ...}&#10;  &#10;  Full diff:&#10;  #x1B[0m#x1B[92m+ LitKGConfig(phase1=Phase1Config(literature=LiteratureConfig(models={}, pubmed={}, text_processing={}), knowledge_graphs=KnowledgeGraphConfig(civic={}, tcga={}, cptac={}, ontologies={'umls': {}}), entity_linking=EntityLinkingConfig(fuzzy_matching={}, disambiguation={})), phase2=Phase2Config(gnn=GNNConfig(architecture={}, cross_modal={}, training={}), confidence_scoring=ConfidenceScoringConfig(metrics=[], weights={})), phase3=Phase3Config(prediction=PredictionConfig(link_prediction={}, hypothesis={}), validation=ValidationConfig(holdout_years=2, valid...&#10;  &#10;  ...Full output truncated (70 lines hidden), use '-vv' to show">tests/test_phase1.py:200: in test_kg_preprocessor_init
     assert preprocessor.config == sample_config
 E   AssertionError: assert LitKGConfig(p...openai': {}})) == {'cache_dir':...rs': 4}}, ...}
 E     
 E     Full diff:
 E     #x1B[0m#x1B[92m+ LitKGConfig(phase1=Phase1Config(literature=LiteratureConfig(models={}, pubmed={}, text_processing={}), knowledge_graphs=KnowledgeGraphConfig(civic={}, tcga={}, cptac={}, ontologies={'umls': {}}), entity_linking=EntityLinkingConfig(fuzzy_matching={}, disambiguation={})), phase2=Phase2Config(gnn=GNNConfig(architecture={}, cross_modal={}, training={}), confidence_scoring=ConfidenceScoringConfig(metrics=[], weights={})), phase3=Phase3Config(prediction=PredictionConfig(link_prediction={}, hypothesis={}), validation=ValidationConfig(holdout_years=2, valid...
 E     
-E     ...Full output truncated (70 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_load_knowledge_graph" time="0.001"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.KnowledgeGraphPreprocessor object at 0x3abe8b490&gt; does not have the attribute '_load_kg_from_source'">tests/test_phase1.py:207: in test_load_knowledge_graph
-    with patch.object(preprocessor, '_load_kg_from_source') as mock_load:
-../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
-    original, local = self.get_original()
-                      ^^^^^^^^^^^^^^^^^^^
-../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
-    raise AttributeError(
-E   AttributeError: &lt;litkg.phase1.kg_preprocessor.KnowledgeGraphPreprocessor object at 0x3abe8b490&gt; does not have the attribute '_load_kg_from_source'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_preprocess_nodes" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'preprocess_nodes'">tests/test_phase1.py:220: in test_preprocess_nodes
-    processed_nodes = preprocessor.preprocess_nodes(sample_knowledge_graph["nodes"])
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'preprocess_nodes'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_preprocess_edges" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'preprocess_edges'">tests/test_phase1.py:229: in test_preprocess_edges
-    processed_edges = preprocessor.preprocess_edges(sample_knowledge_graph["edges"])
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'preprocess_edges'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_build_networkx_graph" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'">tests/test_phase1.py:238: in test_build_networkx_graph
-    G = preprocessor.build_networkx_graph(sample_knowledge_graph)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_compute_graph_statistics" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'">tests/test_phase1.py:248: in test_compute_graph_statistics
-    G = preprocessor.build_networkx_graph(sample_knowledge_graph)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_save_and_load_graph" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'">tests/test_phase1.py:260: in test_save_and_load_graph
-    G = preprocessor.build_networkx_graph(sample_knowledge_graph)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'build_networkx_graph'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_ontology_mapper_init" time="0.007" /><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_load_ontology" time="0.006"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x35a908090&gt; does not have the attribute '_load_ontology_file'">tests/test_phase1.py:294: in test_load_ontology
+E     ...Full output truncated (70 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_load_knowledge_graph" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'load_knowledge_graph'">tests/test_phase1.py:210: in test_load_knowledge_graph
+    kg = preprocessor.load_knowledge_graph("test_source")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'load_knowledge_graph'</failure></testcase><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_preprocess_nodes" time="0.001" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_preprocess_edges" time="0.000" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_build_networkx_graph" time="0.001" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_compute_graph_statistics" time="0.000" /><testcase classname="tests.test_phase1.TestKnowledgeGraphPreprocessor" name="test_save_and_load_graph" time="0.001"><failure message="AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'save_graph'">tests/test_phase1.py:264: in test_save_and_load_graph
+    preprocessor.save_graph(G, str(graph_file))
+    ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'KnowledgeGraphPreprocessor' object has no attribute 'save_graph'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_ontology_mapper_init" time="0.008" /><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_load_ontology" time="0.007"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x362d1f2d0&gt; does not have the attribute '_load_ontology_file'">tests/test_phase1.py:294: in test_load_ontology
     with patch.object(mapper, '_load_ontology_file') as mock_load:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x35a908090&gt; does not have the attribute '_load_ontology_file'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_map_entity_to_ontology" time="0.007"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x35acc58d0&gt; does not have the attribute 'ontology_db'">tests/test_phase1.py:307: in test_map_entity_to_ontology
+E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x362d1f2d0&gt; does not have the attribute '_load_ontology_file'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_map_entity_to_ontology" time="0.007"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x363241190&gt; does not have the attribute 'ontology_db'">tests/test_phase1.py:307: in test_map_entity_to_ontology
     with patch.object(mapper, 'ontology_db') as mock_db:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x35acc58d0&gt; does not have the attribute 'ontology_db'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_standardize_entities" time="0.007"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x338a26210&gt; does not have the attribute 'map_entity_to_ontology'">tests/test_phase1.py:323: in test_standardize_entities
+E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x363241190&gt; does not have the attribute 'ontology_db'</failure></testcase><testcase classname="tests.test_phase1.TestOntologyMapper" name="test_standardize_entities" time="0.007"><failure message="AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x363495510&gt; does not have the attribute 'map_entity_to_ontology'">tests/test_phase1.py:323: in test_standardize_entities
     with patch.object(mapper, 'map_entity_to_ontology') as mock_map:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x338a26210&gt; does not have the attribute 'map_entity_to_ontology'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_entity_linker_init" time="1.027"><failure message="KeyError: 'context_window'">tests/test_phase1.py:337: in test_entity_linker_init
+E   AttributeError: &lt;litkg.phase1.kg_preprocessor.OntologyMapper object at 0x363495510&gt; does not have the attribute 'map_entity_to_ontology'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_entity_linker_init" time="0.859"><failure message="KeyError: 'context_window'">tests/test_phase1.py:337: in test_entity_linker_init
     linker = EntityLinker(sample_config)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_link_entities" time="0.846"><failure message="KeyError: 'context_window'">tests/test_phase1.py:344: in test_link_entities
+E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_link_entities" time="0.906"><failure message="KeyError: 'context_window'">tests/test_phase1.py:344: in test_link_entities
     linker = EntityLinker({})
              ^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_fuzzy_matching" time="0.962"><failure message="KeyError: 'context_window'">tests/test_phase1.py:359: in test_fuzzy_matching
+E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_fuzzy_matching" time="0.928"><failure message="KeyError: 'context_window'">tests/test_phase1.py:359: in test_fuzzy_matching
     linker = EntityLinker({})
              ^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_disambiguation" time="0.987"><failure message="KeyError: 'context_window'">tests/test_phase1.py:372: in test_disambiguation
+E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_disambiguation" time="0.871"><failure message="KeyError: 'context_window'">tests/test_phase1.py:372: in test_disambiguation
     linker = EntityLinker({})
              ^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_confidence_scoring" time="0.939"><failure message="KeyError: 'context_window'">tests/test_phase1.py:387: in test_confidence_scoring
+E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestEntityLinker" name="test_confidence_scoring" time="0.835"><failure message="KeyError: 'context_window'">tests/test_phase1.py:387: in test_confidence_scoring
     linker = EntityLinker({})
              ^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_fuzzy_matcher_init" time="0.007" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_string_similarity" time="0.008" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_find_best_matches" time="0.007" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_batch_matching" time="0.007"><failure message="assert False&#10; +  where False = all(&lt;generator object TestFuzzyMatcher.test_batch_matching.&lt;locals&gt;.&lt;genexpr&gt; at 0x3b171e500&gt;)">tests/test_phase1.py:449: in test_batch_matching
+E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_fuzzy_matcher_init" time="0.007" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_string_similarity" time="0.007" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_find_best_matches" time="0.007" /><testcase classname="tests.test_phase1.TestFuzzyMatcher" name="test_batch_matching" time="0.007"><failure message="assert False&#10; +  where False = all(&lt;generator object TestFuzzyMatcher.test_batch_matching.&lt;locals&gt;.&lt;genexpr&gt; at 0x3b45cd9a0&gt;)">tests/test_phase1.py:449: in test_batch_matching
     assert all(len(matches) &gt; 0 for matches in all_matches)
 E   assert False
-E    +  where False = all(&lt;generator object TestFuzzyMatcher.test_batch_matching.&lt;locals&gt;.&lt;genexpr&gt; at 0x3b171e500&gt;)</failure></testcase><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_disambiguation_engine_init" time="0.008" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_context_based_disambiguation" time="0.007" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_frequency_based_disambiguation" time="0.007" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_multi_criteria_disambiguation" time="0.008" /><testcase classname="tests.test_phase1.TestPhase1Integration" name="test_end_to_end_processing" time="0.920"><failure message="KeyError: 'context_window'">tests/test_phase1.py:519: in test_end_to_end_processing
+E    +  where False = all(&lt;generator object TestFuzzyMatcher.test_batch_matching.&lt;locals&gt;.&lt;genexpr&gt; at 0x3b45cd9a0&gt;)</failure></testcase><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_disambiguation_engine_init" time="0.008" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_context_based_disambiguation" time="0.008" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_frequency_based_disambiguation" time="0.007" /><testcase classname="tests.test_phase1.TestDisambiguationEngine" name="test_multi_criteria_disambiguation" time="0.008" /><testcase classname="tests.test_phase1.TestPhase1Integration" name="test_end_to_end_processing" time="0.907"><failure message="KeyError: 'context_window'">tests/test_phase1.py:519: in test_end_to_end_processing
     entity_linker = EntityLinker(sample_config)
                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:512: in __init__
+src/litkg/phase1/entity_linker.py:515: in __init__
     self.disambiguator = ContextualDisambiguator(self.config)
                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase1/entity_linker.py:314: in __init__
+src/litkg/phase1/entity_linker.py:317: in __init__
     self.context_window = self.disambiguation_config["context_window"]
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 E   KeyError: 'context_window'</failure></testcase><testcase classname="tests.test_phase1.TestPhase1Integration" name="test_pipeline_error_handling" time="0.056"><failure message="Failed: DID NOT RAISE &lt;class 'Exception'&gt;">tests/test_phase1.py:550: in test_pipeline_error_handling
     with pytest.raises(Exception):
-E   Failed: DID NOT RAISE &lt;class 'Exception'&gt;</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_hybrid_gnn_init" time="0.085"><failure message="AssertionError: assert False&#10; +  where False = hasattr(HybridGNNModel(\n  (lit_encoder): LiteratureGraphEncoder(\n    (node_projection): Linear(in_features=768, out_features=256, bias=True)\n    (edge_projection): Linear(in_features=768, out_features=256, bias=True)\n    (conv_layers): ModuleList(\n      (0-2): 3 x GraphConvolutionLayer(256, 256)\n    )\n    (temporal_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_projection): Sequential(\n      (0): Linear(in_features=256, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=256, bias=True)\n    )\n  )\n  (literature_encoder): LiteratureGraphEncoder(\n    (node_projection): Linear(in_features=768, out_features=256, bias=True)\n    (edge_projection): Linear(in_features=768, out_features=256, bias=True)\n    (conv_layers): ModuleList(\n      (0-2): 3 x GraphConvolutionLayer(256, 256)\n    )\n    (temporal_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_projection): Sequential(\n      (0): Linear(in_features=256, out_features=25...ise_affine=True)\n      )\n    )\n    (fusion_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_norm): LayerNorm((256,), eps=1e-05, elementwise_affine=True)\n    (dropout): Dropout(p=0.1, inplace=False)\n  )\n  (relation_predictor): RelationPredictor(\n    (relation_classifier): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=128, bias=True)\n      (4): ReLU()\n      (5): Dropout(p=0.1, inplace=False)\n      (6): Linear(in_features=128, out_features=10, bias=True)\n    )\n    (confidence_estimator): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=1, bias=True)\n      (4): Sigmoid()\n    )\n    (link_predictor): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=1, bias=True)\n      (4): Sigmoid()\n    )\n  )\n), 'cross_modal_attention')">tests/test_phase2.py:36: in test_hybrid_gnn_init
-    assert hasattr(model, 'cross_modal_attention')
-E   AssertionError: assert False
-E    +  where False = hasattr(HybridGNNModel(\n  (lit_encoder): LiteratureGraphEncoder(\n    (node_projection): Linear(in_features=768, out_features=256, bias=True)\n    (edge_projection): Linear(in_features=768, out_features=256, bias=True)\n    (conv_layers): ModuleList(\n      (0-2): 3 x GraphConvolutionLayer(256, 256)\n    )\n    (temporal_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_projection): Sequential(\n      (0): Linear(in_features=256, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=256, bias=True)\n    )\n  )\n  (literature_encoder): LiteratureGraphEncoder(\n    (node_projection): Linear(in_features=768, out_features=256, bias=True)\n    (edge_projection): Linear(in_features=768, out_features=256, bias=True)\n    (conv_layers): ModuleList(\n      (0-2): 3 x GraphConvolutionLayer(256, 256)\n    )\n    (temporal_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_projection): Sequential(\n      (0): Linear(in_features=256, out_features=25...ise_affine=True)\n      )\n    )\n    (fusion_attention): MultiheadAttention(\n      (out_proj): NonDynamicallyQuantizableLinear(in_features=256, out_features=256, bias=True)\n    )\n    (output_norm): LayerNorm((256,), eps=1e-05, elementwise_affine=True)\n    (dropout): Dropout(p=0.1, inplace=False)\n  )\n  (relation_predictor): RelationPredictor(\n    (relation_classifier): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=128, bias=True)\n      (4): ReLU()\n      (5): Dropout(p=0.1, inplace=False)\n      (6): Linear(in_features=128, out_features=10, bias=True)\n    )\n    (confidence_estimator): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=1, bias=True)\n      (4): Sigmoid()\n    )\n    (link_predictor): Sequential(\n      (0): Linear(in_features=512, out_features=256, bias=True)\n      (1): ReLU()\n      (2): Dropout(p=0.1, inplace=False)\n      (3): Linear(in_features=256, out_features=1, bias=True)\n      (4): Sigmoid()\n    )\n  )\n), 'cross_modal_attention')</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_hybrid_gnn_forward" time="0.014"><failure message="RuntimeError: mat1 and mat2 shapes cannot be multiplied (3x128 and 64x128)">tests/test_phase2.py:56: in test_hybrid_gnn_forward
+E   Failed: DID NOT RAISE &lt;class 'Exception'&gt;</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_hybrid_gnn_init" time="0.098" /><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_hybrid_gnn_forward" time="0.014"><failure message="RuntimeError: mat1 and mat2 shapes cannot be multiplied (3x128 and 64x128)">tests/test_phase2.py:56: in test_hybrid_gnn_forward
     output = model(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -194,7 +175,7 @@ E    +  where False = hasattr(HybridGNNModel(\n  (lit_encoder): LiteratureGraphE
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/hybrid_gnn.py:776: in forward
+src/litkg/phase2/hybrid_gnn.py:782: in forward
     lit_outputs = self.lit_encoder(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -214,9 +195,9 @@ src/litkg/phase2/hybrid_gnn.py:216: in forward
 .venv/lib/python3.11/site-packages/torch/nn/modules/linear.py:125: in forward
     return F.linear(input, self.weight, self.bias)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   RuntimeError: mat1 and mat2 shapes cannot be multiplied (3x128 and 64x128)</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_literature_encoder" time="0.026" /><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_knowledge_graph_encoder" time="0.000"><failure message="TypeError: KnowledgeGraphEncoder.__init__() missing 3 required positional arguments: 'node_dim', 'edge_dim', and 'relation_dim'">tests/test_phase2.py:80: in test_knowledge_graph_encoder
+E   RuntimeError: mat1 and mat2 shapes cannot be multiplied (3x128 and 64x128)</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_literature_encoder" time="0.024" /><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_knowledge_graph_encoder" time="0.000"><failure message="TypeError: KnowledgeGraphEncoder.__init__() missing 3 required positional arguments: 'node_dim', 'edge_dim', and 'relation_dim'">tests/test_phase2.py:80: in test_knowledge_graph_encoder
     encoder = KnowledgeGraphEncoder(
-E   TypeError: KnowledgeGraphEncoder.__init__() missing 3 required positional arguments: 'node_dim', 'edge_dim', and 'relation_dim'</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_model_parameters" time="0.060" /><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_model_cuda_compatibility" time="0.000"><skipped type="pytest.skip" message="CUDA not available">/Users/paulgreenwood/Dev/LitKG/tests/test_phase2.py:115: CUDA not available</skipped></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_cross_modal_attention_init" time="0.002" /><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_cross_modal_attention_forward" time="0.003"><failure message="RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280">tests/test_phase2.py:167: in test_cross_modal_attention_forward
+E   TypeError: KnowledgeGraphEncoder.__init__() missing 3 required positional arguments: 'node_dim', 'edge_dim', and 'relation_dim'</failure></testcase><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_model_parameters" time="0.057" /><testcase classname="tests.test_phase2.TestHybridGNNModel" name="test_model_cuda_compatibility" time="0.000"><skipped type="pytest.skip" message="CUDA not available">/Users/paulgreenwood/Dev/LitKG/tests/test_phase2.py:115: CUDA not available</skipped></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_cross_modal_attention_init" time="0.002" /><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_cross_modal_attention_forward" time="0.002"><failure message="RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024">tests/test_phase2.py:167: in test_cross_modal_attention_forward
     attended_features = attention(lit_features, kg_features)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
@@ -225,7 +206,7 @@ E   TypeError: KnowledgeGraphEncoder.__init__() missing 3 required positional ar
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:217: in forward
+src/litkg/phase2/attention_mechanisms.py:226: in forward
     lit_attended, lit_to_kg_weights = self.lit_to_kg_attention(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -233,22 +214,21 @@ src/litkg/phase2/attention_mechanisms.py:217: in forward
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:85: in forward
-    Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_multi_head_attention" time="0.001"><failure message="RuntimeError: shape '[10, 256, 8, 32]' is invalid for input of size 2560">tests/test_phase2.py:181: in test_multi_head_attention
-    output, attention_weights = attention(x, x, x)
-                                ^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
-    return self._call_impl(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
-    return forward_call(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:85: in forward
-    Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   RuntimeError: shape '[10, 256, 8, 32]' is invalid for input of size 2560</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_pooling" time="0.001" /><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_mask" time="0.002"><failure message="RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280">tests/test_phase2.py:212: in test_attention_mask
+src/litkg/phase2/attention_mechanisms.py:91: in forward
+    K = self.w_k(key).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_multi_head_attention" time="0.033"><failure message="AssertionError: assert torch.Size([1, 10, 256]) == (10, 256)&#10;  &#10;  At index 0 diff: #x1B[0m#x1B[94m1#x1B[39;49;00m#x1B[90m#x1B[39;49;00m != #x1B[0m#x1B[94m10#x1B[39;49;00m#x1B[90m#x1B[39;49;00m&#10;  Left contains one more item: #x1B[0m#x1B[94m256#x1B[39;49;00m#x1B[90m#x1B[39;49;00m&#10;  &#10;  Full diff:&#10;  #x1B[0m#x1B[92m+ torch.Size([1, 10, 256])#x1B[39;49;00m#x1B[90m#x1B[39;49;00m&#10;  #x1B[91m- (#x1B[39;49;00m#x1B[90m#x1B[39;49;00m...&#10;  &#10;  ...Full output truncated (3 lines hidden), use '-vv' to show">tests/test_phase2.py:183: in test_multi_head_attention
+    assert output.shape == (10, 256)
+E   AssertionError: assert torch.Size([1, 10, 256]) == (10, 256)
+E     
+E     At index 0 diff: #x1B[0m#x1B[94m1#x1B[39;49;00m#x1B[90m#x1B[39;49;00m != #x1B[0m#x1B[94m10#x1B[39;49;00m#x1B[90m#x1B[39;49;00m
+E     Left contains one more item: #x1B[0m#x1B[94m256#x1B[39;49;00m#x1B[90m#x1B[39;49;00m
+E     
+E     Full diff:
+E     #x1B[0m#x1B[92m+ torch.Size([1, 10, 256])#x1B[39;49;00m#x1B[90m#x1B[39;49;00m
+E     #x1B[91m- (#x1B[39;49;00m#x1B[90m#x1B[39;49;00m...
+E     
+E     ...Full output truncated (3 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_pooling" time="0.001" /><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_mask" time="0.002"><failure message="RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024">tests/test_phase2.py:212: in test_attention_mask
     attended_features = attention(lit_features, kg_features, kg_mask=mask)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
@@ -257,7 +237,7 @@ E   RuntimeError: shape '[10, 256, 8, 32]' is invalid for input of size 2560</fa
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:217: in forward
+src/litkg/phase2/attention_mechanisms.py:226: in forward
     lit_attended, lit_to_kg_weights = self.lit_to_kg_attention(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -265,10 +245,10 @@ src/litkg/phase2/attention_mechanisms.py:217: in forward
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:85: in forward
-    Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_gradients" time="0.002"><failure message="RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280">tests/test_phase2.py:228: in test_attention_gradients
+src/litkg/phase2/attention_mechanisms.py:91: in forward
+    K = self.w_k(key).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024</failure></testcase><testcase classname="tests.test_phase2.TestAttentionMechanisms" name="test_attention_gradients" time="0.002"><failure message="RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024">tests/test_phase2.py:228: in test_attention_gradients
     attended_features = attention(lit_features, kg_features)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
@@ -277,7 +257,7 @@ E   RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280</fa
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:217: in forward
+src/litkg/phase2/attention_mechanisms.py:226: in forward
     lit_attended, lit_to_kg_weights = self.lit_to_kg_attention(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -285,48 +265,48 @@ src/litkg/phase2/attention_mechanisms.py:217: in forward
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/attention_mechanisms.py:85: in forward
-    Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   RuntimeError: shape '[10, 128, 4, 32]' is invalid for input of size 1280</failure></testcase><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_builder_init" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_build_literature_graph" time="0.001" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_build_kg_graph" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_to_pytorch_geometric" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_statistics" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_validation" time="0.000" /><testcase classname="tests.test_phase2.TestTraining" name="test_training_config" time="0.000" /><testcase classname="tests.test_phase2.TestTraining" name="test_gnn_trainer_init" time="0.063" /><testcase classname="tests.test_phase2.TestTraining" name="test_training_step" time="0.017"><failure message="KeyError: 'lit_graph'">tests/test_phase2.py:376: in test_training_step
+src/litkg/phase2/attention_mechanisms.py:91: in forward
+    K = self.w_k(key).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   RuntimeError: shape '[1, 10, 4, 32]' is invalid for input of size 1024</failure></testcase><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_builder_init" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_build_literature_graph" time="0.001" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_build_kg_graph" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_to_pytorch_geometric" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_statistics" time="0.000" /><testcase classname="tests.test_phase2.TestGraphConstruction" name="test_graph_validation" time="0.000" /><testcase classname="tests.test_phase2.TestTraining" name="test_training_config" time="0.000" /><testcase classname="tests.test_phase2.TestTraining" name="test_gnn_trainer_init" time="0.062" /><testcase classname="tests.test_phase2.TestTraining" name="test_training_step" time="0.016"><failure message="KeyError: 'lit_graph'">tests/test_phase2.py:376: in test_training_step
     loss = trainer.training_step(batch)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:508: in training_step
+src/litkg/phase2/training.py:513: in training_step
     lit_graph = batch['lit_graph'].to(self.device)
                 ^^^^^^^^^^^^^^^^^^
-E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_validation_step" time="0.017"><failure message="KeyError: 'lit_graph'">tests/test_phase2.py:405: in test_validation_step
+E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_validation_step" time="0.017"><failure message="NameError: name 'Data' is not defined">tests/test_phase2.py:405: in test_validation_step
     metrics = trainer.validation_step(batch)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:536: in validation_step
-    lit_graph = batch['lit_graph'].to(self.device)
-                ^^^^^^^^^^^^^^^^^^
-E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_training_loop" time="0.017"><failure message="KeyError: 'lit_graph'">tests/test_phase2.py:437: in test_training_loop
+src/litkg/phase2/training.py:545: in validation_step
+    lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
+                ^^^^
+E   NameError: name 'Data' is not defined</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_training_loop" time="0.017"><failure message="NameError: name 'Data' is not defined">tests/test_phase2.py:437: in test_training_loop
     history = trainer.train(mock_train_loader, mock_val_loader)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:710: in train
+src/litkg/phase2/training.py:719: in train
     train_loss, train_loss_components = self.train_epoch(train_loader)
                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:442: in train_epoch
-    lit_graph = batch['lit_graph'].to(self.device)
-                ^^^^^^^^^^^^^^^^^^
-E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_early_stopping" time="0.017"><failure message="AttributeError: 'GNNTrainer' object has no attribute '_check_early_stopping'">tests/test_phase2.py:463: in test_early_stopping
+src/litkg/phase2/training.py:447: in train_epoch
+    lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
+                ^^^^
+E   NameError: name 'Data' is not defined</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_early_stopping" time="0.016"><failure message="AttributeError: 'GNNTrainer' object has no attribute '_check_early_stopping'">tests/test_phase2.py:463: in test_early_stopping
     stopped_early = trainer._check_early_stopping([1.0, 0.9, 1.1])
                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'GNNTrainer' object has no attribute '_check_early_stopping'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_model_checkpointing" time="0.065" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_biomedical_data_loader_init" time="0.010" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_create_data_loaders" time="0.001"><failure message="AttributeError: __len__">tests/test_phase2.py:514: in test_create_data_loaders
+E   AttributeError: 'GNNTrainer' object has no attribute '_check_early_stopping'</failure></testcase><testcase classname="tests.test_phase2.TestTraining" name="test_model_checkpointing" time="0.057" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_biomedical_data_loader_init" time="0.000" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_create_data_loaders" time="0.001"><failure message="AttributeError: __len__">tests/test_phase2.py:514: in test_create_data_loaders
     mock_dataset.__len__.return_value = 10
     ^^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:655: in __getattr__
     raise AttributeError(name)
-E   AttributeError: __len__</failure></testcase><testcase classname="tests.test_phase2.TestDataLoader" name="test_data_preprocessing" time="0.000" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_batch_collation" time="0.001" /><testcase classname="tests.test_phase2.TestPhase2Integration" name="test_end_to_end_training" time="0.017"><failure message="KeyError: 'lit_graph'">tests/test_phase2.py:614: in test_end_to_end_training
+E   AttributeError: __len__</failure></testcase><testcase classname="tests.test_phase2.TestDataLoader" name="test_data_preprocessing" time="0.000" /><testcase classname="tests.test_phase2.TestDataLoader" name="test_batch_collation" time="0.001" /><testcase classname="tests.test_phase2.TestPhase2Integration" name="test_end_to_end_training" time="0.017"><failure message="NameError: name 'Data' is not defined">tests/test_phase2.py:614: in test_end_to_end_training
     history = trainer.train(train_loader, val_loader)
               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:710: in train
+src/litkg/phase2/training.py:719: in train
     train_loss, train_loss_components = self.train_epoch(train_loader)
                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/training.py:442: in train_epoch
-    lit_graph = batch['lit_graph'].to(self.device)
-                ^^^^^^^^^^^^^^^^^^
-E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_phase2.TestPhase2Integration" name="test_model_inference" time="0.015"><failure message="RuntimeError: mat1 and mat2 shapes cannot be multiplied (2x32 and 64x128)">tests/test_phase2.py:640: in test_model_inference
+src/litkg/phase2/training.py:447: in train_epoch
+    lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
+                ^^^^
+E   NameError: name 'Data' is not defined</failure></testcase><testcase classname="tests.test_phase2.TestPhase2Integration" name="test_model_inference" time="0.015"><failure message="RuntimeError: mat1 and mat2 shapes cannot be multiplied (2x32 and 64x128)">tests/test_phase2.py:640: in test_model_inference
     output = model(lit_x, lit_edge_index, kg_x, kg_edge_index, kg_relation_types)
              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
@@ -335,7 +315,7 @@ E   KeyError: 'lit_graph'</failure></testcase><testcase classname="tests.test_ph
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1784: in _call_impl
     return forward_call(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/litkg/phase2/hybrid_gnn.py:776: in forward
+src/litkg/phase2/hybrid_gnn.py:782: in forward
     lit_outputs = self.lit_encoder(
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1773: in _wrapped_call_impl
     return self._call_impl(*args, **kwargs)
@@ -390,7 +370,7 @@ E   AttributeError: 'LiteratureConfidenceAssessor' object has no attribute 'asse
                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1962: in __getattr__
     raise AttributeError(
-E   AttributeError: 'ExperimentalConfidenceAssessor' object has no attribute 'assess_confidence'</failure></testcase><testcase classname="tests.test_phase3.TestConfidenceScoring" name="test_cross_modal_confidence_integrator" time="0.005"><failure message="AttributeError: 'CrossModalConfidenceIntegrator' object has no attribute 'integrate'">tests/test_phase3.py:130: in test_cross_modal_confidence_integrator
+E   AttributeError: 'ExperimentalConfidenceAssessor' object has no attribute 'assess_confidence'</failure></testcase><testcase classname="tests.test_phase3.TestConfidenceScoring" name="test_cross_modal_confidence_integrator" time="0.004"><failure message="AttributeError: 'CrossModalConfidenceIntegrator' object has no attribute 'integrate'">tests/test_phase3.py:130: in test_cross_modal_confidence_integrator
     integrated_confidence = integrator.integrate(lit_features, exp_features)
                             ^^^^^^^^^^^^^^^^^^^^
 .venv/lib/python3.11/site-packages/torch/nn/modules/module.py:1962: in __getattr__
@@ -405,7 +385,7 @@ E   AttributeError: 'ConfidenceScorer' object has no attribute 'quantify_uncerta
     relation = NovelRelation(
 E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_discovery_pattern_dataclass" time="0.000"><failure message="TypeError: DiscoveryPattern.__init__() got an unexpected keyword argument 'pattern_strength'">tests/test_phase3.py:187: in test_discovery_pattern_dataclass
     pattern = DiscoveryPattern(
-E   TypeError: DiscoveryPattern.__init__() got an unexpected keyword argument 'pattern_strength'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_novel_relation_predictor_init" time="0.001" /><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_predict_novel_relations" time="0.002"><failure message="AttributeError: NovelRelationPredictor(&#10;  (relation_predictor): Sequential(&#10;    (0): Linear(in_features=512, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=128, bias=True)&#10;    (4): ReLU()&#10;    (5): Dropout(p=0.3, inplace=False)&#10;    (6): Linear(in_features=128, out_features=20, bias=True)&#10;    (7): Sigmoid()&#10;  )&#10;  (confidence_estimator): Sequential(&#10;    (0): Linear(in_features=532, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=1, bias=True)&#10;    (4): Sigmoid()&#10;  )&#10;  (novelty_detector): Sequential(&#10;    (0): Linear(in_features=512, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=1, bias=True)&#10;    (4): Sigmoid()&#10;  )&#10;) does not have the attribute 'prediction_model'">tests/test_phase3.py:210: in test_predict_novel_relations
+E   TypeError: DiscoveryPattern.__init__() got an unexpected keyword argument 'pattern_strength'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_novel_relation_predictor_init" time="0.001" /><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_predict_novel_relations" time="0.001"><failure message="AttributeError: NovelRelationPredictor(&#10;  (relation_predictor): Sequential(&#10;    (0): Linear(in_features=512, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=128, bias=True)&#10;    (4): ReLU()&#10;    (5): Dropout(p=0.3, inplace=False)&#10;    (6): Linear(in_features=128, out_features=20, bias=True)&#10;    (7): Sigmoid()&#10;  )&#10;  (confidence_estimator): Sequential(&#10;    (0): Linear(in_features=532, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=1, bias=True)&#10;    (4): Sigmoid()&#10;  )&#10;  (novelty_detector): Sequential(&#10;    (0): Linear(in_features=512, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.3, inplace=False)&#10;    (3): Linear(in_features=256, out_features=1, bias=True)&#10;    (4): Sigmoid()&#10;  )&#10;) does not have the attribute 'prediction_model'">tests/test_phase3.py:210: in test_predict_novel_relations
     with patch.object(predictor, 'prediction_model') as mock_model:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
@@ -437,16 +417,16 @@ E       (2): Dropout(p=0.3, inplace=False)
 E       (3): Linear(in_features=256, out_features=1, bias=True)
 E       (4): Sigmoid()
 E     )
-E   ) does not have the attribute 'prediction_model'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_pattern_discovery_engine" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.novelty_detection.PatternDiscoveryEngine object at 0x3590e6450&gt; does not have the attribute '_extract_patterns'">tests/test_phase3.py:240: in test_pattern_discovery_engine
+E   ) does not have the attribute 'prediction_model'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_pattern_discovery_engine" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.novelty_detection.PatternDiscoveryEngine object at 0x3b45c4610&gt; does not have the attribute '_extract_patterns'">tests/test_phase3.py:240: in test_pattern_discovery_engine
     with patch.object(engine, '_extract_patterns') as mock_extract:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase3.novelty_detection.PatternDiscoveryEngine object at 0x3590e6450&gt; does not have the attribute '_extract_patterns'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_biological_plausibility_checker" time="0.000"><failure message="TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'">tests/test_phase3.py:261: in test_biological_plausibility_checker
+E   AttributeError: &lt;litkg.phase3.novelty_detection.PatternDiscoveryEngine object at 0x3b45c4610&gt; does not have the attribute '_extract_patterns'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_biological_plausibility_checker" time="0.001"><failure message="TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'">tests/test_phase3.py:261: in test_biological_plausibility_checker
     novel_relation = NovelRelation(
-E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_novelty_detection_system" time="0.001"><failure message="TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'">tests/test_phase3.py:293: in test_novelty_detection_system
+E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_novelty_detection_system" time="0.002"><failure message="TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'">tests/test_phase3.py:293: in test_novelty_detection_system
     NovelRelation(
 E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestNoveltyDetection" name="test_novelty_scoring" time="0.001"><failure message="AttributeError: 'NovelRelationPredictor' object has no attribute 'compute_novelty_score'">tests/test_phase3.py:326: in test_novelty_scoring
     novelty_score = predictor.compute_novelty_score(relation_candidate, existing_knowledge)
@@ -457,25 +437,25 @@ E   AttributeError: 'NovelRelationPredictor' object has no attribute 'compute_no
     hypothesis = BiomedicalHypothesis(
 E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_experimental_design_dataclass" time="0.000"><failure message="TypeError: ExperimentalDesign.__init__() got an unexpected keyword argument 'objective'">tests/test_phase3.py:352: in test_experimental_design_dataclass
     design = ExperimentalDesign(
-E   TypeError: ExperimentalDesign.__init__() got an unexpected keyword argument 'objective'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_generator_init" time="0.000" /><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_generate_hypothesis" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x35af18550&gt; does not have the attribute 'llm'">tests/test_phase3.py:389: in test_generate_hypothesis
+E   TypeError: ExperimentalDesign.__init__() got an unexpected keyword argument 'objective'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_generator_init" time="0.000" /><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_generate_hypothesis" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b45bb010&gt; does not have the attribute 'llm'">tests/test_phase3.py:389: in test_generate_hypothesis
     with patch.object(generator, 'llm') as mock_llm:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x35af18550&gt; does not have the attribute 'llm'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_validation_agent" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:405: in test_hypothesis_validation_agent
+E   AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b45bb010&gt; does not have the attribute 'llm'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_validation_agent" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:405: in test_hypothesis_validation_agent
     hypothesis = BiomedicalHypothesis(
 E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_generation_system" time="0.000"><failure message="TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'">tests/test_phase3.py:433: in test_hypothesis_generation_system
     NovelRelation(
-E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_experimental_design_generation" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b3c79150&gt; does not have the attribute '_design_experiment'">tests/test_phase3.py:465: in test_experimental_design_generation
+E   TypeError: NovelRelation.__init__() got an unexpected keyword argument 'head_entity'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_experimental_design_generation" time="0.000"><failure message="AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b7aea7d0&gt; does not have the attribute '_design_experiment'">tests/test_phase3.py:465: in test_experimental_design_generation
     with patch.object(generator, '_design_experiment') as mock_design:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b3c79150&gt; does not have the attribute '_design_experiment'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_ranking" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:489: in test_hypothesis_ranking
+E   AttributeError: &lt;litkg.phase3.hypothesis_generation.HypothesisGenerator object at 0x3b7aea7d0&gt; does not have the attribute '_design_experiment'</failure></testcase><testcase classname="tests.test_phase3.TestHypothesisGeneration" name="test_hypothesis_ranking" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:489: in test_hypothesis_ranking
     BiomedicalHypothesis(
 E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_validation_result_dataclass" time="0.000"><failure message="TypeError: ValidationResult.__init__() got an unexpected keyword argument 'score'">tests/test_phase3.py:518: in test_validation_result_dataclass
     result = ValidationResult(
@@ -485,7 +465,7 @@ E   TypeError: ExpertAssessment.__init__() got an unexpected keyword argument 'e
     hypothesis = BiomedicalHypothesis(
 E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_temporal_validator" time="0.001"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:576: in test_temporal_validator
     hypothesis = BiomedicalHypothesis(
-E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_expert_validation_interface" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:604: in test_expert_validation_interface
+E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_expert_validation_interface" time="0.001"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:604: in test_expert_validation_interface
     hypothesis = BiomedicalHypothesis(
 E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_comprehensive_validation_system" time="0.000"><failure message="TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argument 'hypothesis_text'">tests/test_phase3.py:636: in test_comprehensive_validation_system
     hypothesis = BiomedicalHypothesis(
@@ -495,14 +475,14 @@ E   TypeError: BiomedicalHypothesis.__init__() got an unexpected keyword argumen
 E   AttributeError: 'ComprehensiveValidationSystem' object has no attribute 'aggregate_validation_scores'</failure></testcase><testcase classname="tests.test_phase3.TestValidation" name="test_validation_confidence_intervals" time="0.000"><failure message="AttributeError: 'LiteratureCrossValidator' object has no attribute 'compute_confidence_interval'">tests/test_phase3.py:689: in test_validation_confidence_intervals
     confidence_interval = validator.compute_confidence_interval(bootstrap_scores, confidence_level=0.95)
                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E   AttributeError: 'LiteratureCrossValidator' object has no attribute 'compute_confidence_interval'</failure></testcase><testcase classname="tests.test_phase3.TestPhase3Integration" name="test_end_to_end_discovery_pipeline" time="0.002"><failure message="AttributeError: &lt;litkg.phase3.novelty_detection.NoveltyDetectionSystem object at 0x35a561590&gt; does not have the attribute 'detect_novel_knowledge'">tests/test_phase3.py:707: in test_end_to_end_discovery_pipeline
+E   AttributeError: 'LiteratureCrossValidator' object has no attribute 'compute_confidence_interval'</failure></testcase><testcase classname="tests.test_phase3.TestPhase3Integration" name="test_end_to_end_discovery_pipeline" time="0.002"><failure message="AttributeError: &lt;litkg.phase3.novelty_detection.NoveltyDetectionSystem object at 0x3ba32cad0&gt; does not have the attribute 'detect_novel_knowledge'">tests/test_phase3.py:707: in test_end_to_end_discovery_pipeline
     with patch.object(novelty_system, 'detect_novel_knowledge') as mock_novelty:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
                       ^^^^^^^^^^^^^^^^^^^
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1419: in get_original
     raise AttributeError(
-E   AttributeError: &lt;litkg.phase3.novelty_detection.NoveltyDetectionSystem object at 0x35a561590&gt; does not have the attribute 'detect_novel_knowledge'</failure></testcase><testcase classname="tests.test_phase3.TestPhase3Integration" name="test_confidence_scoring_integration" time="0.006"><failure message="AttributeError: LiteratureConfidenceAssessor(&#10;  (confidence_net): Sequential(&#10;    (0): Linear(in_features=778, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.1, inplace=False)&#10;    (3): Linear(in_features=256, out_features=128, bias=True)&#10;    (4): ReLU()&#10;    (5): Dropout(p=0.1, inplace=False)&#10;    (6): Linear(in_features=128, out_features=1, bias=True)&#10;    (7): Sigmoid()&#10;  )&#10;) does not have the attribute 'assess_confidence'">tests/test_phase3.py:779: in test_confidence_scoring_integration
+E   AttributeError: &lt;litkg.phase3.novelty_detection.NoveltyDetectionSystem object at 0x3ba32cad0&gt; does not have the attribute 'detect_novel_knowledge'</failure></testcase><testcase classname="tests.test_phase3.TestPhase3Integration" name="test_confidence_scoring_integration" time="0.006"><failure message="AttributeError: LiteratureConfidenceAssessor(&#10;  (confidence_net): Sequential(&#10;    (0): Linear(in_features=778, out_features=256, bias=True)&#10;    (1): ReLU()&#10;    (2): Dropout(p=0.1, inplace=False)&#10;    (3): Linear(in_features=256, out_features=128, bias=True)&#10;    (4): ReLU()&#10;    (5): Dropout(p=0.1, inplace=False)&#10;    (6): Linear(in_features=128, out_features=1, bias=True)&#10;    (7): Sigmoid()&#10;  )&#10;) does not have the attribute 'assess_confidence'">tests/test_phase3.py:779: in test_confidence_scoring_integration
     with patch.object(confidence_scorer.literature_assessor, 'assess_confidence') as mock_lit:
 ../../.local/share/uv/python/cpython-3.11.13-macos-aarch64-none/lib/python3.11/unittest/mock.py:1446: in __enter__
     original, local = self.get_original()
