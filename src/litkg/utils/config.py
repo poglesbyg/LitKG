@@ -3,7 +3,7 @@
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 
 
@@ -88,7 +88,7 @@ class LitKGConfig(BaseModel):
     general: GeneralConfig
 
 
-def load_config(config_path: Optional[str] = None) -> LitKGConfig:
+def load_config(config_path: Optional[Union[str, Dict[str, Any], LitKGConfig]] = None) -> LitKGConfig:
     """
     Load configuration from YAML file.
     
@@ -98,17 +98,92 @@ def load_config(config_path: Optional[str] = None) -> LitKGConfig:
     Returns:
         Loaded configuration object.
     """
-    if config_path is None:
+    # If already a LitKGConfig, return as-is
+    if isinstance(config_path, LitKGConfig):
+        return config_path
+
+    # If provided a dict, treat as raw config data
+    if isinstance(config_path, dict):
+        config_data = config_path
+        # Fill defaults below
+    elif config_path is None:
         # Get the project root directory
         project_root = Path(__file__).parent.parent.parent.parent
         config_path = project_root / "config" / "config.yaml"
+        config_path = Path(config_path)
+        if not config_path.exists():
+            # Fallback to empty dict if config file not present
+            config_data = {}
+        else:
+            with open(config_path, 'r') as f:
+                config_data = yaml.safe_load(f)
+    else:
+        # Path-like input
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
     
-    config_path = Path(config_path)
-    if not config_path.exists():
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    # Handle empty or malformed YAML files
+    if config_data is None:
+        config_data = {}
     
-    with open(config_path, 'r') as f:
-        config_data = yaml.safe_load(f)
+    # Ensure required nested structure exists with minimal default values
+    if 'general' not in config_data:
+        config_data['general'] = {
+            'ai_api': {
+                'anthropic': {},
+                'openai': {}
+            },
+            'logging': {'level': 'INFO'},
+            'cache': {'enabled': True},
+            'parallel': {'workers': 4}
+        }
+    
+    if 'phase1' not in config_data:
+        config_data['phase1'] = {
+            'literature': {
+                'pubmed': {},
+                'models': {},
+                'text_processing': {}
+            },
+            'knowledge_graphs': {
+                'civic': {},
+                'tcga': {},
+                'cptac': {},
+                'ontologies': {'umls': {}}
+            },
+            'entity_linking': {
+                'fuzzy_matching': {},
+                'disambiguation': {}
+            }
+        }
+    
+    if 'phase2' not in config_data:
+        config_data['phase2'] = {
+            'gnn': {
+                'architecture': {},
+                'cross_modal': {},
+                'training': {}
+            },
+            'confidence_scoring': {
+                'metrics': [],  # Should be a list
+                'weights': {}
+            }
+        }
+    
+    if 'phase3' not in config_data:
+        config_data['phase3'] = {
+            'prediction': {
+                'link_prediction': {},
+                'hypothesis': {}
+            },
+            'validation': {
+                'holdout_years': 2,  # Should be an integer
+                'validation_sources': []  # Should be a list
+            }
+        }
     
     # Load environment variables for API keys
     if 'ANTHROPIC_API_KEY' in os.environ:

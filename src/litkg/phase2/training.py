@@ -340,7 +340,7 @@ class EvaluationMetrics:
         }
 
 
-class HybridGNNTrainer(LoggerMixin):
+class GNNTrainer(LoggerMixin):
     """
     Main trainer for hybrid GNN models.
     
@@ -349,10 +349,12 @@ class HybridGNNTrainer(LoggerMixin):
     
     def __init__(
         self,
-        config: TrainingConfig,
+        model: Optional[HybridGNNModel] = None,
+        config: Optional[TrainingConfig] = None,
         device: Optional[torch.device] = None
     ):
-        self.config = config
+        # Allow (model, config) signature used by tests
+        self.config = config or TrainingConfig()
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Create output directories
@@ -363,21 +365,24 @@ class HybridGNNTrainer(LoggerMixin):
         for dir_path in [self.output_dir, self.checkpoint_dir, self.log_dir]:
             dir_path.mkdir(parents=True, exist_ok=True)
         
-        # Initialize model
-        self.model = HybridGNNModel(
-            lit_node_dim=config.lit_node_dim,
-            lit_edge_dim=config.lit_edge_dim,
-            kg_node_dim=config.kg_node_dim,
-            kg_edge_dim=config.kg_edge_dim,
-            kg_relation_dim=config.kg_relation_dim,
-            hidden_dim=config.hidden_dim,
-            num_gnn_layers=config.num_gnn_layers,
-            num_fusion_layers=config.num_fusion_layers,
-            num_heads=config.num_heads,
-            dropout=config.dropout,
-            num_relations=config.num_relations,
-            fusion_strategy=config.fusion_strategy
-        ).to(self.device)
+        # Initialize or use provided model
+        if model is None:
+            self.model = HybridGNNModel(
+                lit_node_dim=self.config.lit_node_dim,
+                lit_edge_dim=self.config.lit_edge_dim,
+                kg_node_dim=self.config.kg_node_dim,
+                kg_edge_dim=self.config.kg_edge_dim,
+                kg_relation_dim=self.config.kg_relation_dim,
+                hidden_dim=self.config.hidden_dim,
+                num_gnn_layers=self.config.num_gnn_layers,
+                num_fusion_layers=self.config.num_fusion_layers,
+                num_heads=self.config.num_heads,
+                dropout=self.config.dropout,
+                num_relations=self.config.num_relations,
+                fusion_strategy=self.config.fusion_strategy
+            ).to(self.device)
+        else:
+            self.model = model.to(self.device)
         
         # Initialize optimizer and scheduler
         self.optimizer = AdamW(
@@ -418,7 +423,7 @@ class HybridGNNTrainer(LoggerMixin):
             )
             wandb.watch(self.model, log_freq=100)
         
-        self.logger.info(f"Initialized HybridGNNTrainer with device: {self.device}")
+        self.logger.info(f"Initialized GNNTrainer with device: {self.device}")
         self.logger.info(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
     
     def train_epoch(
@@ -496,6 +501,66 @@ class HybridGNNTrainer(LoggerMixin):
         avg_losses = {k: v / num_batches for k, v in epoch_losses.items()}
         
         return avg_loss, avg_losses
+
+    # Public wrappers expected by tests
+    def training_step(self, batch: Dict[str, Any]) -> torch.Tensor:
+        self.model.train()
+        lit_graph = batch['lit_graph'].to(self.device)
+        kg_graph = batch['kg_graph'].to(self.device)
+        labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
+        self.optimizer.zero_grad()
+        entity_pairs = self._create_entity_pairs(batch)
+        outputs = self.model(
+            lit_x=lit_graph.x,
+            lit_edge_index=lit_graph.edge_index,
+            kg_x=kg_graph.x,
+            kg_edge_index=kg_graph.edge_index,
+            kg_relation_types=getattr(kg_graph, 'relation_types', None),
+            entity_pairs=entity_pairs
+        )
+        alignment_matrix = self._create_alignment_matrix(batch)
+        loss, _ = self.criterion(
+            predictions=outputs,
+            targets=labels,
+            lit_embeddings=outputs['lit_graph_embedding'],
+            kg_embeddings=outputs['kg_graph_embedding'],
+            alignment_matrix=alignment_matrix
+        )
+        loss.backward()
+        self.optimizer.step()
+        return loss
+
+    def validation_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
+        self.model.eval()
+        with torch.no_grad():
+            lit_graph = batch['lit_graph'].to(self.device)
+            kg_graph = batch['kg_graph'].to(self.device)
+            labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
+            outputs = self.model(
+                lit_x=lit_graph.x,
+                lit_edge_index=lit_graph.edge_index,
+                kg_x=kg_graph.x,
+                kg_edge_index=kg_graph.edge_index,
+                kg_relation_types=getattr(kg_graph, 'relation_types', None)
+            )
+            alignment_matrix = self._create_alignment_matrix(batch)
+            loss, _ = self.criterion(
+                predictions=outputs,
+                targets=labels,
+                lit_embeddings=outputs['lit_graph_embedding'],
+                kg_embeddings=outputs['kg_graph_embedding'],
+                alignment_matrix=alignment_matrix
+            )
+            return {"loss": float(loss.item())}
+
+    def save_checkpoint(self, path: str, epoch: int, loss: float):
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'loss': loss,
+        }
+        torch.save(checkpoint, path)
     
     def validate_epoch(
         self,

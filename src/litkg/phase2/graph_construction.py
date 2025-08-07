@@ -53,7 +53,7 @@ class LiteratureGraphBuilder(LoggerMixin):
     
     def __init__(
         self,
-        embeddings_model: BiomedicalEmbeddings,
+        embeddings_model: Optional[BiomedicalEmbeddings] = None,
         min_cooccurrence: int = 2,
         similarity_threshold: float = 0.7,
         max_nodes_per_graph: int = 500
@@ -91,6 +91,42 @@ class LiteratureGraphBuilder(LoggerMixin):
             'OTHER': 9
         }
     
+    # --------------------- New: simple dict-based builder for tests ---------------------
+    def _extract_entities(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return document.get('entities', [])
+
+    def _extract_relations(self, document: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return document.get('relations', [])
+
+    def build_graph(self, documents: List[Dict[str, Any]]) -> Dict[str, Any]:
+        nodes: Dict[str, Dict[str, Any]] = {}
+        edges: List[Dict[str, Any]] = []
+
+        for doc in documents:
+            for ent in self._extract_entities(doc):
+                ent_id = ent.get('text') or ent.get('id') or ent.get('name')
+                if not ent_id:
+                    continue
+                if ent_id not in nodes:
+                    nodes[ent_id] = {
+                        'id': ent_id,
+                        'type': ent.get('label') or ent.get('type', 'ENTITY'),
+                    }
+
+            for rel in self._extract_relations(doc):
+                head = rel.get('head') or rel.get('entity1')
+                tail = rel.get('tail') or rel.get('entity2')
+                if not head or not tail:
+                    continue
+                edges.append({
+                    'source': head,
+                    'target': tail,
+                    'type': rel.get('relation') or rel.get('relation_type', 'ASSOCIATED_WITH')
+                })
+
+        return {'nodes': list(nodes.values()), 'edges': edges}
+
+    # --------------------- Existing: PYG builder for Phase 2 demos ---------------------
     def build_literature_graph(
         self,
         documents: List[Dict[str, Any]],
@@ -169,7 +205,12 @@ class LiteratureGraphBuilder(LoggerMixin):
         
         # Generate embeddings for entities
         entity_texts = [entities[eid]['text'] for eid in filtered_entities]
-        entity_embeddings = self.embeddings_model.get_text_embeddings(entity_texts)
+        if self.embeddings_model is not None and entity_texts:
+            entity_embeddings = self.embeddings_model.get_text_embeddings(entity_texts)
+        else:
+            # Fallback: zero embeddings
+            embed_dim = 64
+            entity_embeddings = np.zeros((len(entity_texts), embed_dim), dtype=np.float32)
         
         # Create node features and mappings
         node_id_to_idx = {eid: idx for idx, eid in enumerate(filtered_entities.keys())}
@@ -820,3 +861,80 @@ class GraphConstructor(LoggerMixin):
                 self.logger.warning(f"Training example {example_id} not found")
         
         return examples
+
+
+# --------------------- Compatibility builders expected by tests ---------------------
+
+class GraphBuilder(LoggerMixin):
+    def validate_graph(self, graph: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        errors: List[str] = []
+        nodes = graph.get('nodes')
+        edges = graph.get('edges')
+        if not isinstance(nodes, list):
+            errors.append('nodes must be a list')
+        if not isinstance(edges, list):
+            errors.append('edges must be a list')
+        if not errors:
+            for i, n in enumerate(nodes):
+                if 'id' not in n:
+                    errors.append(f'node[{i}] missing id')
+            for i, e in enumerate(edges):
+                if 'source' not in e or 'target' not in e:
+                    errors.append(f'edge[{i}] missing source/target')
+        return (len(errors) == 0, errors)
+
+    def compute_graph_stats(self, graph: Dict[str, Any]) -> Dict[str, Any]:
+        nodes = graph.get('nodes', [])
+        edges = graph.get('edges', [])
+        node_types: Dict[str, int] = {}
+        edge_types: Dict[str, int] = {}
+        for n in nodes:
+            t = n.get('type', 'ENTITY')
+            node_types[t] = node_types.get(t, 0) + 1
+        for e in edges:
+            t = e.get('type', 'RELATION')
+            edge_types[t] = edge_types.get(t, 0) + 1
+        return {
+            'num_nodes': len(nodes),
+            'num_edges': len(edges),
+            'node_types': node_types,
+            'edge_types': edge_types,
+        }
+
+    def to_pytorch_geometric(self, graph: Dict[str, Any]) -> Data:
+        nodes = graph.get('nodes', [])
+        edges = graph.get('edges', [])
+
+        num_nodes = len(nodes)
+        x = torch.zeros((num_nodes, 64), dtype=torch.float32)
+        node_index = {n.get('id', str(i)): i for i, n in enumerate(nodes)}
+
+        if edges:
+            edge_idx_pairs: List[Tuple[int, int]] = []
+            edge_attr_list: List[List[float]] = []
+            for e in edges:
+                s = node_index.get(e.get('source'))
+                t = node_index.get(e.get('target'))
+                if s is None or t is None:
+                    continue
+                edge_idx_pairs.append((s, t))
+                edge_attr_list.append([1.0])
+            if not edge_idx_pairs:
+                edge_index = torch.zeros((2, 0), dtype=torch.long)
+                edge_attr = torch.zeros((0, 1), dtype=torch.float32)
+            else:
+                edge_index = torch.tensor(np.array(edge_idx_pairs).T, dtype=torch.long)
+                edge_attr = torch.tensor(np.array(edge_attr_list), dtype=torch.float32)
+        else:
+            edge_index = torch.zeros((2, 0), dtype=torch.long)
+            edge_attr = torch.zeros((0, 1), dtype=torch.float32)
+
+        data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
+        return data
+
+
+class KGGraphBuilder(LoggerMixin):
+    def build_graph(self, kg: Dict[str, Any]) -> Dict[str, Any]:
+        nodes = kg.get('nodes', [])
+        edges = kg.get('edges', [])
+        return {'nodes': nodes, 'edges': edges}

@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test lint format clean run-phase1 run-examples run-phase3 run-langchain run-discovery run-ollama
+.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
 
 # Default target
 help:
@@ -15,7 +15,15 @@ help:
 	@echo "  env          Copy environment template"
 	@echo ""
 	@echo "Development Commands:"
-	@echo "  test         Run tests"
+	@echo "  test         Run unit tests"
+	@echo "  test-all     Run all test suites"
+	@echo "  test-integration Run integration tests"
+	@echo "  test-slow    Run slow/performance tests"
+	@echo "  test-gpu     Run GPU-specific tests"
+	@echo "  test-coverage Run tests with coverage report"
+	@echo "  test-specific MODULE=<name> Run tests for specific module"
+	@echo "  test-env-check Check test environment setup"
+	@echo "  test-report  Generate comprehensive test report"
 	@echo "  lint         Run linting (black, isort, flake8)"
 	@echo "  format       Format code (black, isort)"
 	@echo "  typecheck    Run type checking (mypy)"
@@ -32,6 +40,7 @@ help:
 	@echo "  run-langchain Run LangChain integration demo"
 	@echo "  run-discovery Run complete novel discovery system demo"
 	@echo "  run-ollama   Run Ollama local LLM integration demo"
+	@echo "  run-agents   Run conversational agents and RAG systems demo"
 	@echo ""
 	@echo "CLI Commands:"
 	@echo "  cli-help     Show CLI help"
@@ -63,7 +72,42 @@ env:
 
 # Development
 test:
-	uv run pytest tests/ -v
+	uv run python tests/test_runner.py --suite unit --verbose
+
+test-all:
+	uv run python tests/test_runner.py --suite all --verbose
+
+test-integration:
+	uv run python tests/test_runner.py --suite integration --verbose
+
+test-slow:
+	uv run python tests/test_runner.py --suite slow --verbose
+
+test-gpu:
+	uv run python tests/test_runner.py --suite gpu --verbose
+
+test-coverage:
+	uv run python tests/test_runner.py --suite unit --verbose
+	@echo "Coverage report available at test_reports/htmlcov/index.html"
+
+test-specific:
+	@echo "Usage: make test-specific MODULE=<module_name>"
+	@echo "Example: make test-specific MODULE=utils"
+ifdef MODULE
+	uv run python tests/test_runner.py --module $(MODULE) --verbose
+endif
+
+test-env-check:
+	uv run python tests/test_runner.py --check-env
+
+test-env-setup:
+	uv run python tests/test_runner.py --setup-env
+
+test-env-cleanup:
+	uv run python tests/test_runner.py --cleanup
+
+test-report:
+	uv run python tests/test_runner.py --report
 
 lint:
 	uv run black --check src/ scripts/ tests/
@@ -81,7 +125,7 @@ typecheck:
 run-phase1:
 	PYTHONPATH=$(PWD)/src uv run python scripts/phase1_integration.py
 
-run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3 run-langchain run-discovery run-ollama
+run-examples: run-lit run-kg run-link run-ml run-phase2 run-phase3 run-langchain run-discovery run-ollama run-agents
 
 run-lit:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_literature_processing.py
@@ -109,6 +153,9 @@ run-discovery:
 
 run-ollama:
 	PYTHONPATH=$(PWD)/src uv run python scripts/example_ollama_integration.py
+
+run-agents:
+	PYTHONPATH=$(PWD)/src uv run python scripts/example_conversational_agents.py
 
 # CLI commands (working)
 cli-setup:

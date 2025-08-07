@@ -84,8 +84,8 @@ class ExperimentalDesign:
 class BiologicalReasoningTool(BaseTool):
     """Tool for biological reasoning and mechanism validation."""
     
-    name = "biological_reasoning"
-    description = "Analyzes biological mechanisms and validates hypotheses using domain knowledge"
+    name: str = "biological_reasoning"
+    description: str = "Analyzes biological mechanisms and validates hypotheses using domain knowledge"
     
     def __init__(self, llm):
         super().__init__()
@@ -122,8 +122,8 @@ Provide a comprehensive but concise analysis:
 class LiteratureValidationTool(BaseTool):
     """Tool for validating hypotheses against existing literature."""
     
-    name = "literature_validation"
-    description = "Validates hypotheses by checking against existing biomedical literature"
+    name: str = "literature_validation"
+    description: str = "Validates hypotheses by checking against existing biomedical literature"
     
     def __init__(self, llm):
         super().__init__()
@@ -160,8 +160,8 @@ Provide a structured analysis with specific references to research areas:
 class ExperimentalDesignTool(BaseTool):
     """Tool for designing experiments to test hypotheses."""
     
-    name = "experimental_design"
-    description = "Designs experiments to test biomedical hypotheses"
+    name: str = "experimental_design"
+    description: str = "Designs experiments to test biomedical hypotheses"
     
     def __init__(self, llm):
         super().__init__()

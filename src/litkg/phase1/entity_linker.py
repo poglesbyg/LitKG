@@ -12,7 +12,7 @@ import re
 import json
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Set
+from typing import Dict, List, Any, Optional, Tuple, Set, Union
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import pickle
@@ -26,7 +26,7 @@ import spacy
 from tqdm import tqdm
 
 from .literature_processor import Entity as LiteratureEntity, ProcessedDocument
-from .kg_preprocessor import StandardizedEntity, KGPreprocessor
+from .kg_preprocessor import StandardizedEntity, KnowledgeGraphPreprocessor as KGPreprocessor
 from litkg.utils.config import LitKGConfig, load_config, get_cache_dir
 from litkg.utils.logging import LoggerMixin
 
@@ -56,14 +56,14 @@ class LinkingResult:
 class FuzzyMatcher(LoggerMixin):
     """Handles fuzzy string matching between entities."""
     
-    def __init__(self, config: LitKGConfig):
-        self.config = config
-        self.linking_config = config.phase1.entity_linking
-        self.fuzzy_config = self.linking_config.fuzzy_matching
+    def __init__(self, config: Optional[LitKGConfig] = None):
+        self.config = load_config() if config is None else (config if isinstance(config, LitKGConfig) else load_config(config))
+        self.linking_config = self.config.phase1.entity_linking
+        self.fuzzy_config = self.linking_config.fuzzy_matching or {}
         
-        # Similarity thresholds
-        self.threshold = self.fuzzy_config["threshold"]
-        self.method = self.fuzzy_config["method"]
+        # Similarity thresholds with safe defaults
+        self.threshold = float(self.fuzzy_config.get("threshold", 0.8))
+        self.method = self.fuzzy_config.get("method", "levenshtein")
         
         # Precompiled regex patterns for normalization
         self.normalization_patterns = [
@@ -124,6 +124,20 @@ class FuzzyMatcher(LoggerMixin):
         union = len(ngrams1.union(ngrams2))
         
         return intersection / union if union > 0 else 0.0
+
+    # --- Additional APIs expected by tests ---
+    def compute_similarity(self, text1: str, text2: str) -> float:
+        return self.calculate_similarity(text1, text2)
+
+    def find_best_matches(self, query: str, candidates: List[str], top_k: int = 5) -> List[Dict[str, Any]]:
+        matches = self.find_fuzzy_matches(query, candidates)
+        return [
+            {"candidate": cand, "score": score}
+            for cand, score in matches[:top_k]
+        ]
+
+    def batch_match(self, queries: List[str], candidates: List[str], top_k: int = 5) -> List[List[Dict[str, Any]]]:
+        return [self.find_best_matches(q, candidates, top_k=top_k) for q in queries]
     
     def find_fuzzy_matches(
         self, 
@@ -292,9 +306,12 @@ class SemanticMatcher(LoggerMixin):
 class ContextualDisambiguator(LoggerMixin):
     """Handles disambiguation using context information."""
     
-    def __init__(self, config: LitKGConfig):
-        self.config = config
-        self.disambiguation_config = config.phase1.entity_linking.disambiguation
+    def __init__(self, config: Optional[LitKGConfig] = None):
+        self.config = load_config() if config is None else (config if isinstance(config, LitKGConfig) else load_config(config))
+        self.disambiguation_config = self.config.phase1.entity_linking.disambiguation or {}
+        # Safe defaults for tests
+        self.context_window = int(self.disambiguation_config.get("context_window", 100))
+        self.confidence_threshold = float(self.disambiguation_config.get("confidence_threshold", 0.7))
         
         # Context window size
         self.context_window = self.disambiguation_config["context_window"]
@@ -306,6 +323,8 @@ class ContextualDisambiguator(LoggerMixin):
         except OSError:
             self.logger.warning("spacy model not found, using basic disambiguation")
             self.nlp = None
+        # Frequency store for tests to patch
+        self.entity_frequencies: Dict[str, int] = {}
         
         # TF-IDF vectorizer for context similarity
         self.tfidf_vectorizer = TfidfVectorizer(
@@ -375,6 +394,42 @@ class ContextualDisambiguator(LoggerMixin):
         except Exception as e:
             self.logger.error(f"Error calculating context similarity: {e}")
             return 0.0
+
+    # --- Additional helpers expected by tests ---
+    def _compute_context_similarity(self, context: str, entity: StandardizedEntity) -> float:
+        return self.calculate_context_similarity(context, entity)
+
+    def disambiguate_with_context(self, entity: str, candidates: List[str], context: str) -> Dict[str, Any]:
+        # Simple heuristic: use context similarity scores from _compute_context_similarity if available via ontology db
+        scored = []
+        for candidate in candidates:
+            stub_entity = StandardizedEntity(id=candidate, name=candidate, type="ENTITY", source="", original_id=candidate, synonyms=[])
+            score = self._compute_context_similarity(context, stub_entity)
+            scored.append({"candidate": candidate, "confidence": score})
+        scored.sort(key=lambda x: x["confidence"], reverse=True)
+        return scored[0] if scored else {"candidate": candidates[0] if candidates else None, "confidence": 0.0}
+
+    def disambiguate_with_frequency(self, entity: str, candidates: List[str]) -> Dict[str, Any]:
+        best = None
+        best_freq = -1
+        for c in candidates:
+            freq = self.entity_frequencies.get(c, 0)
+            if freq > best_freq:
+                best_freq = freq
+                best = c
+        return {"candidate": best or (candidates[0] if candidates else None), "confidence": 1.0 if best_freq > 0 else 0.0}
+
+    def multi_criteria_disambiguation(self, entity: str, candidates: List[str], context: str) -> Dict[str, Any]:
+        # Combine frequency and context
+        scored = []
+        for c in candidates:
+            freq = self.entity_frequencies.get(c, 0)
+            stub_entity = StandardizedEntity(id=c, name=c, type="ENTITY", source="", original_id=c, synonyms=[])
+            ctx = self._compute_context_similarity(context, stub_entity)
+            combined = 0.6 * (1.0 if freq > 0 else 0.0) + 0.4 * ctx
+            scored.append({"candidate": c, "combined_score": combined})
+        scored.sort(key=lambda x: x["combined_score"], reverse=True)
+        return scored[0] if scored else {"candidate": candidates[0] if candidates else None, "combined_score": 0.0}
     
     def disambiguate_matches(
         self, 
@@ -451,7 +506,7 @@ class ContextualDisambiguator(LoggerMixin):
 class EntityLinker(LoggerMixin):
     """Main entity linking coordinator."""
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[Union[str, Dict[str, Any], LitKGConfig]] = None):
         self.config = load_config(config_path)
         
         # Initialize components
@@ -687,6 +742,11 @@ class EntityLinker(LoggerMixin):
         self._log_overall_statistics()
         
         return results
+
+
+# Backward-compatibility alias expected by tests
+class DisambiguationEngine(ContextualDisambiguator):
+    pass
     
     def _log_overall_statistics(self):
         """Log overall linking statistics."""

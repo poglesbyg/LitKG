@@ -28,7 +28,7 @@ from .graph_construction import (
 )
 
 from .training import (
-    HybridGNNTrainer,
+    GNNTrainer as HybridGNNTrainer,
     TrainingConfig,
     ContrastiveLoss,
     MultiTaskLoss,

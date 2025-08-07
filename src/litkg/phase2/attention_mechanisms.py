@@ -10,8 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter, Linear, Dropout, LayerNorm
-from typing import Optional, Tuple, Dict, List
-import numpy as np
+from typing import Optional, Tuple, Dict
 
 
 class MultiHeadAttention(nn.Module):
@@ -21,13 +20,17 @@ class MultiHeadAttention(nn.Module):
     
     def __init__(
         self,
-        d_model: int,
-        num_heads: int,
+        d_model: Optional[int] = None,
+        num_heads: int = 8,
         dropout: float = 0.1,
         bias: bool = True,
-        temperature: float = 1.0
+        temperature: float = 1.0,
+        embed_dim: Optional[int] = None
     ):
         super().__init__()
+        if embed_dim is not None and d_model is None:
+            d_model = embed_dim
+        assert d_model is not None
         assert d_model % num_heads == 0
         
         self.d_model = d_model
@@ -128,6 +131,13 @@ class CrossModalAttention(nn.Module):
         use_gating: bool = True
     ):
         super().__init__()
+        # For test compatibility
+        self.multihead_attn = nn.MultiheadAttention(
+            embed_dim=hidden_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
         
         self.lit_dim = lit_dim
         self.kg_dim = kg_dim
@@ -636,3 +646,26 @@ class AdaptiveAttention(nn.Module):
         }
         
         return output, attention_weights
+
+
+class AttentionPooling(nn.Module):
+    """Simple attention-based pooling over node features.
+
+    Produces a single pooled vector of shape [1, input_dim] given an input
+    tensor of shape [num_nodes, input_dim].
+    """
+
+    def __init__(self, input_dim: int, hidden_dim: int = 128, dropout: float = 0.0):
+        super().__init__()
+        self.score = nn.Sequential(
+            Linear(input_dim, hidden_dim),
+            nn.Tanh(),
+            Dropout(dropout),
+            Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [num_nodes, input_dim]
+        weights = torch.softmax(self.score(x).squeeze(-1), dim=0)  # [num_nodes]
+        pooled = torch.sum(weights.unsqueeze(-1) * x, dim=0, keepdim=True)  # [1, input_dim]
+        return pooled

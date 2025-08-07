@@ -149,6 +149,70 @@ directory = "src"
 [tool.hatch.build.targets.wheel]
 packages = ["litkg"]
 
+# Test configuration
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=litkg",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=html:test_reports/htmlcov",
+    "--cov-report=xml:test_reports/coverage.xml",
+    "--junit-xml=test_reports/junit.xml",
+]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests", 
+    "slow: Slow tests that take significant time",
+    "gpu: Tests that require GPU",
+    "network: Tests that require network access",
+]
+filterwarnings = [
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src/litkg"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__init__.py",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "test_reports/htmlcov"
+
+[tool.coverage.xml]
+output = "test_reports/coverage.xml"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
@@ -186,19 +250,7 @@ multi_line_output = 3
 line_length = 100
 known_first_party = ["litkg"]
 
-# pytest configuration
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--cov=src/litkg",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-]
+
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
@@ -238,22 +290,3 @@ module = [
 ]
 ignore_missing_imports = true
 
-# Coverage configuration
-[tool.coverage.run]
-source = ["src"]
-omit = [
-    "*/tests/*",
-    "*/test_*.py",
-    "*/__pycache__/*",
-    "*/site-packages/*",
-]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "if TYPE_CHECKING:",
-]

@@ -398,3 +398,117 @@ class BiomedicalPromptManager:
 
 # Global instance for easy access
 biomedical_prompts = BiomedicalPromptManager()
+
+
+# ----------------------------------------------------------------------------
+# Compatibility layer for tests expecting BiomedicalPromptTemplates
+# ----------------------------------------------------------------------------
+
+class BiomedicalPromptTemplates:
+    """High-level prompt template helpers expected by tests.
+
+    Provides convenience methods that return concrete prompt strings rather than
+    LangChain PromptTemplate objects. Internally reuses the prompt definitions
+    above where possible.
+    """
+
+    def __init__(self):
+        self.templates = {
+            "literature_analysis": EntityExtractionPrompts.BASIC_TEMPLATE,
+            "relation_extraction": RelationExtractionPrompts.BASIC_TEMPLATE,
+            "hypothesis_generation": HypothesisGenerationPrompts.BASIC_TEMPLATE,
+            "validation": ValidationPrompts.BASIC_TEMPLATE,
+        }
+
+    # Literature analysis prompt (simple, string-based)
+    def get_literature_analysis_prompt(self, paper_title: str, abstract: str, analysis_focus: str) -> str:
+        sections = [
+            "Task: Analyze biomedical literature",
+            f"Title: {paper_title}",
+            f"Abstract: {abstract}",
+            f"Focus: {analysis_focus}",
+            "Instructions: Identify key entities, mechanisms, and findings; summarize in 3-5 bullets.",
+        ]
+        return "\n\n".join(sections)
+
+    def get_hypothesis_generation_prompt(self, context: str, domain: str, evidence: list[str]) -> str:
+        evidence_block = "\n".join(f"- {e}" for e in evidence)
+        return (
+            "Task: Generate a testable biomedical hypothesis\n\n"
+            f"Domain: {domain}\n"
+            f"Context: {context}\n"
+            f"Evidence:\n{evidence_block}\n\n"
+            "Output: Provide HYPOTHESIS, MECHANISM, 3-5 PREDICTIONS, and EXPERIMENTS."
+        )
+
+    def get_experimental_design_prompt(self, hypothesis: str, research_question: str, constraints: list[str]) -> str:
+        constraints_block = "\n".join(f"- {c}" for c in constraints)
+        return (
+            "Task: Propose an experimental design to test a hypothesis\n\n"
+            f"Hypothesis: {hypothesis}\n"
+            f"Research Question: {research_question}\n"
+            f"Constraints:\n{constraints_block}\n\n"
+            "Output: Provide methods, controls, measurements, and expected outcomes."
+        )
+
+    def get_entity_extraction_prompt(self, text: str, entity_types: list[str]) -> str:
+        entity_types_block = ", ".join(entity_types)
+        return (
+            "Task: Extract biomedical entities from text\n\n"
+            f"Text: {text}\n"
+            f"Entity types: {entity_types_block}\n\n"
+            "Output format: one per line -> Entity | Type | Confidence"
+        )
+
+    def get_relation_extraction_prompt(self, text: str, entities: list[str]) -> str:
+        entities_block = ", ".join(entities)
+        return (
+            "Task: Extract relations among entities in text\n\n"
+            f"Text: {text}\n"
+            f"Entities: {entities_block}\n\n"
+            "Relation types: TREATS, CAUSES, PREVENTS, INHIBITS, ACTIVATES, REGULATES, ASSOCIATED_WITH, INTERACTS_WITH\n"
+            "Output format: Entity1 --[REL]--> Entity2 | Confidence | Evidence"
+        )
+
+    def get_validation_prompt(self, hypothesis: str, evidence: list[str], validation_criteria: list[str]) -> str:
+        evidence_block = "\n".join(f"- {e}" for e in evidence)
+        criteria_block = ", ".join(validation_criteria)
+        return (
+            "Task: Validate biomedical hypothesis\n\n"
+            f"Hypothesis: {hypothesis}\n"
+            f"Evidence:\n{evidence_block}\n\n"
+            f"Validation Criteria: {criteria_block}\n\n"
+            "Output: Provide plausibility score (1-10), supporting evidence, concerns, feasibility, and overall confidence."
+        )
+
+    def create_custom_prompt(self, template: str, variables: Dict[str, Any]) -> str:
+        return template.format(**variables)
+
+    def optimize_for_provider(self, base_prompt: str, provider: Any) -> str:
+        """Light provider-specific prompt adjustment.
+
+        Accepts either an enum value from LLMProvider or a string provider name.
+        """
+        try:
+            # Lazy import to avoid hard dependency during collection
+            from .unified_llm_interface import LLMProvider  # type: ignore
+            provider_name = provider.value if isinstance(provider, LLMProvider) else str(provider)
+        except Exception:
+            provider_name = str(provider)
+
+        provider_name_l = provider_name.lower()
+        if "openai" in provider_name_l:
+            return base_prompt + "\n\nStyle: Be concise, structured, and cite key points."
+        if "anthropic" in provider_name_l:
+            return base_prompt + "\n\nGuidance: Emphasize safety, uncertainty, and step-by-step reasoning."
+        if "ollama" in provider_name_l or "huggingface" in provider_name_l:
+            return base_prompt + "\n\nHint: Prefer compact instructions and explicit formatting."
+        return base_prompt
+
+    def validate_prompt(self, prompt: str) -> tuple[bool, list[str]]:
+        issues: list[str] = []
+        if not prompt or len(prompt.strip()) < 10:
+            issues.append("Prompt is too short")
+        if "{" in prompt and "}" in prompt:
+            issues.append("Unresolved placeholders detected")
+        return (len(issues) == 0, issues)

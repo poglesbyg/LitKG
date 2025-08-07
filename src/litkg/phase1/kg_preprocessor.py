@@ -10,14 +10,12 @@ This module handles:
 
 import json
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Any, Optional, Tuple, Set, Union
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from datetime import datetime
 import requests
-from urllib.parse import urljoin
-import sqlite3
+ 
 import networkx as nx
 from tqdm import tqdm
 import pickle
@@ -64,9 +62,9 @@ class StandardizedRelation:
 class OntologyMapper(LoggerMixin):
     """Maps entities to standard ontologies (UMLS, Gene Ontology)."""
     
-    def __init__(self, config: LitKGConfig):
-        self.config = config
-        self.ontology_config = config.phase1.knowledge_graphs.ontologies
+    def __init__(self, config: Optional[LitKGConfig] = None):
+        self.config = load_config() if config is None else (config if isinstance(config, LitKGConfig) else load_config(config))
+        self.ontology_config = self.config.phase1.knowledge_graphs.ontologies
         
         # Initialize mappings
         self.umls_mapping = {}
@@ -854,7 +852,9 @@ class KnowledgeGraphBuilder(LoggerMixin):
         # Load NetworkX graph
         gpickle_path = str(input_path).replace('.json', '.gpickle')
         if Path(gpickle_path).exists():
-            self.graph = nx.read_gpickle(gpickle_path)
+            import pickle
+            with open(gpickle_path, 'rb') as f:
+                self.graph = pickle.load(f)
         
         # Load entities and relations
         with open(input_path, 'r') as f:
@@ -871,7 +871,7 @@ class KnowledgeGraphBuilder(LoggerMixin):
         self.logger.info(f"Knowledge graph loaded from {input_path}")
 
 
-class KGPreprocessor(LoggerMixin):
+class KnowledgeGraphPreprocessor(LoggerMixin):
     """Main knowledge graph preprocessing coordinator."""
     
     def __init__(self, config_path: Optional[str] = None):
