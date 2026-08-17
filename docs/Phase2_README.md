@@ -50,6 +50,22 @@ Integrates literature and knowledge graph representations using cross-attention 
 - Multiple fusion layers for deep integration
 - Residual connections preserve original information
 
+**Differing sequence lengths.** Literature and KG subgraphs rarely have equal
+node counts, so cross-attention must track the query length and the key/value
+length separately. `MultiHeadAttention` derives `tgt_len` from the query and
+`src_len` from the key — an implementation that reuses one length for both
+crashes on essentially every real cross-modal batch.
+
+**Masks.** Nonzero entries are kept and zeros are masked out.
+`CrossModalAttention` takes boolean padding masks over nodes where `True`
+means *ignore*, and inverts them at the boundary. Masks are broadcast to
+`[batch, heads, tgt_len, src_len]`, accepting key-padding or full attention
+mask shapes.
+
+**Output dimension.** `output_dim` adds a projection head over node
+embeddings; when it equals `hidden_dim` the head is an identity. Returned
+`lit_node_embeddings` and `kg_node_embeddings` are projected to it.
+
 ### 4. Relation Predictor (`RelationPredictor`)
 
 Predicts relations between entity pairs and estimates confidence.
@@ -87,19 +103,51 @@ lit_enhanced, kg_enhanced, attention_weights = cross_attention(
 ## Training Infrastructure
 
 ### Multi-Task Loss Function
+
 ```python
 total_loss = (
     link_weight * link_prediction_loss +
     relation_weight * relation_classification_loss +
     confidence_weight * confidence_estimation_loss +
+    node_weight * node_embedding_loss +
     contrastive_weight * contrastive_alignment_loss
 )
 ```
 
+Only the terms whose targets are present contribute. A batch supervising just
+node embeddings produces only that term plus the contrastive term.
+
+If **no** term applies — predictions and targets share no supervised task —
+the loss raises rather than returning a bare `0`, which would fail later and
+less informatively at `.backward()`.
+
+### Batch format
+
+`GNNTrainer` accepts two layouts, normalized by `_unpack_batch`:
+
+```python
+# Graph objects
+{"lit_graph": Data(...), "kg_graph": Data(...), "labels": {...}}
+
+# Flat tensors
+{"lit_x": ..., "lit_edge_index": ..., "kg_x": ..., "kg_edge_index": ..., "labels": ...}
+```
+
+`labels` may be a dict of task name to target, or a bare tensor. A bare tensor
+is interpreted as a node-embedding regression target, since that is the only
+task whose target has one row per literature node.
+
 ### Contrastive Learning
+
 - Encourages aligned entities to have similar representations
 - Pushes non-aligned entities apart in embedding space
 - Improves cross-modal understanding
+
+The alignment matrix must match the embeddings being contrasted. Since the
+contrastive term operates on **graph** embeddings, the matrix is sized on the
+number of graphs in the batch, not the node count. Either the positive or
+negative set can be empty for a single-graph batch, so those terms are dropped
+rather than producing `nan` from an empty mean.
 
 ### Evaluation Metrics
 - **Link Prediction**: Accuracy, Precision, Recall, F1, AUC
@@ -120,6 +168,13 @@ total_loss = (
 2. **K-hop Neighborhood**: Extract local subgraphs around targets
 3. **Filtering**: Apply confidence thresholds and size limits
 4. **Feature Engineering**: Create node and edge embeddings
+
+Extraction uses a `MultiGraph`, not a simple `Graph`. Edge features one-hot
+encode `relation_type`, so collapsing parallel edges would keep only the last
+relation between a pair of entities and hide the others from the model — two
+entities joined by both `ASSOCIATED_WITH` and `MUTATED_IN` are two distinct
+claims. Undirected is acceptable here because the PyTorch Geometric conversion
+emits both directions explicitly.
 
 ### Entity Alignment
 1. **Entity Linking**: Use Phase 1 linking results
