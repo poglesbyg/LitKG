@@ -396,7 +396,14 @@ When uncertain, acknowledge limitations and suggest further investigation."""
         ]
     
     def _retrieve_knowledge(self, query: str) -> str:
-        """Retrieve relevant knowledge from the vector store."""
+        """
+        Retrieve relevant knowledge from the vector store.
+
+        Note: this and the sibling ``_`` tool functions return error text
+        rather than raising. That is the LangChain tool convention -- the agent
+        reads the returned string and can recover or report it, whereas an
+        exception aborts the whole agent run. Do not "fix" these into raises.
+        """
         if not self.vector_store:
             return "Knowledge base not available."
         
@@ -522,7 +529,16 @@ Response:"""
             if self.retrieval_chain and LANGCHAIN_AVAILABLE:
                 # Use RAG chain if available
                 response = self.retrieval_chain({"question": user_message})
-                answer = response["answer"]
+                # The output key depends on how the chain was configured, so
+                # do not assume "answer" is present.
+                if "answer" in response:
+                    answer = response["answer"]
+                elif "result" in response:
+                    answer = response["result"]
+                else:
+                    raise KeyError(
+                        f"Retrieval chain returned no answer; keys: {sorted(response)}"
+                    )
             else:
                 # Use direct LLM call
                 llm_response = self.llm_manager.process_biomedical_task(

@@ -194,23 +194,30 @@ class LiteratureGraphEncoder(nn.Module, LoggerMixin):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
+        edge_attr: Optional[torch.Tensor] = None,
         batch: Optional[torch.Tensor] = None,
         temporal_features: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through literature graph encoder.
-        
+
         Args:
             x: Node features [num_nodes, node_dim]
             edge_index: Edge indices [2, num_edges]
-            edge_attr: Edge features [num_edges, edge_dim]
+            edge_attr: Edge features [num_edges, edge_dim]. Defaults to zeros,
+                for literature graphs carrying no edge features.
             batch: Batch assignment [num_nodes]
             temporal_features: Temporal features [num_nodes, temporal_dim]
-            
+
         Returns:
             Dictionary with node embeddings and graph-level representation
         """
+        # Featureless edges default to zeros at this encoder's configured edge_dim
+        if edge_attr is None:
+            edge_attr = torch.zeros(
+                edge_index.size(1), self.edge_dim, device=x.device, dtype=x.dtype
+            )
+
         # Project input features
         h = self.node_projection(x)
         edge_features = self.edge_projection(edge_attr)
@@ -325,25 +332,36 @@ class KnowledgeGraphEncoder(nn.Module, LoggerMixin):
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        edge_attr: torch.Tensor,
-        relation_types: torch.Tensor,
+        edge_attr: Optional[torch.Tensor] = None,
+        relation_types: Optional[torch.Tensor] = None,
         batch: Optional[torch.Tensor] = None,
         entity_types: Optional[torch.Tensor] = None
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass through knowledge graph encoder.
-        
+
         Args:
             x: Node features [num_nodes, node_dim]
             edge_index: Edge indices [2, num_edges]
-            edge_attr: Edge features [num_edges, edge_dim]
-            relation_types: Relation type embeddings [num_edges, relation_dim]
+            edge_attr: Edge features [num_edges, edge_dim]. Defaults to zeros.
+            relation_types: Relation type embeddings [num_edges, relation_dim].
+                Defaults to zeros, for untyped edges.
             batch: Batch assignment [num_nodes]
             entity_types: Entity type indicators [num_nodes]
-            
+
         Returns:
             Dictionary with node embeddings and graph-level representation
         """
+        # Featureless/untyped edges default to zeros at this encoder's configured dims
+        if edge_attr is None:
+            edge_attr = torch.zeros(
+                edge_index.size(1), self.edge_dim, device=x.device, dtype=x.dtype
+            )
+        if relation_types is None:
+            relation_types = torch.zeros(
+                edge_index.size(1), self.relation_dim, device=x.device, dtype=x.dtype
+            )
+
         # Project input features
         h = self.node_projection(x)
         edge_features = self.edge_projection(edge_attr)
@@ -657,9 +675,7 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             # Expose expected attributes for tests
             self.lit_input_dim = lit_input_dim
             self.kg_input_dim = kg_input_dim
-        if output_dim is not None:
-            hidden_dim = hidden_dim or output_dim
-            self.output_dim = output_dim
+        self.output_dim = output_dim if output_dim is not None else hidden_dim
 
         assert lit_node_dim is not None and kg_node_dim is not None, "Literature and KG node dims must be provided"
         lit_edge_dim = lit_edge_dim or lit_node_dim
@@ -714,7 +730,14 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             dropout=dropout,
             use_confidence=use_confidence
         )
-        
+
+        # Node embedding head. Maps encoder output to the requested output_dim;
+        # a no-op when output_dim matches hidden_dim.
+        if self.output_dim != hidden_dim:
+            self.node_output_projection = Linear(hidden_dim, self.output_dim)
+        else:
+            self.node_output_projection = nn.Identity()
+
         # Initialize weights
         self.apply(self._init_weights)
     
@@ -770,15 +793,8 @@ class HybridGNNModel(nn.Module, LoggerMixin):
         Returns:
             Dictionary containing model outputs
         """
-        # Encode literature graph
-        # Default edge features to projected dims expected by encoders
-        if lit_edge_attr is None:
-            lit_edge_attr = torch.zeros(lit_edge_index.size(1), self.hidden_dim, device=lit_x.device)
-        if kg_edge_attr is None:
-            kg_edge_attr = torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
-        if kg_relation_types is None:
-            kg_relation_types = torch.zeros(kg_edge_index.size(1), self.hidden_dim, device=kg_x.device)
-
+        # Missing edge features are defaulted by each encoder at its own
+        # configured edge/relation dims, so they are passed through as-is.
         lit_outputs = self.lit_encoder(
             x=lit_x,
             edge_index=lit_edge_index,
@@ -807,10 +823,10 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             kg_embeddings=kg_embeddings
         )
         
-        # Prepare outputs
+        # Prepare outputs. Node embeddings are projected to output_dim.
         outputs = {
-            'lit_node_embeddings': lit_outputs['node_embeddings'],
-            'kg_node_embeddings': kg_outputs['node_embeddings'],
+            'lit_node_embeddings': self.node_output_projection(lit_outputs['node_embeddings']),
+            'kg_node_embeddings': self.node_output_projection(kg_outputs['node_embeddings']),
             'lit_graph_embedding': lit_outputs['graph_embedding'],
             'kg_graph_embedding': kg_outputs['graph_embedding'],
             'fused_representation': fusion_outputs['fused_representation']

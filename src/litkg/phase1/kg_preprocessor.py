@@ -69,10 +69,143 @@ class OntologyMapper(LoggerMixin):
         # Initialize mappings
         self.umls_mapping = {}
         self.go_mapping = {}
-        
+
+        # Term-level ontology database, keyed by normalized surface form.
+        # Populated by load_ontology(); consulted first by map_entity_to_ontology().
+        self.ontology_db: Dict[str, Dict[str, Any]] = {}
+
         # Load cached mappings if available
         self._load_cached_mappings()
-    
+
+    @staticmethod
+    def _normalize_term(term: str) -> str:
+        """Normalize a surface form for ontology lookup."""
+        return " ".join(str(term).lower().split())
+
+    def _load_ontology_file(self, ontology_name: str) -> Dict[str, Any]:
+        """
+        Read a single ontology definition file from disk.
+
+        Ontologies are JSON objects mapping a surface form to a term record,
+        e.g. {"BRCA1": {"id": "HGNC:1100", "type": "gene", "synonyms": [...]}}.
+        Returns an empty dict when the file is absent.
+        """
+        ontology_path = get_data_dir() / "ontologies" / f"{ontology_name}.json"
+
+        if not ontology_path.exists():
+            self.logger.warning(f"Ontology file not found: {ontology_path}")
+            return {}
+
+        try:
+            with open(ontology_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Failed to read ontology '{ontology_name}': {e}")
+            return {}
+
+    def load_ontology(self, ontology_name: str) -> Dict[str, Any]:
+        """
+        Load an ontology and register its terms in ``ontology_db``.
+
+        Each term is indexed under its own name and under any synonyms so that
+        map_entity_to_ontology() resolves alternate surface forms.
+
+        Returns:
+            The ontology as read from disk, keyed by its original surface forms.
+        """
+        ontology = self._load_ontology_file(ontology_name)
+
+        for surface_form, record in ontology.items():
+            if not isinstance(record, dict):
+                continue
+
+            entry = {**record, "ontology": ontology_name}
+            entry.setdefault("canonical_name", surface_form)
+
+            self.ontology_db[self._normalize_term(surface_form)] = entry
+            for synonym in record.get("synonyms", []):
+                self.ontology_db.setdefault(self._normalize_term(synonym), entry)
+
+        self.logger.info(
+            f"Loaded ontology '{ontology_name}': {len(ontology)} terms "
+            f"({len(self.ontology_db)} indexed surface forms)"
+        )
+        return ontology
+
+    def map_entity_to_ontology(
+        self, entity_name: str, entity_type: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Resolve an entity name to an ontology term record.
+
+        Consults the loaded ontology database first, then falls back to the
+        UMLS/GO mappers for entities no ontology file covers.
+
+        Returns:
+            A record with at least ``id``, or None when the entity is unresolved.
+        """
+        record = self.ontology_db.get(self._normalize_term(entity_name))
+        if record is None:
+            record = self.ontology_db.get(entity_name)
+
+        if record is not None:
+            mapping = dict(record)
+            mapping.setdefault("canonical_name", entity_name)
+            return mapping
+
+        # Fall back to the remote/heuristic mappers
+        normalized_type = (entity_type or "").lower()
+        if normalized_type in ("gene", "protein"):
+            go_id = self.map_to_gene_ontology(entity_name)
+            if go_id:
+                return {
+                    "id": go_id,
+                    "type": normalized_type,
+                    "canonical_name": entity_name,
+                    "ontology": "GO",
+                }
+
+        umls_id = self.map_to_umls(entity_name, normalized_type or "unknown")
+        if umls_id:
+            return {
+                "id": umls_id,
+                "type": normalized_type or "unknown",
+                "canonical_name": entity_name,
+                "ontology": "UMLS",
+            }
+
+        return None
+
+    def standardize_entities(
+        self, entities: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Attach ontology identifiers to a list of extracted entities.
+
+        Every input entity is returned, with ``ontology_id`` and
+        ``canonical_name`` added. Unresolved entities get ``ontology_id: None``
+        so callers can distinguish "not in any ontology" from "not attempted".
+        """
+        standardized = []
+
+        for entity in entities:
+            name = entity.get("text") or entity.get("name") or ""
+            mapping = self.map_entity_to_ontology(name, entity.get("label") or entity.get("type"))
+
+            enriched = dict(entity)
+            if mapping:
+                enriched["ontology_id"] = mapping.get("id")
+                enriched["canonical_name"] = mapping.get("canonical_name", name)
+            else:
+                enriched["ontology_id"] = None
+                enriched["canonical_name"] = name
+            standardized.append(enriched)
+
+        resolved = sum(1 for e in standardized if e["ontology_id"] is not None)
+        self.logger.info(f"Standardized {resolved}/{len(standardized)} entities to ontology terms")
+        return standardized
+
+
     def _load_cached_mappings(self):
         """Load cached ontology mappings."""
         cache_dir = get_data_dir() / "cache"
@@ -978,10 +1111,80 @@ class KnowledgeGraphPreprocessor(LoggerMixin):
         """Load the integrated knowledge graph."""
         self.graph_builder.load_graph(input_path)
 
-    # --- Test-expected methods (light wrappers) ---
+    def load_knowledge_graph(self, source: str) -> Dict[str, Any]:
+        """
+        Load a knowledge graph from a named source.
+
+        Args:
+            source: Source name, e.g. "civic", "tcga", "cptac".
+
+        Returns:
+            A dict with "nodes" and "edges" keys, preprocessed and validated.
+        """
+        self.logger.info(f"Loading knowledge graph from source: {source}")
+        kg = self._load_kg_from_source(source)
+
+        kg = {
+            **kg,
+            "nodes": self.preprocess_nodes(kg.get("nodes", [])),
+            "edges": self.preprocess_edges(kg.get("edges", [])),
+        }
+
+        self.logger.info(
+            f"Loaded {len(kg['nodes'])} nodes and {len(kg['edges'])} edges from {source}"
+        )
+        return kg
+
+    def save_graph(self, graph: nx.Graph, output_path: str) -> None:
+        """Persist a NetworkX graph to disk via pickle."""
+        path = Path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(path, "wb") as f:
+            pickle.dump(graph, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        self.logger.info(
+            f"Saved graph ({graph.number_of_nodes()} nodes, "
+            f"{graph.number_of_edges()} edges) to {path}"
+        )
+
+    def load_graph(self, input_path: str) -> nx.Graph:
+        """Load a NetworkX graph previously written by save_graph()."""
+        path = Path(input_path)
+
+        with open(path, "rb") as f:
+            graph = pickle.load(f)
+
+        self.logger.info(
+            f"Loaded graph ({graph.number_of_nodes()} nodes, "
+            f"{graph.number_of_edges()} edges) from {path}"
+        )
+        return graph
+
     def _load_kg_from_source(self, source: str) -> Dict[str, Any]:
-        # Minimal stub: return empty KG layout
-        return {"nodes": [], "edges": []}
+        """
+        Read the raw node/edge payload for a single source.
+
+        Reads the cached JSON export written by the per-source processors.
+        Returns an empty graph when the source has not been downloaded yet.
+        """
+        source_path = get_data_dir() / "processed" / f"{source}_kg.json"
+
+        if not source_path.exists():
+            self.logger.warning(
+                f"No processed data for source '{source}' at {source_path}; "
+                "run download_all_data()/process_all_data() first"
+            )
+            return {"nodes": [], "edges": []}
+
+        try:
+            with open(source_path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Failed to read KG for source '{source}': {e}")
+            return {"nodes": [], "edges": []}
+
+        return {"nodes": data.get("nodes", []), "edges": data.get("edges", [])}
 
     def preprocess_nodes(self, nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Ensure ids exist and normalize casing

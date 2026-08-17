@@ -14,6 +14,9 @@ Components:
 - Biomedical Query Agent with tool integration
 - RAG system for literature-augmented responses
 - Hypothesis Generation Agent with reasoning chains
+
+Agents and RAG default to the configured local Ollama model, so none of this
+requires an API key.
 """
 
 from .enhanced_literature_processor import (
@@ -47,25 +50,25 @@ from .rag_system import (
 __all__ = [
     # Enhanced Literature Processing
     "LangChainLiteratureProcessor",
-    "BiomedicalDocumentLoader", 
+    "BiomedicalDocumentLoader",
     "BiomedicalTextSplitter",
     "BiomedicaEmbeddings",
-    
+
     # LLM Entity Extraction
     "LLMEntityExtractor",
     "BiomedicalPromptTemplates",
     "EntityExtractionChain",
     "RelationExtractionChain",
-    
+
     # Biomedical Agents
     "BiomedicalQueryAgent",
     "BiomedicalToolkit",
-    "HypothesisGenerationAgent", 
+    "HypothesisGenerationAgent",
     "LiteratureValidationAgent",
-    
+
     # RAG System
     "BiomedicalRAGSystem",
     "LiteratureRetriever",
     "KnowledgeGraphRetriever",
-    "HybridRetriever"
+    "HybridRetriever",
 ]

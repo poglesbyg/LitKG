@@ -44,15 +44,19 @@ class TestConfidenceScoring:
             overall_confidence=0.85,
             literature_confidence=0.90,
             experimental_confidence=0.80,
-            consistency_score=0.75,
-            uncertainty_estimate=0.15
+            temporal_consistency=0.75,
+            epistemic_uncertainty=0.09,
+            aleatoric_uncertainty=0.12,
         )
-        
+
         assert metrics.overall_confidence == 0.85
         assert metrics.literature_confidence == 0.90
         assert metrics.experimental_confidence == 0.80
+        assert metrics.confidence_level == "high"
+
+        # consistency_score/uncertainty_estimate are derived read aliases
         assert metrics.consistency_score == 0.75
-        assert metrics.uncertainty_estimate == 0.15
+        assert metrics.uncertainty_estimate == pytest.approx(0.15, abs=1e-6)
     
     def test_confidence_scorer_init(self):
         """Test ConfidenceScorer initialization."""
@@ -168,18 +172,19 @@ class TestNoveltyDetection:
     def test_novel_relation_dataclass(self):
         """Test NovelRelation dataclass."""
         relation = NovelRelation(
-            head_entity="BRCA1",
-            tail_entity="alzheimer_disease",
+            entity1="BRCA1",
+            entity2="alzheimer_disease",
             relation_type="ASSOCIATED_WITH",
             confidence_score=0.75,
-            supporting_evidence=["evidence1", "evidence2"],
+            evidence_sources=["evidence1", "evidence2"],
             novelty_score=0.90
         )
-        
-        assert relation.head_entity == "BRCA1"
-        assert relation.tail_entity == "alzheimer_disease"
+
         assert relation.confidence_score == 0.75
         assert relation.novelty_score == 0.90
+        # head_entity/tail_entity/supporting_evidence are read aliases
+        assert relation.head_entity == "BRCA1"
+        assert relation.tail_entity == "alzheimer_disease"
         assert len(relation.supporting_evidence) == 2
     
     def test_discovery_pattern_dataclass(self):
@@ -187,13 +192,14 @@ class TestNoveltyDetection:
         pattern = DiscoveryPattern(
             pattern_type="co_occurrence",
             entities=["BRCA1", "TP53", "DNA_repair"],
-            pattern_strength=0.85,
+            confidence=0.85,
             frequency=10,
             description="Genes frequently co-occurring in DNA repair contexts"
         )
-        
+
         assert pattern.pattern_type == "co_occurrence"
         assert len(pattern.entities) == 3
+        # pattern_strength is a read alias for confidence
         assert pattern.pattern_strength == 0.85
     
     def test_novel_relation_predictor_init(self):
@@ -205,26 +211,27 @@ class TestNoveltyDetection:
     def test_predict_novel_relations(self, sample_knowledge_graph):
         """Test novel relation prediction."""
         predictor = NovelRelationPredictor()
-        
-        # Mock the prediction model
-        with patch.object(predictor, 'prediction_model') as mock_model:
-            mock_model.predict.return_value = [
-                {
-                    'head': 'BRCA1',
-                    'tail': 'alzheimer_disease',
-                    'relation': 'ASSOCIATED_WITH',
-                    'confidence': 0.75
-                }
-            ]
-            
-            novel_relations = predictor.predict_novel_relations(
-                knowledge_graph=sample_knowledge_graph,
-                threshold=0.7
-            )
-            
-            assert len(novel_relations) >= 0
-            if novel_relations:
-                assert isinstance(novel_relations[0], NovelRelation)
+
+        # Graph-structure path: no trained embeddings needed. In the sample
+        # graph BRCA1 links to both cancers and to TP53, so TP53 and the
+        # cancers share BRCA1 as a neighbour and are candidate missing links.
+        novel_relations = predictor.predict_novel_relations(
+            knowledge_graph=sample_knowledge_graph,
+            threshold=0.7
+        )
+
+        assert len(novel_relations) > 0
+        assert all(isinstance(r, NovelRelation) for r in novel_relations)
+
+        # Predictions must be genuinely absent from the graph
+        existing = {
+            frozenset((e["source"], e["target"]))
+            for e in sample_knowledge_graph["edges"]
+        }
+        for relation in novel_relations:
+            assert frozenset((relation.entity1, relation.entity2)) not in existing
+            assert 0 <= relation.confidence_score <= 1
+            assert relation.prediction_reasoning
     
     def test_pattern_discovery_engine(self):
         """Test PatternDiscoveryEngine."""
@@ -242,43 +249,51 @@ class TestNoveltyDetection:
                 DiscoveryPattern(
                     pattern_type="co_occurrence",
                     entities=["BRCA1", "TP53"],
-                    pattern_strength=0.85,
+                    confidence=0.85,
                     frequency=5,
                     description="DNA repair genes"
                 )
             ]
             mock_extract.return_value = mock_patterns
-            
+
             patterns = engine.discover_patterns(entities_data)
-            
+
             assert len(patterns) == 1
             assert isinstance(patterns[0], DiscoveryPattern)
+
+        # Unmocked, all three entities share the "dna" and "repair" context
+        real_patterns = engine._extract_patterns(entities_data)
+        assert real_patterns
+        shared = {e for p in real_patterns for e in p.entities}
+        assert {"BRCA1", "TP53", "ATM"} <= shared
     
     def test_biological_plausibility_checker(self):
         """Test BiologicalPlausibilityChecker."""
         checker = BiologicalPlausibilityChecker()
         
         novel_relation = NovelRelation(
-            head_entity="BRCA1",
-            tail_entity="breast_cancer",
+            entity1="BRCA1",
+            entity2="breast_cancer",
             relation_type="ASSOCIATED_WITH",
             confidence_score=0.85,
-            supporting_evidence=["evidence1"],
+            evidence_sources=["evidence1"],
             novelty_score=0.70
         )
-        
-        # Mock biological knowledge base
-        with patch.object(checker, 'biological_kb') as mock_kb:
-            mock_kb.check_plausibility.return_value = {
-                'plausible': True,
-                'score': 0.80,
-                'reasoning': 'BRCA1 is known to be involved in breast cancer'
-            }
-            
-            plausibility = checker.check_plausibility(novel_relation)
-            
-            assert plausibility['plausible'] is True
-            assert 0 <= plausibility['score'] <= 1
+
+        # Entity types resolve from the knowledge base when not passed in.
+        # GENE-DISEASE is a high-plausibility pairing (0.8 by rule).
+        checker.biological_kb = {
+            "BRCA1": {"type": "GENE"},
+            "breast_cancer": {"type": "DISEASE"},
+        }
+
+        plausibility = checker.check_plausibility(novel_relation)
+
+        assert plausibility['plausible'] is True
+        assert 0 <= plausibility['score'] <= 1
+        assert plausibility['entity1_type'] == "GENE"
+        assert plausibility['entity2_type'] == "DISEASE"
+        assert 'BRCA1' in plausibility['reasoning']
     
     def test_novelty_detection_system(self):
         """Test NoveltyDetectionSystem integration."""
@@ -291,11 +306,11 @@ class TestNoveltyDetection:
         with patch.object(system.relation_predictor, 'predict_novel_relations') as mock_predict:
             mock_predict.return_value = [
                 NovelRelation(
-                    head_entity="BRCA1",
-                    tail_entity="new_disease",
+                    entity1="BRCA1",
+                    entity2="new_disease",
                     relation_type="ASSOCIATED_WITH",
                     confidence_score=0.80,
-                    supporting_evidence=["evidence1"],
+                    evidence_sources=["evidence1"],
                     novelty_score=0.90
                 )
             ]
@@ -431,11 +446,11 @@ class TestHypothesisGeneration:
         input_data = {
             'novel_relations': [
                 NovelRelation(
-                    head_entity="BRCA1",
-                    tail_entity="alzheimer_disease",
+                    entity1="BRCA1",
+                    entity2="alzheimer_disease",
                     relation_type="ASSOCIATED_WITH",
                     confidence_score=0.75,
-                    supporting_evidence=["evidence1"],
+                    evidence_sources=["evidence1"],
                     novelty_score=0.90
                 )
             ],
@@ -708,11 +723,11 @@ class TestPhase3Integration:
             mock_novelty.return_value = {
                 'novel_relations': [
                     NovelRelation(
-                        head_entity="BRCA1",
-                        tail_entity="alzheimer_disease",
+                        entity1="BRCA1",
+                        entity2="alzheimer_disease",
                         relation_type="ASSOCIATED_WITH",
                         confidence_score=0.75,
-                        supporting_evidence=["evidence1"],
+                        evidence_sources=["evidence1"],
                         novelty_score=0.90
                     )
                 ],

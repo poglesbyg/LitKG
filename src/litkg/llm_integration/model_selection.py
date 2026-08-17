@@ -14,11 +14,12 @@ Features:
 """
 
 from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
 from ..utils.logging import LoggerMixin
+from .unified_llm_interface import LLMProvider
 
 
 class TaskComplexity(Enum):
@@ -43,11 +44,22 @@ class ModelRecommendation:
     model_name: str
     provider: str
     confidence: float
-    reasoning: str
-    expected_performance: Dict[str, float]
-    resource_requirements: Dict[str, str]
-    cost_estimate: float
-    alternatives: List[str]
+    reasoning: str = ""
+    expected_performance: Dict[str, float] = field(default_factory=dict)
+    resource_requirements: Dict[str, str] = field(default_factory=dict)
+    cost_estimate: float = 0.0
+    estimated_time: float = 0.0
+    alternatives: List[str] = field(default_factory=list)
+
+    @property
+    def model(self) -> str:
+        """Alias for model_name."""
+        return self.model_name
+
+    @property
+    def estimated_cost(self) -> float:
+        """Alias for cost_estimate."""
+        return self.cost_estimate
 
 
 @dataclass
@@ -70,10 +82,12 @@ class BiomedicalModelRecommendations:
             "entity_extraction": {
                 TaskComplexity.SIMPLE: [
                     ("mistral:7b", "ollama", 0.85),
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75)
                 ],
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.93),
                     ("llama3.1:8b", "ollama", 0.90),
                     ("gpt-3.5-turbo", "openai", 0.85),
                     ("claude-3-haiku", "anthropic", 0.80)
@@ -88,11 +102,13 @@ class BiomedicalModelRecommendations:
             # Relation Extraction
             "relation_extraction": {
                 TaskComplexity.SIMPLE: [
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75),
                     ("mistral:7b", "ollama", 0.70)
                 ],
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.88),
                     ("llama3.1:8b", "ollama", 0.85),
                     ("gpt-4", "openai", 0.90),
                     ("claude-3-sonnet", "anthropic", 0.85)
@@ -107,6 +123,7 @@ class BiomedicalModelRecommendations:
             # Hypothesis Generation
             "hypothesis_generation": {
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.78),
                     ("llama3.1:8b", "ollama", 0.75),
                     ("gpt-3.5-turbo", "openai", 0.80),
                     ("claude-3-haiku", "anthropic", 0.75)
@@ -127,6 +144,7 @@ class BiomedicalModelRecommendations:
             "validation": {
                 TaskComplexity.MODERATE: [
                     ("gpt-3.5-turbo", "openai", 0.80),
+                    ("qwen3:8b", "ollama", 0.78),
                     ("llama3.1:8b", "ollama", 0.75),
                     ("claude-3-haiku", "anthropic", 0.78)
                 ],
@@ -145,6 +163,7 @@ class BiomedicalModelRecommendations:
             # Literature Analysis
             "literature_analysis": {
                 TaskComplexity.SIMPLE: [
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75)
                 ],
@@ -172,11 +191,15 @@ class BiomedicalModelRecommendations:
             "gpt-4-turbo": {"memory": "0GB", "cpu": "none", "gpu": "none"},
             "claude-3-haiku": {"memory": "0GB", "cpu": "none", "gpu": "none"},
             "claude-3-sonnet": {"memory": "0GB", "cpu": "none", "gpu": "none"},
-            "claude-3-opus": {"memory": "0GB", "cpu": "none", "gpu": "none"}
+            "claude-3-opus": {"memory": "0GB", "cpu": "none", "gpu": "none"},
+            "qwen3:8b": {"memory": "8GB", "cpu": "moderate", "gpu": "optional"},
+            "qwen3-coder:30b": {"memory": "24GB", "cpu": "high", "gpu": "recommended"}
         }
         
         # Cost estimates (per 1K tokens)
         self.cost_estimates = {
+            "qwen3:8b": 0.0,
+            "qwen3-coder:30b": 0.0,
             "mistral:7b": 0.0,
             "llama3.1:8b": 0.0,
             "llama3.1:70b": 0.0,
@@ -196,7 +219,322 @@ class ModelSelector(LoggerMixin):
     def __init__(self):
         self.recommendations_db = BiomedicalModelRecommendations()
         self.performance_history = {}
+
+        # Flat per-model views over the recommendations database, keyed by
+        # model name, for callers that need capabilities or pricing directly.
+        self.model_capabilities = self._build_model_capabilities()
+        self.cost_models = dict(self.recommendations_db.cost_estimates)
+
         self.logger.info("Initialized ModelSelector")
+
+    def _build_model_capabilities(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Flatten the task/complexity matrix into a per-model capability record.
+
+        Each model's best score across all tasks becomes its performance score,
+        and the tasks it appears in become its strengths.
+        """
+        capabilities: Dict[str, Dict[str, Any]] = {}
+
+        for task, complexity_levels in self.recommendations_db.task_model_matrix.items():
+            for complexity, candidates in complexity_levels.items():
+                for model_name, provider, score in candidates:
+                    entry = capabilities.setdefault(
+                        model_name,
+                        {
+                            "provider": provider,
+                            "strengths": [],
+                            "performance_score": 0.0,
+                            "cost_per_query": self.recommendations_db.cost_estimates.get(
+                                model_name, 0.0
+                            ),
+                            "resource_requirements": self.recommendations_db.
+                            resource_requirements.get(model_name, {}),
+                            "local_inference": provider == LLMProvider.OLLAMA,
+                            "max_complexity": complexity,
+                        },
+                    )
+                    if task not in entry["strengths"]:
+                        entry["strengths"].append(task)
+                    entry["performance_score"] = max(entry["performance_score"], score)
+
+        return capabilities
+
+    @staticmethod
+    def _complexity_for_task(task_type: str) -> TaskComplexity:
+        """Infer a default complexity from the task name."""
+        simple_markers = ("simple", "basic", "qa")
+        complex_markers = ("hypothesis", "reasoning", "validation", "discovery")
+
+        lowered = task_type.lower()
+        if any(marker in lowered for marker in complex_markers):
+            return TaskComplexity.COMPLEX
+        if any(marker in lowered for marker in simple_markers):
+            return TaskComplexity.SIMPLE
+        return TaskComplexity.MODERATE
+
+    def _estimated_time(self, provider: str) -> float:
+        """Rough per-query latency estimate in seconds, by provider."""
+        return 2.0 if provider == LLMProvider.OLLAMA else 1.0
+
+    def select_model_for_task(
+        self,
+        task_type: str,
+        max_cost: Optional[float] = None,
+        require_local: bool = False,
+        min_performance: float = 0.0,
+        complexity: Optional[TaskComplexity] = None
+    ) -> Optional[ModelRecommendation]:
+        """
+        Pick the best model for a task, honoring cost and locality constraints.
+
+        Unlike recommend_model(), this searches every task in the database when
+        the task name is unknown, and returns None instead of raising when
+        nothing qualifies.
+
+        Args:
+            task_type: Task name, e.g. "literature_analysis".
+            max_cost: Maximum acceptable cost per query.
+            require_local: Only consider locally-run models.
+            min_performance: Minimum performance score.
+            complexity: Task complexity; inferred from the name when omitted.
+
+        Returns:
+            The best ModelRecommendation, or None if nothing qualifies.
+        """
+        if complexity is None:
+            complexity = self._complexity_for_task(task_type)
+
+        candidates = self._get_candidates(task_type, complexity)
+
+        # Unknown task: fall back to the flattened capability view
+        if not candidates:
+            candidates = [
+                (name, entry["provider"], entry["performance_score"])
+                for name, entry in self.model_capabilities.items()
+            ]
+
+        qualified = []
+        for model_name, provider, score in candidates:
+            if require_local and provider != LLMProvider.OLLAMA:
+                continue
+            if score < min_performance:
+                continue
+
+            cost = self.cost_models.get(model_name, 0.0)
+            if max_cost is not None and cost > max_cost:
+                continue
+
+            qualified.append((model_name, provider, score))
+
+        if not qualified:
+            self.logger.warning(
+                f"No model satisfies task={task_type!r}, max_cost={max_cost}, "
+                f"require_local={require_local}, min_performance={min_performance}"
+            )
+            return None
+
+        scored = self._score_candidates(qualified, task_type, {
+            "accuracy": 0.4, "cost": 0.3, "speed": 0.2, "privacy": 0.1
+        })
+
+        model_name, provider, base_score = scored[0][:3]
+        recommendation = self._create_recommendation(
+            model_name, provider, base_score, task_type, complexity, scored[1:6]
+        )
+        recommendation.estimated_time = self._estimated_time(provider)
+        return recommendation
+
+    def optimize_for_cost(
+        self,
+        task_type: str,
+        max_cost: float,
+        min_quality: float = 0.0
+    ) -> Optional[ModelRecommendation]:
+        """
+        Pick the cheapest model that still clears a quality bar.
+
+        Args:
+            task_type: Task name.
+            max_cost: Hard cost ceiling per query.
+            min_quality: Minimum performance score to accept.
+
+        Returns:
+            The cheapest qualifying ModelRecommendation, or None.
+        """
+        complexity = self._complexity_for_task(task_type)
+        candidates = self._get_candidates(task_type, complexity) or [
+            (name, entry["provider"], entry["performance_score"])
+            for name, entry in self.model_capabilities.items()
+        ]
+
+        qualified = [
+            (name, provider, score)
+            for name, provider, score in candidates
+            if score >= min_quality and self.cost_models.get(name, 0.0) <= max_cost
+        ]
+
+        if not qualified:
+            self.logger.warning(
+                f"No model under {max_cost} per query reaches quality {min_quality} "
+                f"for task={task_type!r}"
+            )
+            return None
+
+        # Cheapest first, breaking ties on the better score
+        qualified.sort(key=lambda c: (self.cost_models.get(c[0], 0.0), -c[2]))
+
+        model_name, provider, base_score = qualified[0]
+        recommendation = self._create_recommendation(
+            model_name, provider, base_score, task_type, complexity, qualified[1:6]
+        )
+        recommendation.reasoning = (
+            f"Cheapest model at {self.cost_models.get(model_name, 0.0):.6f}/query "
+            f"meeting quality >= {min_quality}. " + recommendation.reasoning
+        )
+        recommendation.estimated_time = self._estimated_time(provider)
+        return recommendation
+
+    def optimize_for_performance(
+        self,
+        task_type: str,
+        min_performance: float = 0.0,
+        max_cost: Optional[float] = None
+    ) -> Optional[ModelRecommendation]:
+        """
+        Pick the highest-scoring model for a task.
+
+        Args:
+            task_type: Task name.
+            min_performance: Minimum performance score to accept. Doubles as
+                the confidence floor of the returned recommendation.
+            max_cost: Optional cost ceiling.
+
+        Returns:
+            The best-performing qualifying ModelRecommendation, or None.
+        """
+        complexity = self._complexity_for_task(task_type)
+        candidates = self._get_candidates(task_type, complexity) or [
+            (name, entry["provider"], entry["performance_score"])
+            for name, entry in self.model_capabilities.items()
+        ]
+
+        qualified = [
+            (name, provider, score)
+            for name, provider, score in candidates
+            if score >= min_performance
+            and (max_cost is None or self.cost_models.get(name, 0.0) <= max_cost)
+        ]
+
+        if not qualified:
+            self.logger.warning(
+                f"No model reaches performance {min_performance} for task={task_type!r}"
+            )
+            return None
+
+        # Best score first, breaking ties on lower cost
+        qualified.sort(key=lambda c: (-c[2], self.cost_models.get(c[0], 0.0)))
+
+        model_name, provider, base_score = qualified[0]
+        recommendation = self._create_recommendation(
+            model_name, provider, base_score, task_type, complexity, qualified[1:6]
+        )
+        recommendation.reasoning = (
+            f"Highest performance score {base_score:.2f} for this task. "
+            + recommendation.reasoning
+        )
+        recommendation.estimated_time = self._estimated_time(provider)
+        return recommendation
+
+    def select_models_for_batch(
+        self, tasks: List[Dict[str, Any]]
+    ) -> List[Optional[ModelRecommendation]]:
+        """
+        Select a model for each task in a batch.
+
+        Args:
+            tasks: One dict per task. Each needs a "task" (or "task_type") key
+                and may carry "max_cost", "require_local", "min_performance".
+
+        Returns:
+            One recommendation per input task, positionally aligned. Entries are
+            None where no model qualified, so callers keep the alignment.
+        """
+        recommendations = []
+
+        for spec in tasks:
+            task_type = spec.get("task") or spec.get("task_type")
+            if not task_type:
+                self.logger.warning(f"Skipping batch entry with no task name: {spec}")
+                recommendations.append(None)
+                continue
+
+            recommendations.append(
+                self.select_model_for_task(
+                    task_type=task_type,
+                    max_cost=spec.get("max_cost"),
+                    require_local=spec.get("require_local", False),
+                    min_performance=spec.get("min_performance", 0.0),
+                )
+            )
+
+        return recommendations
+
+    def compare_models(
+        self, models: List[str], task: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Score several named models against one task, best first.
+
+        Args:
+            models: Model names to compare.
+            task: Task to score them for.
+
+        Returns:
+            One dict per known model with "model", "provider", "score",
+            "performance_score", "cost_per_query", "estimated_time", and
+            "suited_to_task". Unknown model names are omitted.
+        """
+        complexity = self._complexity_for_task(task)
+
+        # Scores this task assigns explicitly, if the task is in the database
+        task_scores = {
+            name: score
+            for name, _, score in self._get_candidates(task, complexity)
+        }
+
+        comparison = []
+        for model_name in models:
+            entry = self.model_capabilities.get(model_name)
+            if entry is None:
+                self.logger.warning(f"Unknown model in comparison: {model_name}")
+                continue
+
+            provider = entry["provider"]
+            performance = task_scores.get(model_name, entry["performance_score"])
+            cost = self.cost_models.get(model_name, 0.0)
+
+            # Same weighting as _score_candidates, so rankings stay consistent
+            cost_score = 1.0 - min(cost / 0.1, 1.0)
+            speed_score = 0.8 if provider == LLMProvider.OLLAMA else 0.6
+            privacy_score = 1.0 if provider == LLMProvider.OLLAMA else 0.3
+            composite = (
+                performance * 0.4 + cost_score * 0.3
+                + speed_score * 0.2 + privacy_score * 0.1
+            )
+
+            comparison.append({
+                "model": model_name,
+                "provider": provider,
+                "score": composite,
+                "performance_score": performance,
+                "cost_per_query": cost,
+                "estimated_time": self._estimated_time(provider),
+                "suited_to_task": model_name in task_scores,
+            })
+
+        comparison.sort(key=lambda c: c["score"], reverse=True)
+        return comparison
     
     def recommend_model(
         self,
@@ -429,6 +767,7 @@ class ModelSelector(LoggerMixin):
             expected_performance=expected_performance,
             resource_requirements=resource_requirements,
             cost_estimate=cost_estimate,
+            estimated_time=expected_performance["response_time"],
             alternatives=alternative_names
         )
     

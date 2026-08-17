@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Dict, Any, Optional, Tuple, Set
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -45,18 +45,40 @@ from .confidence_scoring import ConfidenceScorer, ConfidenceMetrics
 
 @dataclass
 class NovelRelation:
-    """Represents a predicted novel relationship."""
+    """
+    Represents a predicted novel relationship.
+
+    ``entity1``/``entity2`` are the subject and object of a directed relation;
+    ``head_entity``/``tail_entity`` are read aliases for that reading.
+    """
     entity1: str
     entity2: str
     relation_type: str
     confidence_score: float
-    evidence_sources: List[str]
-    supporting_papers: List[str]
-    biological_plausibility: float
+    evidence_sources: List[str] = field(default_factory=list)
+    supporting_papers: List[str] = field(default_factory=list)
+    biological_plausibility: float = 0.0
+    # How unlike existing knowledge this relation is, in [0, 1]
+    novelty_score: float = 0.0
     temporal_emergence: Optional[str] = None
     prediction_reasoning: Optional[str] = None
     validation_status: str = "pending"  # pending, validated, rejected
-    
+
+    @property
+    def head_entity(self) -> str:
+        """Alias for entity1, the subject of the relation."""
+        return self.entity1
+
+    @property
+    def tail_entity(self) -> str:
+        """Alias for entity2, the object of the relation."""
+        return self.entity2
+
+    @property
+    def supporting_evidence(self) -> List[str]:
+        """All evidence backing this relation: sources plus supporting papers."""
+        return list(self.evidence_sources) + list(self.supporting_papers)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return asdict(self)
@@ -67,11 +89,17 @@ class DiscoveryPattern:
     """Represents a discovered pattern in the knowledge graph."""
     pattern_type: str  # "co_occurrence", "temporal", "pathway", "drug_target"
     entities: List[str]
-    frequency: int
-    confidence: float
-    supporting_evidence: List[str]
-    biological_context: str
-    potential_relations: List[NovelRelation]
+    frequency: int = 0
+    confidence: float = 0.0
+    supporting_evidence: List[str] = field(default_factory=list)
+    biological_context: str = ""
+    potential_relations: List[NovelRelation] = field(default_factory=list)
+    description: str = ""
+
+    @property
+    def pattern_strength(self) -> float:
+        """Alias for confidence, the strength of this pattern."""
+        return self.confidence
 
 
 class NovelRelationPredictor(nn.Module, LoggerMixin):
@@ -163,14 +191,138 @@ class NovelRelationPredictor(nn.Module, LoggerMixin):
             "entity_pairs": entity_pairs
         }
     
+    def compute_novelty_score(
+        self,
+        relation_candidate: Dict[str, Any],
+        existing_knowledge: Dict[str, List[str]]
+    ) -> float:
+        """
+        Score how novel a candidate relation is against known knowledge.
+
+        A relation is novel when its object is absent from what is already
+        recorded for its subject. Novelty is tempered by how much is already
+        known: an unseen partner for a well-studied gene is more surprising
+        than one for an entity with a single recorded association.
+
+        Args:
+            relation_candidate: {"head", "tail"} (or "entity1"/"entity2").
+            existing_knowledge: Known partners keyed by entity name.
+
+        Returns:
+            Novelty in [0, 1]. 0.0 when the relation is already known.
+        """
+        head = relation_candidate.get("head") or relation_candidate.get("entity1", "")
+        tail = relation_candidate.get("tail") or relation_candidate.get("entity2", "")
+
+        known_for_head = existing_knowledge.get(head, [])
+        known_for_tail = existing_knowledge.get(tail, [])
+
+        # Already recorded in either direction: not novel
+        if tail in known_for_head or head in known_for_tail:
+            return 0.0
+
+        # Neither entity is known at all: unverifiable rather than novel, so
+        # this sits mid-scale rather than claiming maximum novelty.
+        if not known_for_head and not known_for_tail:
+            return 0.5
+
+        # Confidence in the novelty grows with how well-characterized the
+        # entities are, saturating around 10 known partners.
+        coverage = max(len(known_for_head), len(known_for_tail))
+        confidence_in_novelty = min(coverage / 10.0, 1.0)
+
+        return float(0.5 + 0.5 * confidence_in_novelty)
+
+    def predict_from_graph(
+        self,
+        knowledge_graph: Dict[str, Any],
+        threshold: float = 0.7,
+        top_k: int = 100
+    ) -> List[NovelRelation]:
+        """
+        Predict novel links from graph structure alone, without embeddings.
+
+        Scores unconnected node pairs by Adamic-Adar: shared neighbours are
+        evidence of a missing link, and rare shared neighbours count for more
+        than hub nodes everything connects to. This is the untrained baseline
+        used when no GNN embeddings are available; predict_novel_relations()
+        is the learned path.
+
+        Args:
+            knowledge_graph: {"nodes": [{"id", ...}], "edges": [{"source", "target", ...}]}
+            threshold: Minimum normalized score to report.
+            top_k: Maximum number of relations to return.
+
+        Returns:
+            Novel relations, highest scoring first.
+        """
+        nodes = knowledge_graph.get("nodes", [])
+        edges = knowledge_graph.get("edges", [])
+
+        if len(nodes) < 2:
+            self.logger.warning("Graph has fewer than 2 nodes; no links to predict")
+            return []
+
+        graph = nx.Graph()
+        for node in nodes:
+            node_id = node.get("id") if isinstance(node, dict) else node
+            if node_id is not None:
+                graph.add_node(node_id, **(node if isinstance(node, dict) else {}))
+        for edge in edges:
+            source, target = edge.get("source"), edge.get("target")
+            if source in graph and target in graph:
+                graph.add_edge(source, target, **edge)
+
+        candidates = [
+            (u, v) for u, v in nx.non_edges(graph)
+        ]
+        if not candidates:
+            self.logger.info("Graph is complete; no missing links to predict")
+            return []
+
+        scores = list(nx.adamic_adar_index(graph, candidates))
+        max_score = max((s for _, _, s in scores), default=0.0)
+        if max_score <= 0:
+            self.logger.info("No candidate pair shares a neighbour; nothing to predict")
+            return []
+
+        predictions = []
+        for u, v, raw_score in scores:
+            normalized = raw_score / max_score
+            if normalized < threshold:
+                continue
+
+            shared = list(nx.common_neighbors(graph, u, v))
+            predictions.append(NovelRelation(
+                entity1=u,
+                entity2=v,
+                relation_type="ASSOCIATED_WITH",
+                confidence_score=float(normalized),
+                evidence_sources=[f"shared_neighbor:{n}" for n in shared],
+                novelty_score=float(normalized),
+                prediction_reasoning=(
+                    f"{u} and {v} are unconnected but share "
+                    f"{len(shared)} neighbour(s): {', '.join(map(str, shared))}"
+                ),
+            ))
+
+        predictions.sort(key=lambda r: r.confidence_score, reverse=True)
+        self.logger.info(
+            f"Predicted {len(predictions)} novel links from graph structure "
+            f"({len(candidates)} candidate pairs considered)"
+        )
+        return predictions[:top_k]
+
     def predict_novel_relations(
         self,
-        entity_embeddings: torch.Tensor,
-        entity_names: List[str],
-        relation_types: List[str],
+        entity_embeddings: Optional[torch.Tensor] = None,
+        entity_names: Optional[List[str]] = None,
+        relation_types: Optional[List[str]] = None,
         confidence_threshold: float = 0.7,
         novelty_threshold: float = 0.8,
-        top_k: int = 100
+        top_k: int = 100,
+        knowledge_graph: Optional[Dict[str, Any]] = None,
+        threshold: Optional[float] = None
     ) -> List[NovelRelation]:
         """
         Predict top-k novel relations with high confidence and novelty.
@@ -182,10 +334,28 @@ class NovelRelationPredictor(nn.Module, LoggerMixin):
             confidence_threshold: Minimum confidence for predictions
             novelty_threshold: Minimum novelty score
             top_k: Number of top predictions to return
-            
+            knowledge_graph: Predict from graph structure instead of embeddings.
+                Delegates to predict_from_graph().
+            threshold: Score threshold for the graph-based path.
+
         Returns:
             List of predicted novel relations
         """
+        # Graph-structure path: no trained embeddings required
+        if knowledge_graph is not None:
+            return self.predict_from_graph(
+                knowledge_graph,
+                threshold=threshold if threshold is not None else confidence_threshold,
+                top_k=top_k,
+            )
+
+        if entity_embeddings is None or entity_names is None:
+            raise ValueError(
+                "Provide either knowledge_graph, or both entity_embeddings and "
+                "entity_names"
+            )
+        relation_types = relation_types or []
+
         self.eval()
         device = next(self.parameters()).device
         
@@ -282,6 +452,95 @@ class PatternDiscoveryEngine(LoggerMixin):
         self.min_pattern_frequency = min_pattern_frequency
         self.discovered_patterns = []
         self.logger.info("Initialized PatternDiscoveryEngine")
+
+    def _extract_patterns(
+        self,
+        entities_data: List[Dict[str, Any]]
+    ) -> List[DiscoveryPattern]:
+        """
+        Extract co-occurrence patterns from entity context records.
+
+        Entities whose contexts share vocabulary are grouped: shared context
+        terms are the signal that two entities participate in the same
+        biological process even when no edge records it.
+
+        Args:
+            entities_data: Records with "entity" and "context" keys.
+
+        Returns:
+            Discovered patterns, strongest first.
+        """
+        if len(entities_data) < 2:
+            return []
+
+        # Tokenize each entity's context into a term set
+        contexts = {}
+        for record in entities_data:
+            entity = record.get("entity")
+            if not entity:
+                continue
+            terms = {
+                term.lower()
+                for term in str(record.get("context", "")).split()
+                if len(term) > 2
+            }
+            contexts[entity] = terms
+
+        # Group entity pairs by the terms they share
+        shared_term_groups: Dict[frozenset, List[str]] = {}
+        entities = list(contexts)
+        for i, first in enumerate(entities):
+            for second in entities[i + 1:]:
+                shared = contexts[first] & contexts[second]
+                if not shared:
+                    continue
+                key = frozenset(shared)
+                group = shared_term_groups.setdefault(key, [])
+                for entity in (first, second):
+                    if entity not in group:
+                        group.append(entity)
+
+        patterns = []
+        for shared_terms, members in shared_term_groups.items():
+            # Strength grows with how much context the members share
+            strength = min(len(shared_terms) / 3.0, 1.0)
+            patterns.append(DiscoveryPattern(
+                pattern_type="co_occurrence",
+                entities=members,
+                frequency=len(members),
+                confidence=float(strength),
+                supporting_evidence=sorted(shared_terms),
+                biological_context=" ".join(sorted(shared_terms)),
+                description=(
+                    f"{len(members)} entities share context terms: "
+                    f"{', '.join(sorted(shared_terms))}"
+                ),
+            ))
+
+        patterns.sort(key=lambda p: p.confidence, reverse=True)
+        return patterns
+
+    def discover_patterns(
+        self,
+        entities_data: List[Dict[str, Any]]
+    ) -> List[DiscoveryPattern]:
+        """
+        Discover patterns across a set of entity records.
+
+        Args:
+            entities_data: Records with "entity" and "context" keys.
+
+        Returns:
+            Patterns meeting the configured minimum frequency, strongest first.
+            Patterns are also appended to ``self.discovered_patterns``.
+        """
+        patterns = self._extract_patterns(entities_data)
+
+        self.discovered_patterns.extend(patterns)
+        self.logger.info(
+            f"Discovered {len(patterns)} patterns from {len(entities_data)} entities"
+        )
+        return patterns
     
     def discover_co_occurrence_patterns(
         self,
@@ -450,69 +709,132 @@ class BiologicalPlausibilityChecker(LoggerMixin):
     and LLM-powered reasoning.
     """
     
-    def __init__(self, use_llm: bool = True):
+    def __init__(self, use_llm: bool = True, biological_kb: Optional[Dict[str, Any]] = None):
         self.use_llm = use_llm and LANGCHAIN_AVAILABLE
-        
+
+        # Domain facts keyed by entity name, e.g. {"BRCA1": {"type": "GENE"}}.
+        # Consulted when a caller does not supply entity types.
+        self.biological_kb: Dict[str, Any] = biological_kb or {}
+
         if self.use_llm:
-            try:
-                # Try OpenAI first, fall back to Anthropic
-                import os
-                if os.getenv("OPENAI_API_KEY"):
-                    self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
-                elif os.getenv("ANTHROPIC_API_KEY"):
-                    self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.1)
-                else:
-                    self.use_llm = False
-                    self.logger.warning("No LLM API keys found, using rule-based validation only")
-            except Exception as e:
-                self.use_llm = False
-                self.logger.warning(f"Could not initialize LLM: {e}")
+            self.llm = self._initialize_llm()
+            self.use_llm = self.llm is not None
         
-        # Biological plausibility rules
+        # Biological plausibility rules. Keys are normalized to sorted tuples
+        # so a pairing matches regardless of the order it is declared or
+        # queried in; _get_rule_based_score() sorts before looking up.
         self.plausibility_rules = {
-            ("GENE", "DISEASE"): 0.8,
-            ("DRUG", "DISEASE"): 0.9,
-            ("DRUG", "GENE"): 0.7,
-            ("PROTEIN", "DISEASE"): 0.8,
-            ("PATHWAY", "DISEASE"): 0.6,
-            ("GENE", "GENE"): 0.5,
-            ("PROTEIN", "PROTEIN"): 0.6,
+            tuple(sorted(pair)): score
+            for pair, score in {
+                ("GENE", "DISEASE"): 0.8,
+                ("DRUG", "DISEASE"): 0.9,
+                ("DRUG", "GENE"): 0.7,
+                ("PROTEIN", "DISEASE"): 0.8,
+                ("PATHWAY", "DISEASE"): 0.6,
+                ("GENE", "GENE"): 0.5,
+                ("PROTEIN", "PROTEIN"): 0.6,
+            }.items()
         }
-        
+
         self.logger.info(f"Initialized BiologicalPlausibilityChecker (LLM: {self.use_llm})")
     
+    def _initialize_llm(self):
+        """
+        Build an LLM backend, preferring cloud keys then the local Ollama model.
+
+        Returns:
+            The LLM, or None when no backend is reachable (callers then fall
+            back to rule-based scoring).
+        """
+        import os
+
+        try:
+            if os.getenv("OPENAI_API_KEY"):
+                self.logger.info("Plausibility checking using OpenAI")
+                return ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
+            if os.getenv("ANTHROPIC_API_KEY"):
+                self.logger.info("Plausibility checking using Anthropic")
+                return ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.1)
+        except Exception as e:
+            self.logger.warning(f"Could not initialize cloud LLM: {e}")
+
+        try:
+            from ..llm_integration.ollama_integration import OllamaLLM
+
+            local = OllamaLLM(temperature=0.1)
+            if local.llm is not None:
+                self.logger.info(
+                    f"Plausibility checking using local Ollama model {local.model}"
+                )
+                return local
+        except Exception as e:
+            self.logger.warning(f"Could not initialize local Ollama LLM: {e}")
+
+        self.logger.warning("No LLM backend available; using rule-based validation only")
+        return None
+
     def check_plausibility(
         self,
         novel_relation: NovelRelation,
-        entity_types: Dict[str, str],
-        context: Optional[str] = None
-    ) -> float:
+        entity_types: Optional[Dict[str, str]] = None,
+        context: Optional[str] = None,
+        plausibility_threshold: float = 0.5
+    ) -> Dict[str, Any]:
         """
         Check the biological plausibility of a predicted relationship.
-        
+
         Args:
             novel_relation: The predicted relationship
-            entity_types: Dictionary mapping entities to their types
+            entity_types: Entity name to type; falls back to the knowledge base
+                and then to "unknown" when a type cannot be resolved.
             context: Optional biological context
-            
+            plausibility_threshold: Score at or above which the relation counts
+                as plausible.
+
         Returns:
-            Plausibility score between 0 and 1
+            {"plausible": bool, "score": float, "reasoning": str}. Returning the
+            rationale alongside the score keeps predictions explainable, which
+            a bare float cannot do.
         """
-        entity1_type = entity_types.get(novel_relation.entity1, "unknown")
-        entity2_type = entity_types.get(novel_relation.entity2, "unknown")
-        
+        entity_types = entity_types or {}
+
+        def resolve_type(entity: str) -> str:
+            if entity in entity_types:
+                return entity_types[entity]
+            return self.biological_kb.get(entity, {}).get("type", "unknown")
+
+        entity1_type = resolve_type(novel_relation.entity1)
+        entity2_type = resolve_type(novel_relation.entity2)
+
         # Rule-based plausibility
-        rule_score = self._get_rule_based_score(entity1_type, entity2_type, novel_relation.relation_type)
-        
+        rule_score = self._get_rule_based_score(
+            entity1_type, entity2_type, novel_relation.relation_type
+        )
+        reasoning = (
+            f"{novel_relation.entity1} ({entity1_type}) "
+            f"-{novel_relation.relation_type}-> "
+            f"{novel_relation.entity2} ({entity2_type}); "
+            f"rule-based score {rule_score:.2f}"
+        )
+
         # LLM-based plausibility (if available)
         if self.use_llm:
-            llm_score = self._get_llm_based_score(novel_relation, entity1_type, entity2_type, context)
-            # Combine rule-based and LLM scores
+            llm_score = self._get_llm_based_score(
+                novel_relation, entity1_type, entity2_type, context
+            )
             final_score = 0.3 * rule_score + 0.7 * llm_score
+            reasoning += f", LLM score {llm_score:.2f}"
         else:
             final_score = rule_score
-        
-        return final_score
+            reasoning += " (no LLM available)"
+
+        return {
+            "plausible": bool(final_score >= plausibility_threshold),
+            "score": float(final_score),
+            "reasoning": reasoning,
+            "entity1_type": entity1_type,
+            "entity2_type": entity2_type,
+        }
     
     def _get_rule_based_score(self, type1: str, type2: str, relation_type: str) -> float:
         """Get plausibility score based on predefined rules."""
@@ -624,7 +946,75 @@ class NoveltyDetectionSystem(LoggerMixin):
         self.validation_results = {}
         
         self.logger.info("Initialized NoveltyDetectionSystem")
-    
+
+    def detect_novel_knowledge(
+        self,
+        literature_data: List[Dict[str, Any]],
+        knowledge_graph: Dict[str, Any],
+        threshold: float = 0.7,
+        entity_types: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Run the full discovery pass over literature and a knowledge graph.
+
+        Combines structural link prediction over the graph with context-pattern
+        discovery over the literature, then screens the predictions for
+        biological plausibility.
+
+        Args:
+            literature_data: Records with "text" (and optionally "entity").
+            knowledge_graph: {"nodes": [...], "edges": [...]}.
+            threshold: Minimum score for predicted relations.
+            entity_types: Optional entity name to type mapping.
+
+        Returns:
+            {"novel_relations", "patterns", "summary"}.
+        """
+        novel_relations = self.relation_predictor.predict_novel_relations(
+            knowledge_graph=knowledge_graph,
+            threshold=threshold,
+        )
+
+        # Literature records become entity/context pairs for pattern mining
+        entities_data = [
+            {
+                "entity": record.get("entity") or record.get("id") or f"doc_{i}",
+                "context": record.get("text") or record.get("context", ""),
+            }
+            for i, record in enumerate(literature_data)
+        ]
+        patterns = self.pattern_engine.discover_patterns(entities_data)
+
+        # Screen predictions for biological plausibility
+        for relation in novel_relations:
+            plausibility = self.plausibility_checker.check_plausibility(
+                relation, entity_types
+            )
+            relation.biological_plausibility = plausibility["score"]
+            if not relation.prediction_reasoning:
+                relation.prediction_reasoning = plausibility["reasoning"]
+
+        self.novel_relations = novel_relations
+        self.discovery_patterns = patterns
+
+        summary = {
+            "num_novel_relations": len(novel_relations),
+            "num_patterns": len(patterns),
+            "num_plausible": sum(
+                1 for r in novel_relations if r.biological_plausibility >= 0.5
+            ),
+        }
+        self.logger.info(
+            f"Discovery complete: {summary['num_novel_relations']} relations, "
+            f"{summary['num_patterns']} patterns"
+        )
+
+        return {
+            "novel_relations": novel_relations,
+            "patterns": patterns,
+            "summary": summary,
+        }
+
     def discover_novel_relations(
         self,
         entity_embeddings: torch.Tensor,
@@ -698,14 +1088,15 @@ class NoveltyDetectionSystem(LoggerMixin):
         # Step 4: Biological plausibility validation
         validated_relations = []
         for relation in unique_predictions[:max_predictions]:
-            plausibility_score = self.plausibility_checker.check_plausibility(
+            plausibility = self.plausibility_checker.check_plausibility(
                 relation, entity_types
             )
-            
-            relation.biological_plausibility = plausibility_score
-            
+
+            relation.biological_plausibility = plausibility["score"]
+            relation.prediction_reasoning = plausibility["reasoning"]
+
             # Only keep biologically plausible relations
-            if plausibility_score >= 0.5:
+            if plausibility["plausible"]:
                 validated_relations.append(relation)
         
         # Step 5: Final confidence scoring using multi-modal system

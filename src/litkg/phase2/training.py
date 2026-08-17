@@ -8,6 +8,7 @@ metrics for the hybrid GNN architecture.
 import os
 import json
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass, asdict
@@ -17,7 +18,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau, CosineAnnealingLR
-from torch_geometric.data import DataLoader
+from torch_geometric.data import Data, DataLoader
 from sklearn.metrics import (
     accuracy_score, precision_recall_fscore_support,
     roc_auc_score, average_precision_score,
@@ -154,45 +155,59 @@ class ContrastiveLoss(nn.Module):
         # Compute similarity matrix
         similarity = torch.mm(lit_norm, kg_norm.t()) / self.temperature
         
+        if alignment_matrix.shape != similarity.shape:
+            raise ValueError(
+                f"alignment_matrix {tuple(alignment_matrix.shape)} must match the "
+                f"similarity matrix {tuple(similarity.shape)} implied by the "
+                "embeddings being contrasted"
+            )
+
         # Positive pairs (aligned entities)
         positive_mask = alignment_matrix.bool()
         positive_similarities = similarity[positive_mask]
-        
+
         # Negative pairs (non-aligned entities)
         negative_mask = ~positive_mask
         negative_similarities = similarity[negative_mask]
-        
-        # Contrastive loss
-        positive_loss = -torch.log(torch.sigmoid(positive_similarities) + 1e-8).mean()
-        negative_loss = -torch.log(torch.sigmoid(-negative_similarities) + 1e-8).mean()
-        
-        return positive_loss + negative_loss
+
+        # Contrastive loss. Either set can be empty for a single-pair batch,
+        # and mean() over an empty tensor is nan, so those terms are dropped.
+        loss = torch.zeros((), device=similarity.device, dtype=similarity.dtype)
+        if positive_similarities.numel() > 0:
+            loss = loss - torch.log(torch.sigmoid(positive_similarities) + 1e-8).mean()
+        if negative_similarities.numel() > 0:
+            loss = loss - torch.log(torch.sigmoid(-negative_similarities) + 1e-8).mean()
+
+        return loss
 
 
 class MultiTaskLoss(nn.Module):
     """
     Multi-task loss combining link prediction, relation prediction, and confidence estimation.
     """
-    
+
     def __init__(
         self,
         link_weight: float = 1.0,
         relation_weight: float = 1.0,
         confidence_weight: float = 0.5,
-        contrastive_weight: float = 0.3
+        contrastive_weight: float = 0.3,
+        node_weight: float = 0.5
     ):
         super().__init__()
-        
+
         self.link_weight = link_weight
         self.relation_weight = relation_weight
         self.confidence_weight = confidence_weight
         self.contrastive_weight = contrastive_weight
-        
+        self.node_weight = node_weight
+
         # Loss functions
         self.link_criterion = nn.BCELoss()
         self.relation_criterion = nn.CrossEntropyLoss()
         self.confidence_criterion = nn.MSELoss()
         self.contrastive_criterion = ContrastiveLoss()
+        self.node_criterion = nn.MSELoss()
     
     def forward(
         self,
@@ -241,25 +256,43 @@ class MultiTaskLoss(nn.Module):
             )
             losses['confidence_loss'] = confidence_loss
         
+        # Node embedding regression loss
+        if 'lit_node_embeddings' in predictions and 'node_labels' in targets:
+            node_loss = self.node_criterion(
+                predictions['lit_node_embeddings'],
+                targets['node_labels'].float()
+            )
+            losses['node_loss'] = node_loss
+
         # Contrastive loss
-        if (lit_embeddings is not None and kg_embeddings is not None 
+        if (lit_embeddings is not None and kg_embeddings is not None
             and alignment_matrix is not None):
             contrastive_loss = self.contrastive_criterion(
                 lit_embeddings, kg_embeddings, alignment_matrix
             )
             losses['contrastive_loss'] = contrastive_loss
-        
+
         # Combine losses
-        total_loss = 0
-        if 'link_loss' in losses:
-            total_loss += self.link_weight * losses['link_loss']
-        if 'relation_loss' in losses:
-            total_loss += self.relation_weight * losses['relation_loss']
-        if 'confidence_loss' in losses:
-            total_loss += self.confidence_weight * losses['confidence_loss']
-        if 'contrastive_loss' in losses:
-            total_loss += self.contrastive_weight * losses['contrastive_loss']
-        
+        weights = {
+            'link_loss': self.link_weight,
+            'relation_loss': self.relation_weight,
+            'confidence_loss': self.confidence_weight,
+            'node_loss': self.node_weight,
+            'contrastive_loss': self.contrastive_weight,
+        }
+
+        if not losses:
+            raise ValueError(
+                "No loss terms were computed: predictions and targets share no "
+                f"supervised task. Got predictions {sorted(predictions.keys())} "
+                f"and targets {sorted(targets.keys())}."
+            )
+
+        # Sum as a tensor so the result always supports .backward()
+        total_loss = sum(
+            weights[name] * value for name, value in losses.items() if name in weights
+        )
+
         return total_loss, losses
 
 
@@ -426,6 +459,101 @@ class GNNTrainer(LoggerMixin):
         self.logger.info(f"Initialized GNNTrainer with device: {self.device}")
         self.logger.info(f"Model parameters: {sum(p.numel() for p in self.model.parameters()):,}")
     
+    def _unpack_batch(self, batch: Dict[str, Any]) -> Tuple[Data, Data, Dict[str, torch.Tensor]]:
+        """
+        Normalize a batch into (lit_graph, kg_graph, targets) on the trainer device.
+
+        Accepts two batch layouts:
+          * graph objects under 'lit_graph'/'kg_graph'
+          * flat tensors under 'lit_x'/'lit_edge_index'/'kg_x'/'kg_edge_index'
+
+        The 'labels' entry may be a dict of task name to target tensor, or a bare
+        tensor. A bare tensor is interpreted as a node embedding regression
+        target ('node_labels'), since that is the only task whose target has one
+        row per literature node.
+
+        Returns:
+            The two graphs and a target dict, all moved to self.device.
+        """
+        if 'lit_graph' in batch:
+            lit_graph = batch['lit_graph'].to(self.device)
+            kg_graph = batch['kg_graph'].to(self.device)
+        else:
+            lit_graph = Data(
+                x=batch['lit_x'].to(self.device),
+                edge_index=batch['lit_edge_index'].to(self.device),
+            )
+            kg_graph = Data(
+                x=batch['kg_x'].to(self.device),
+                edge_index=batch['kg_edge_index'].to(self.device),
+            )
+            if 'lit_edge_attr' in batch:
+                lit_graph.edge_attr = batch['lit_edge_attr'].to(self.device)
+            if 'kg_edge_attr' in batch:
+                kg_graph.edge_attr = batch['kg_edge_attr'].to(self.device)
+            if 'kg_relation_types' in batch:
+                kg_graph.relation_types = batch['kg_relation_types'].to(self.device)
+
+        raw_labels = batch.get('labels')
+        if raw_labels is None:
+            targets: Dict[str, torch.Tensor] = {}
+        elif isinstance(raw_labels, torch.Tensor):
+            targets = {'node_labels': raw_labels.to(self.device)}
+        else:
+            targets = {k: v.to(self.device) for k, v in raw_labels.items()}
+
+        return lit_graph, kg_graph, targets
+
+    def _forward_batch(
+        self, batch: Dict[str, Any]
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, Dict[str, torch.Tensor]]:
+        """Unpack a batch, run the model, and compute the loss."""
+        lit_graph, kg_graph, targets = self._unpack_batch(batch)
+
+        outputs = self.model(
+            lit_x=lit_graph.x,
+            lit_edge_index=lit_graph.edge_index,
+            lit_edge_attr=getattr(lit_graph, 'edge_attr', None),
+            lit_batch=getattr(lit_graph, 'batch', None),
+            kg_x=kg_graph.x,
+            kg_edge_index=kg_graph.edge_index,
+            kg_edge_attr=getattr(kg_graph, 'edge_attr', None),
+            kg_relation_types=getattr(kg_graph, 'relation_types', None),
+            kg_batch=getattr(kg_graph, 'batch', None),
+            entity_pairs=self._create_entity_pairs(batch),
+        )
+
+        loss, loss_components = self.criterion(
+            predictions=outputs,
+            targets=targets,
+            lit_embeddings=outputs['lit_graph_embedding'],
+            kg_embeddings=outputs['kg_graph_embedding'],
+            alignment_matrix=self._create_alignment_matrix(
+                outputs['lit_graph_embedding'].size(0)
+            ),
+        )
+
+        return outputs, loss, loss_components
+
+    def _check_early_stopping(self, val_losses: List[float]) -> bool:
+        """
+        Decide whether training should stop based on validation loss history.
+
+        Args:
+            val_losses: Validation loss per epoch, oldest first.
+
+        Returns:
+            True when the best loss was followed by at least ``patience``
+            epochs without improvement.
+        """
+        if len(val_losses) < 2:
+            return False
+
+        best_epoch = min(range(len(val_losses)), key=lambda i: val_losses[i])
+        epochs_since_best = len(val_losses) - 1 - best_epoch
+
+        return epochs_since_best >= self.config.patience
+
     def train_epoch(
         self,
         train_loader: DataLoader
@@ -438,46 +566,10 @@ class GNNTrainer(LoggerMixin):
         epoch_losses = defaultdict(float)
         
         for batch_idx, batch in enumerate(train_loader):
-            # Move batch to device. Support flat batch dicts as used in tests
-            if 'lit_graph' in batch:
-                lit_graph = batch['lit_graph'].to(self.device)
-                kg_graph = batch['kg_graph'].to(self.device)
-            else:
-                # Build minimal Data objects
-                lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
-                kg_graph = Data(x=batch['kg_x'].to(self.device), edge_index=batch['kg_edge_index'].to(self.device))
-            labels = {k: v.to(self.device) for k, v in batch.get('labels', {}).items()}
-            
-            # Forward pass
             self.optimizer.zero_grad()
-            
-            # Create entity pairs for relation prediction
-            entity_pairs = self._create_entity_pairs(batch)
-            
-            outputs = self.model(
-                lit_x=lit_graph.x,
-                lit_edge_index=lit_graph.edge_index,
-                lit_edge_attr=lit_graph.edge_attr,
-                lit_batch=getattr(lit_graph, 'batch', None),
-                kg_x=kg_graph.x,
-                kg_edge_index=kg_graph.edge_index,
-                kg_edge_attr=kg_graph.edge_attr,
-                kg_relation_types=kg_graph.relation_types,
-                kg_batch=getattr(kg_graph, 'batch', None),
-                entity_pairs=entity_pairs
-            )
-            
-            # Compute loss
-            alignment_matrix = self._create_alignment_matrix(batch)
-            
-            loss, loss_components = self.criterion(
-                predictions=outputs,
-                targets=labels,
-                lit_embeddings=outputs['lit_graph_embedding'],
-                kg_embeddings=outputs['kg_graph_embedding'],
-                alignment_matrix=alignment_matrix
-            )
-            
+
+            outputs, loss, loss_components = self._forward_batch(batch)
+
             # Backward pass
             loss.backward()
             
@@ -507,60 +599,55 @@ class GNNTrainer(LoggerMixin):
         
         return avg_loss, avg_losses
 
-    # Public wrappers expected by tests
     def training_step(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """
+        Run one optimization step on a single batch.
+
+        Returns:
+            The batch loss, still attached to the graph so callers can inspect
+            gradients.
+        """
         self.model.train()
-        lit_graph = batch['lit_graph'].to(self.device)
-        kg_graph = batch['kg_graph'].to(self.device)
-        labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
         self.optimizer.zero_grad()
-        entity_pairs = self._create_entity_pairs(batch)
-        outputs = self.model(
-            lit_x=lit_graph.x,
-            lit_edge_index=lit_graph.edge_index,
-            kg_x=kg_graph.x,
-            kg_edge_index=kg_graph.edge_index,
-            kg_relation_types=getattr(kg_graph, 'relation_types', None),
-            entity_pairs=entity_pairs
-        )
-        alignment_matrix = self._create_alignment_matrix(batch)
-        loss, _ = self.criterion(
-            predictions=outputs,
-            targets=labels,
-            lit_embeddings=outputs['lit_graph_embedding'],
-            kg_embeddings=outputs['kg_graph_embedding'],
-            alignment_matrix=alignment_matrix
-        )
+
+        _, loss, _ = self._forward_batch(batch)
+
         loss.backward()
+
+        if self.config.gradient_clip_norm > 0:
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.gradient_clip_norm
+            )
+
         self.optimizer.step()
         return loss
 
     def validation_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
+        """
+        Evaluate a single batch without updating weights.
+
+        Returns:
+            Metrics for the batch: always 'loss', plus a per-term breakdown and
+            'mse'/'accuracy' for whichever tasks the batch supervises.
+        """
         self.model.eval()
         with torch.no_grad():
-            if 'lit_graph' in batch:
-                lit_graph = batch['lit_graph'].to(self.device)
-                kg_graph = batch['kg_graph'].to(self.device)
-            else:
-                lit_graph = Data(x=batch['lit_x'].to(self.device), edge_index=batch['lit_edge_index'].to(self.device))
-                kg_graph = Data(x=batch['kg_x'].to(self.device), edge_index=batch['kg_edge_index'].to(self.device))
-            labels = {k: v.to(self.device) for k, v in batch.get('labels', {}).items()}
-            outputs = self.model(
-                lit_x=lit_graph.x,
-                lit_edge_index=lit_graph.edge_index,
-                kg_x=kg_graph.x,
-                kg_edge_index=kg_graph.edge_index,
-                kg_relation_types=getattr(kg_graph, 'relation_types', None)
-            )
-            alignment_matrix = self._create_alignment_matrix(batch)
-            loss, _ = self.criterion(
-                predictions=outputs,
-                targets=labels,
-                lit_embeddings=outputs['lit_graph_embedding'],
-                kg_embeddings=outputs['kg_graph_embedding'],
-                alignment_matrix=alignment_matrix
-            )
-            return {"loss": float(loss.item())}
+            outputs, loss, loss_components = self._forward_batch(batch)
+            _, _, targets = self._unpack_batch(batch)
+
+            metrics = {"loss": float(loss.item())}
+            for name, value in loss_components.items():
+                metrics[name] = float(value.item())
+
+            if 'node_loss' in loss_components:
+                metrics['mse'] = float(loss_components['node_loss'].item())
+
+            if 'link_probs' in outputs and 'link_labels' in targets:
+                predicted = (outputs['link_probs'].squeeze() > 0.5).long()
+                actual = targets['link_labels'].squeeze().long()
+                metrics['accuracy'] = float((predicted == actual).float().mean().item())
+
+            return metrics
 
     def save_checkpoint(self, path: str, epoch: int, loss: float):
         checkpoint = {
@@ -594,67 +681,38 @@ class GNNTrainer(LoggerMixin):
         
         with torch.no_grad():
             for batch in val_loader:
-                # Move batch to device
-                lit_graph = batch['lit_graph'].to(self.device)
-                kg_graph = batch['kg_graph'].to(self.device)
-                labels = {k: v.to(self.device) for k, v in batch['labels'].items()}
-                
-                # Forward pass
-                entity_pairs = self._create_entity_pairs(batch)
-                
-                outputs = self.model(
-                    lit_x=lit_graph.x,
-                    lit_edge_index=lit_graph.edge_index,
-                    lit_edge_attr=lit_graph.edge_attr,
-                    lit_batch=getattr(lit_graph, 'batch', None),
-                    kg_x=kg_graph.x,
-                    kg_edge_index=kg_graph.edge_index,
-                    kg_edge_attr=kg_graph.edge_attr,
-                    kg_relation_types=kg_graph.relation_types,
-                    kg_batch=getattr(kg_graph, 'batch', None),
-                    entity_pairs=entity_pairs
-                )
-                
-                # Compute loss
-                alignment_matrix = self._create_alignment_matrix(batch)
-                
-                loss, _ = self.criterion(
-                    predictions=outputs,
-                    targets=labels,
-                    lit_embeddings=outputs['lit_graph_embedding'],
-                    kg_embeddings=outputs['kg_graph_embedding'],
-                    alignment_matrix=alignment_matrix
-                )
-                
+                outputs, loss, _ = self._forward_batch(batch)
+                _, _, labels = self._unpack_batch(batch)
+
                 total_loss += loss.item()
                 num_batches += 1
-                
-                # Collect predictions
-                if 'link_probs' in outputs:
+
+                # Collect predictions for whichever tasks this batch supervises
+                if 'link_probs' in outputs and 'link_labels' in labels:
                     link_probs = outputs['link_probs'].cpu().numpy()
                     link_preds = (link_probs > 0.5).astype(int)
                     link_targets = labels['link_labels'].cpu().numpy()
-                    
+
                     all_link_preds.extend(link_preds.flatten())
                     all_link_targets.extend(link_targets.flatten())
                     all_link_probs.extend(link_probs.flatten())
-                
-                if 'relation_probs' in outputs:
+
+                if 'relation_probs' in outputs and 'relation_labels' in labels:
                     relation_preds = outputs['relation_probs'].argmax(dim=-1).cpu().numpy()
                     relation_targets = labels['relation_labels'].cpu().numpy()
-                    
+
                     all_relation_preds.extend(relation_preds.flatten())
                     all_relation_targets.extend(relation_targets.flatten())
-                
-                if 'confidence' in outputs:
+
+                if 'confidence' in outputs and 'confidence_labels' in labels:
                     confidence_preds = outputs['confidence'].cpu().numpy()
                     confidence_targets = labels['confidence_labels'].cpu().numpy()
-                    
+
                     all_confidence_preds.extend(confidence_preds.flatten())
                     all_confidence_targets.extend(confidence_targets.flatten())
-        
+
         # Compute metrics
-        avg_loss = total_loss / num_batches
+        avg_loss = total_loss / num_batches if num_batches else 0.0
         
         # Link prediction metrics
         link_metrics = {}
@@ -707,25 +765,35 @@ class GNNTrainer(LoggerMixin):
         self,
         train_loader: DataLoader,
         val_loader: DataLoader
-    ) -> List[TrainingMetrics]:
-        """Main training loop."""
+    ) -> Dict[str, List[float]]:
+        """
+        Main training loop.
+
+        Returns:
+            Loss history as {"train_loss": [...], "val_loss": [...]}, one entry
+            per epoch. The richer per-epoch metrics remain on
+            ``self.training_history``.
+        """
         self.logger.info("Starting hybrid GNN training")
-        
+
+        history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+
         for epoch in range(self.config.num_epochs):
             epoch_start_time = time.time()
             self.current_epoch = epoch
-            
+
             # Training
             train_loss, train_loss_components = self.train_epoch(train_loader)
-            
+            history["train_loss"].append(train_loss)
+
             # Validation
             if epoch % self.config.eval_every == 0:
                 val_loss, metrics = self.validate_epoch(val_loader)
-                
+
                 # Update metrics
                 metrics.train_loss = train_loss
                 metrics.epoch_time = time.time() - epoch_start_time
-                
+
                 # Compute gradient norm
                 total_norm = 0
                 for p in self.model.parameters():
@@ -733,37 +801,38 @@ class GNNTrainer(LoggerMixin):
                         param_norm = p.grad.data.norm(2)
                         total_norm += param_norm.item() ** 2
                 metrics.gradient_norm = total_norm ** (1. / 2)
-                
+
                 self.training_history.append(metrics)
-                
+                history["val_loss"].append(val_loss)
+
                 # Logging
                 self._log_metrics(metrics, train_loss_components)
-                
-                # Early stopping and checkpointing
+
+                # Checkpoint the best model so far
                 if val_loss < self.best_val_loss:
                     self.best_val_loss = val_loss
-                    self.patience_counter = 0
                     self._save_checkpoint('best_model.pt')
-                else:
-                    self.patience_counter += 1
-                
+
                 # Learning rate scheduling
                 self.scheduler.step(val_loss)
-                
+
                 # Early stopping
-                if self.patience_counter >= self.config.patience:
-                    self.logger.info(f"Early stopping at epoch {epoch}")
+                if self._check_early_stopping(history["val_loss"]):
+                    self.logger.info(
+                        f"Early stopping at epoch {epoch}: no improvement in "
+                        f"{self.config.patience} epochs"
+                    )
                     break
-            
+
             # Regular checkpointing
             if epoch % self.config.save_every == 0:
                 self._save_checkpoint(f'checkpoint_epoch_{epoch}.pt')
-        
+
         # Save final model
         self._save_checkpoint('final_model.pt')
-        
+
         self.logger.info("Training completed")
-        return self.training_history
+        return history
     
     def _create_entity_pairs(self, batch: Dict[str, Any]) -> torch.Tensor:
         """Create entity pairs for relation prediction."""
@@ -783,11 +852,19 @@ class GNNTrainer(LoggerMixin):
         
         return torch.tensor(pairs, dtype=torch.long, device=self.device)
     
-    def _create_alignment_matrix(self, batch: Dict[str, Any]) -> torch.Tensor:
-        """Create alignment matrix for contrastive loss."""
-        # Simple implementation: create identity matrix
-        batch_size = batch['lit_graph'].x.size(0)
-        return torch.eye(batch_size, device=self.device)
+    def _create_alignment_matrix(self, num_embeddings: int) -> torch.Tensor:
+        """
+        Create the alignment matrix for the contrastive loss.
+
+        Args:
+            num_embeddings: Number of embeddings being contrasted. This must be
+                the row count of the embeddings handed to ContrastiveLoss (the
+                graphs in the batch), not the node count.
+
+        Returns:
+            Identity matrix: each literature graph aligns with its KG counterpart.
+        """
+        return torch.eye(num_embeddings, device=self.device)
     
     def _log_metrics(self, metrics: TrainingMetrics, train_losses: Dict[str, float]):
         """Log training metrics."""
@@ -842,7 +919,3 @@ class GNNTrainer(LoggerMixin):
         self.logger.info(f"Loaded checkpoint from epoch {self.current_epoch}")
         
         return checkpoint
-
-
-# Import defaultdict at the top of the file
-from collections import defaultdict

@@ -20,15 +20,15 @@ from dataclasses import dataclass
 import logging
 
 # LangChain imports
-from langchain.document_loaders import BaseLoader
-from langchain.text_splitter import TextSplitter
-from langchain.embeddings.base import Embeddings
-from langchain.vectorstores import Chroma, FAISS
-from langchain.schema import Document
-from langchain.retrievers import BaseRetriever
+from langchain_core.document_loaders import BaseLoader
+from langchain_text_splitters import TextSplitter
+from langchain_core.embeddings import Embeddings
+from langchain_community.vectorstores import Chroma, FAISS
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate
-from langchain.llms.base import LLM
+from langchain_core.prompts import PromptTemplate
+from langchain_core.language_models.llms import LLM
 
 # LangChain community imports
 from langchain_community.document_loaders import WebBaseLoader

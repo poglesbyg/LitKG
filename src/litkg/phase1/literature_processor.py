@@ -686,11 +686,38 @@ class LiteratureProcessor(LoggerMixin):
         
         self.logger.info(f"Results saved to {output_path}")
 
-    # ------------------- Lightweight API for tests -------------------
+    # ------------------- Lightweight API -------------------
+    @staticmethod
+    def _validate_article(article_data: Dict[str, Any]) -> None:
+        """
+        Check that a structured article carries processable text.
+
+        Raises:
+            ValueError: if the record has neither a title nor an abstract.
+                Failing loudly beats returning an empty result, which would
+                silently drop malformed records from a batch.
+        """
+        if not isinstance(article_data, dict):
+            raise ValueError(
+                f"Expected a document dict or raw text, got {type(article_data).__name__}"
+            )
+
+        has_text = any(
+            str(article_data.get(field) or "").strip() for field in ("title", "abstract")
+        )
+        if not has_text:
+            raise ValueError(
+                "Malformed document: needs a non-empty 'title' or 'abstract'; "
+                f"got keys {sorted(article_data.keys())}"
+            )
+
     def process_document(self, article_data: Union[Dict[str, Any], str]) -> Any:
         """Process a single document.
         - If provided a raw text string, return a simple dict with entities and text.
         - If provided a structured dict, run the rich pipeline via BiomedicalNLP.
+
+        Raises:
+            ValueError: if a structured document has no title or abstract.
         """
         # Raw text compatibility path
         if isinstance(article_data, str):
@@ -711,6 +738,8 @@ class LiteratureProcessor(LoggerMixin):
             return {"entities": entities, "relations": [], "text": text}
 
         # Structured article path (when full pipeline is available)
+        self._validate_article(article_data)
+
         if self.nlp_processor is None:
             # Minimal fallback using raw text fields
             title = article_data.get("title", "")

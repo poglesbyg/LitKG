@@ -59,27 +59,24 @@ class TestUnifiedLLMInterface:
                 mock_openai.return_value = mock_client
                 
                 interface._initialize_openai_client()
-                
+
                 assert LLMProvider.OPENAI in interface.clients
-                assert interface.clients[LLLProvider.OPENAI] == mock_client
+                assert interface.clients[LLMProvider.OPENAI] == mock_client
     
     def test_model_selection(self):
         """Test model selection logic."""
         interface = BiomedicalLLMInterface()
         
-        # Mock available models
-        interface.available_models = {
-            LLMProvider.OPENAI: ["gpt-3.5-turbo", "gpt-4"],
-            LLMProvider.OLLAMA: ["llama3.1:8b", "llama3.1:70b"]
-        }
-        
-        # Test model selection for different tasks
-        model_info = interface.select_best_model("literature_analysis", max_cost=0.01)
-        
+        # available_only=False so selection does not depend on which providers
+        # happen to be reachable in this environment
+        model_info = interface.select_best_model_info(
+            "literature_analysis", max_cost=0.01, available_only=False
+        )
+
         assert model_info is not None
-        if model_info:
-            assert "provider" in model_info
-            assert "model" in model_info
+        assert "provider" in model_info
+        assert "model" in model_info
+        assert model_info["capabilities"].cost_per_1k_tokens <= 0.01
     
     def test_generate_text(self):
         """Test text generation."""
@@ -117,11 +114,19 @@ class TestUnifiedLLMInterface:
         interface._update_usage_stats(LLMProvider.OPENAI, "gpt-3.5-turbo", 50, 0.002)
         
         stats = interface.get_usage_stats()
-        
-        assert LLMProvider.OPENAI.value in stats
-        assert "gpt-3.5-turbo" in stats[LLMProvider.OPENAI.value]
-        assert stats[LLMProvider.OPENAI.value]["gpt-3.5-turbo"]["total_tokens"] == 80
-        assert stats[LLMProvider.OPENAI.value]["gpt-3.5-turbo"]["total_cost"] == 0.003
+
+        assert stats["total_requests"] == 2
+        assert stats["total_tokens"] == 80
+        assert stats["total_cost"] == pytest.approx(0.003)
+
+        provider_stats = stats["provider_usage"][LLMProvider.OPENAI.value]
+        assert provider_stats["requests"] == 2
+        assert provider_stats["tokens"] == 80
+        assert provider_stats["cost"] == pytest.approx(0.003)
+
+        model_stats = stats["model_usage"]["gpt-3.5-turbo"]
+        assert model_stats["tokens"] == 80
+        assert model_stats["cost"] == pytest.approx(0.003)
     
     def test_error_handling(self):
         """Test error handling in LLM calls."""
@@ -258,9 +263,10 @@ class TestOllamaIntegration:
             ]
             
             success = manager.pull_model("llama3.1:8b")
-            
+
             assert success is True
-            mock_pull.assert_called_once_with("llama3.1:8b")
+            # Pulled as a stream so download progress can be logged
+            mock_pull.assert_called_once_with("llama3.1:8b", stream=True)
     
     def test_generate_text(self):
         """Test text generation with Ollama."""
@@ -383,16 +389,19 @@ class TestModelSelection:
         """Test ModelRecommendation dataclass."""
         recommendation = ModelRecommendation(
             provider=LLMProvider.OPENAI,
-            model="gpt-3.5-turbo",
+            model_name="gpt-3.5-turbo",
             confidence=0.85,
-            estimated_cost=0.002,
+            cost_estimate=0.002,
             estimated_time=1.5,
             reasoning="Good balance of cost and performance for this task"
         )
-        
+
         assert recommendation.provider == LLMProvider.OPENAI
-        assert recommendation.model == "gpt-3.5-turbo"
         assert recommendation.confidence == 0.85
+        assert recommendation.estimated_time == 1.5
+        # model/estimated_cost are read aliases for model_name/cost_estimate
+        assert recommendation.model == "gpt-3.5-turbo"
+        assert recommendation.estimated_cost == 0.002
     
     def test_model_selector_init(self):
         """Test ModelSelector initialization."""

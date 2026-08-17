@@ -22,7 +22,7 @@ import torch
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple, Set
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, timedelta
 from pathlib import Path
 import json
@@ -43,23 +43,48 @@ from .hypothesis_generation import BiomedicalHypothesis, HypothesisGenerationSys
 
 @dataclass
 class ValidationResult:
-    """Results from a validation experiment."""
+    """
+    Results from a validation experiment.
+
+    The leading fields are the summary every validator produces: what was
+    validated, the headline score, and supporting detail. The classification
+    metrics that follow are populated by validators that run a labelled
+    evaluation, and left at zero by those that do not.
+    """
     validation_type: str
-    validation_id: str
-    timestamp: str
-    methodology: str
-    metrics: Dict[str, float]
-    predictions_tested: int
-    true_positives: int
-    false_positives: int
-    true_negatives: int
-    false_negatives: int
-    precision: float
-    recall: float
-    f1_score: float
-    auc_score: float
-    validation_details: Dict[str, Any]
-    
+    score: float = 0.0
+    details: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = ""
+    validator_version: str = "1.0"
+
+    validation_id: str = ""
+    methodology: str = ""
+    metrics: Dict[str, float] = field(default_factory=dict)
+    predictions_tested: int = 0
+    true_positives: int = 0
+    false_positives: int = 0
+    true_negatives: int = 0
+    false_negatives: int = 0
+    precision: float = 0.0
+    recall: float = 0.0
+    f1_score: float = 0.0
+    auc_score: float = 0.0
+    validation_details: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Sync the summary aliases with their detailed counterparts."""
+        if self.validation_details and not self.details:
+            self.details = self.validation_details
+        elif self.details and not self.validation_details:
+            self.validation_details = self.details
+
+        # Fall back to F1 when a validator reports metrics but no headline score
+        if not self.score and self.f1_score:
+            self.score = self.f1_score
+
+        if not self.timestamp:
+            self.timestamp = datetime.now().isoformat()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
@@ -67,20 +92,49 @@ class ValidationResult:
 
 @dataclass
 class ExpertAssessment:
-    """Expert assessment of a prediction or hypothesis."""
-    assessor_id: str
-    item_id: str
-    item_type: str  # "novel_relation" or "hypothesis"
-    biological_plausibility: float  # 0-1 scale
-    novelty_score: float  # 0-1 scale
-    confidence_in_assessment: float  # 0-1 scale
-    supporting_evidence: List[str]
-    concerns: List[str]
-    recommended_experiments: List[str]
-    overall_rating: str  # "excellent", "good", "moderate", "poor"
-    detailed_comments: str
-    assessment_timestamp: str
-    
+    """
+    Expert assessment of a prediction or hypothesis.
+
+    ``expert_id``/``assessor_id`` and ``comments``/``detailed_comments`` are
+    pairs of names for the same value, kept in sync by __post_init__.
+    """
+    assessor_id: str = ""
+    expert_id: str = ""
+    expertise_domain: str = ""
+    item_id: str = ""
+    item_type: str = ""  # "novel_relation" or "hypothesis"
+    assessment_score: float = 0.0  # 0-1 overall numeric assessment
+    biological_plausibility: float = 0.0  # 0-1 scale
+    novelty_score: float = 0.0  # 0-1 scale
+    confidence_in_assessment: float = 0.0  # 0-1 scale
+    supporting_evidence: List[str] = field(default_factory=list)
+    concerns: List[str] = field(default_factory=list)
+    recommended_experiments: List[str] = field(default_factory=list)
+    overall_rating: str = ""  # "excellent", "good", "moderate", "poor"
+    recommendation: str = ""  # e.g. "proceed_with_testing", "revise", "reject"
+    detailed_comments: str = ""
+    comments: str = ""
+    assessment_timestamp: str = ""
+
+    def __post_init__(self):
+        """Sync the paired field names and fill in defaults."""
+        if self.expert_id and not self.assessor_id:
+            self.assessor_id = self.expert_id
+        elif self.assessor_id and not self.expert_id:
+            self.expert_id = self.assessor_id
+
+        if self.comments and not self.detailed_comments:
+            self.detailed_comments = self.comments
+        elif self.detailed_comments and not self.comments:
+            self.comments = self.detailed_comments
+
+        # An overall numeric assessment defaults to the plausibility judgement
+        if not self.assessment_score and self.biological_plausibility:
+            self.assessment_score = self.biological_plausibility
+
+        if not self.assessment_timestamp:
+            self.assessment_timestamp = datetime.now().isoformat()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
@@ -91,14 +145,258 @@ class LiteratureCrossValidator(LoggerMixin):
     Validates novel predictions against held-out literature using cross-validation.
     """
     
-    def __init__(self, validation_split: float = 0.2, random_seed: int = 42):
+    # Phrases that mark a finding as arguing against a claim
+    CONTRADICTION_CUES = (
+        "no association", "not associated", "no significant", "not significant",
+        "failed to", "did not", "no evidence", "no correlation", "contrary to",
+        "refute", "contradict", "unable to replicate", "no effect", "absence of",
+    )
+
+    def __init__(
+        self,
+        validation_split: float = 0.2,
+        random_seed: int = 42,
+        literature_retriever: Optional[Any] = None,
+        max_search_results: int = 25
+    ):
         self.validation_split = validation_split
         self.random_seed = random_seed
         self.validation_results = []
-        
+        self.max_search_results = max_search_results
+
+        # PubMed retriever, constructed lazily on first search so that
+        # constructing a validator never requires network or credentials.
+        self._literature_retriever = literature_retriever
+
         np.random.seed(random_seed)
         self.logger.info("Initialized LiteratureCrossValidator")
+
+    @property
+    def literature_retriever(self):
+        """The PubMed retriever, built on first use. None if unavailable."""
+        if self._literature_retriever is None:
+            try:
+                from ..phase1.literature_processor import PubMedRetriever
+                from ..utils.config import load_config
+                self._literature_retriever = PubMedRetriever(load_config())
+            except Exception as e:
+                self.logger.warning(
+                    f"PubMed retriever unavailable ({e}); literature validation "
+                    "will fall back to evidence attached to the hypothesis"
+                )
+        return self._literature_retriever
+
+    @staticmethod
+    def _hypothesis_terms(hypothesis: BiomedicalHypothesis) -> List[str]:
+        """Extract the salient search terms from a hypothesis."""
+        import re
+
+        stopwords = {
+            "the", "and", "for", "with", "that", "this", "may", "are", "was",
+            "were", "have", "has", "from", "into", "than", "then", "its",
+            "increase", "increases", "decrease", "decreases", "contributes",
+        }
+
+        text = f"{hypothesis.hypothesis_text} {hypothesis.description}"
+        words = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]{2,}", text)
+
+        terms, seen = [], set()
+        for word in words:
+            lowered = word.lower()
+            if lowered in stopwords or lowered in seen:
+                continue
+            seen.add(lowered)
+            terms.append(word)
+
+        return terms
+
+    def _build_query(self, hypothesis: BiomedicalHypothesis) -> str:
+        """Build a PubMed query from a hypothesis."""
+        # Capitalized or hyphenated tokens are the entity-like ones worth
+        # querying; fall back to the leading terms when none stand out.
+        terms = self._hypothesis_terms(hypothesis)
+        entities = [t for t in terms if t[0].isupper() or "-" in t] or terms[:4]
+        return " AND ".join(entities[:4])
+
+    def _classify_support(
+        self,
+        article: Dict[str, Any],
+        terms: List[str]
+    ) -> Tuple[bool, float]:
+        """
+        Judge whether an article supports a hypothesis, and how relevant it is.
+
+        Support is inferred from the absence of contradiction cues; relevance is
+        the fraction of hypothesis terms the article mentions.
+
+        Returns:
+            (supports, relevance).
+        """
+        text = f"{article.get('title', '')} {article.get('abstract', '')}".lower()
+
+        matched = sum(1 for term in terms if term.lower() in text)
+        relevance = matched / len(terms) if terms else 0.0
+
+        supports = not any(cue in text for cue in self.CONTRADICTION_CUES)
+        return supports, relevance
+
+    def _search_literature(
+        self,
+        hypothesis: BiomedicalHypothesis,
+        max_results: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Find literature bearing on a hypothesis by querying PubMed.
+
+        Falls back to the evidence already attached to the hypothesis when
+        PubMed is unreachable or returns nothing, so validation degrades rather
+        than failing. The log records which path ran.
+
+        Args:
+            hypothesis: The hypothesis to search for.
+            max_results: Maximum records to return.
+
+        Returns:
+            Records with "title", "abstract", "pmid", "relevance", "supports".
+        """
+        max_results = max_results or self.max_search_results
+        retriever = self.literature_retriever
+
+        if retriever is not None:
+            query = self._build_query(hypothesis)
+            terms = self._hypothesis_terms(hypothesis)
+            try:
+                pmids = retriever.search_pubmed(query, max_results=max_results)
+                articles = retriever.fetch_article_details(pmids) if pmids else []
+
+                if articles:
+                    records = []
+                    for article in articles:
+                        supports, relevance = self._classify_support(article, terms)
+                        records.append({
+                            "pmid": article.get("pmid", ""),
+                            "title": article.get("title", ""),
+                            "abstract": article.get("abstract", ""),
+                            "publication_date": article.get("publication_date"),
+                            "relevance": relevance,
+                            "supports": supports,
+                        })
+
+                    self.logger.info(
+                        f"Retrieved {len(records)} PubMed article(s) for query {query!r}"
+                    )
+                    return records
+
+                self.logger.info(f"PubMed returned no articles for query {query!r}")
+            except Exception as e:
+                self.logger.warning(f"PubMed search failed ({e}); using attached evidence")
+
+        # Fallback: score against evidence already recorded on the hypothesis
+        records = []
+        for evidence in hypothesis.supporting_evidence[:max_results]:
+            records.append({
+                "title": str(evidence), "relevance": 0.8,
+                "supports": True, "source": "attached_evidence",
+            })
+        for evidence in hypothesis.contradicting_evidence[:max_results]:
+            records.append({
+                "title": str(evidence), "relevance": 0.8,
+                "supports": False, "source": "attached_evidence",
+            })
+
+        if records:
+            self.logger.info(
+                f"Using {len(records)} item(s) of evidence attached to the hypothesis"
+            )
+        return records
     
+        return records
+
+    @staticmethod
+    def compute_confidence_interval(
+        scores: List[float],
+        confidence_level: float = 0.95
+    ) -> Tuple[float, float]:
+        """
+        Compute a percentile confidence interval over bootstrap scores.
+
+        Uses the empirical percentile method, which makes no normality
+        assumption about the bootstrap distribution.
+
+        Args:
+            scores: Bootstrap replicate scores.
+            confidence_level: Coverage, e.g. 0.95 for a 95% interval.
+
+        Returns:
+            (lower_bound, upper_bound).
+
+        Raises:
+            ValueError: if scores is empty or confidence_level is out of range.
+        """
+        if not scores:
+            raise ValueError("Cannot compute a confidence interval from no scores")
+        if not 0.0 < confidence_level < 1.0:
+            raise ValueError(
+                f"confidence_level must be in (0, 1), got {confidence_level}"
+            )
+
+        alpha = 1.0 - confidence_level
+        lower = float(np.percentile(scores, 100 * alpha / 2))
+        upper = float(np.percentile(scores, 100 * (1 - alpha / 2)))
+
+        return lower, upper
+
+    def validate(self, hypothesis: BiomedicalHypothesis) -> ValidationResult:
+        """
+        Cross-validate a hypothesis against the literature.
+
+        Weighs supporting against contradicting papers, each by its relevance,
+        so a highly relevant contradiction outweighs a marginal supporting hit.
+
+        Args:
+            hypothesis: The hypothesis to validate.
+
+        Returns:
+            A ValidationResult of type "literature_cross_validation".
+        """
+        papers = self._search_literature(hypothesis)
+
+        if not papers:
+            return ValidationResult(
+                validation_type="literature_cross_validation",
+                score=0.5,
+                details={
+                    "supporting_papers": 0,
+                    "contradicting_papers": 0,
+                    "note": "No literature found; treated as neutral",
+                },
+                methodology="Relevance-weighted literature agreement",
+            )
+
+        supporting_weight = sum(
+            float(p.get("relevance", 1.0)) for p in papers if p.get("supports")
+        )
+        contradicting_weight = sum(
+            float(p.get("relevance", 1.0)) for p in papers if not p.get("supports")
+        )
+        total_weight = supporting_weight + contradicting_weight
+
+        score = supporting_weight / total_weight if total_weight else 0.5
+
+        return ValidationResult(
+            validation_type="literature_cross_validation",
+            score=float(score),
+            details={
+                "supporting_papers": sum(1 for p in papers if p.get("supports")),
+                "contradicting_papers": sum(1 for p in papers if not p.get("supports")),
+                "supporting_weight": supporting_weight,
+                "contradicting_weight": contradicting_weight,
+                "papers_examined": len(papers),
+            },
+            methodology="Relevance-weighted literature agreement",
+            predictions_tested=len(papers),
+        )
+
     def validate_predictions(
         self,
         novel_relations: List[NovelRelation],
@@ -296,10 +594,132 @@ class TemporalValidator(LoggerMixin):
     match relationships discovered in later publications.
     """
     
-    def __init__(self, temporal_split_date: Optional[datetime] = None):
+    def __init__(
+        self,
+        temporal_split_date: Optional[datetime] = None,
+        literature_validator: Optional["LiteratureCrossValidator"] = None
+    ):
         self.temporal_split_date = temporal_split_date or (datetime.now() - timedelta(days=365))
+
+        # Reuses the literature validator's PubMed retrieval and support
+        # classification rather than duplicating them.
+        self._literature_validator = literature_validator or LiteratureCrossValidator()
+
         self.logger.info(f"Initialized TemporalValidator with split date: {self.temporal_split_date}")
     
+    def _analyze_temporal_trends(
+        self,
+        hypothesis: BiomedicalHypothesis,
+        recent_window_years: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Analyze how support for a hypothesis has moved over time.
+
+        Splits the retrieved literature at ``recent_window_years`` before the
+        configured split date and compares the proportion of supporting papers
+        on each side. A claim gaining support in recent work is stronger than
+        one resting only on older findings.
+
+        Args:
+            hypothesis: The hypothesis to analyze.
+            recent_window_years: How many years count as "recent".
+
+        Returns:
+            {"trend_score", "recent_support", "historical_support",
+             "trend_direction", "recent_papers", "historical_papers"}.
+        """
+        articles = self._literature_validator._search_literature(hypothesis)
+
+        cutoff = (self.temporal_split_date or datetime.now()) - timedelta(
+            days=365 * recent_window_years
+        )
+
+        recent, historical = [], []
+        for article in articles:
+            published = article.get("publication_date")
+            if isinstance(published, datetime):
+                (recent if published >= cutoff else historical).append(article)
+            else:
+                # Undated records cannot be placed on the timeline
+                historical.append(article)
+
+        def support_ratio(group: List[Dict[str, Any]]) -> Optional[float]:
+            if not group:
+                return None
+            return sum(1 for a in group if a.get("supports")) / len(group)
+
+        recent_support = support_ratio(recent)
+        historical_support = support_ratio(historical)
+
+        # With nothing on one side of the split there is no trend to report
+        if recent_support is None and historical_support is None:
+            self.logger.info("No dated literature found; reporting a neutral trend")
+            return {
+                "trend_score": 0.5,
+                "recent_support": 0.5,
+                "historical_support": 0.5,
+                "trend_direction": "unknown",
+                "recent_papers": 0,
+                "historical_papers": 0,
+            }
+
+        if recent_support is None:
+            recent_support = historical_support
+        if historical_support is None:
+            historical_support = recent_support
+
+        delta = recent_support - historical_support
+        if delta > 0.1:
+            direction = "increasing"
+        elif delta < -0.1:
+            direction = "decreasing"
+        else:
+            direction = "stable"
+
+        # Recent work weighs more heavily than older work
+        trend_score = 0.7 * recent_support + 0.3 * historical_support
+
+        return {
+            "trend_score": float(max(0.0, min(1.0, trend_score))),
+            "recent_support": float(recent_support),
+            "historical_support": float(historical_support),
+            "trend_direction": direction,
+            "recent_papers": len(recent),
+            "historical_papers": len(historical),
+            "cutoff_date": cutoff.isoformat(),
+        }
+
+    def validate(self, hypothesis: BiomedicalHypothesis) -> ValidationResult:
+        """
+        Validate a hypothesis against the temporal trend in its support.
+
+        A hypothesis gaining support in recent literature is stronger than one
+        resting on older findings, so the trend direction adjusts the score.
+
+        Args:
+            hypothesis: The hypothesis to validate.
+
+        Returns:
+            A ValidationResult of type "temporal_validation".
+        """
+        trends = self._analyze_temporal_trends(hypothesis)
+
+        score = float(trends.get("trend_score", 0.5))
+        direction = trends.get("trend_direction", "stable")
+
+        # Reward strengthening evidence, discount weakening evidence
+        if direction == "increasing":
+            score = min(1.0, score * 1.1)
+        elif direction == "decreasing":
+            score *= 0.9
+
+        return ValidationResult(
+            validation_type="temporal_validation",
+            score=float(max(0.0, min(1.0, score))),
+            details=dict(trends),
+            methodology="Temporal trend analysis of supporting literature",
+        )
+
     def temporal_validation(
         self,
         novel_relations: List[NovelRelation],
@@ -484,6 +904,76 @@ class ExpertValidationInterface(LoggerMixin):
         self.assessment_templates = self._create_assessment_templates()
         self.logger.info("Initialized ExpertValidationInterface")
     
+    def _collect_expert_assessments(
+        self,
+        hypothesis: BiomedicalHypothesis
+    ) -> List[ExpertAssessment]:
+        """
+        Collect expert assessments for a hypothesis.
+
+        The default returns whatever assessments have already been recorded for
+        this hypothesis; wire this to a review queue to solicit new ones.
+
+        Args:
+            hypothesis: The hypothesis under review.
+
+        Returns:
+            Assessments recorded for this hypothesis, possibly empty.
+        """
+        return [
+            assessment for assessment in self.expert_assessments
+            if assessment.item_id == hypothesis.id
+        ]
+
+    def validate(self, hypothesis: BiomedicalHypothesis) -> ValidationResult:
+        """
+        Validate a hypothesis using expert assessments.
+
+        Assessments are averaged weighted by each expert's stated confidence in
+        their own judgement, so a tentative opinion counts for less than a
+        confident one.
+
+        Args:
+            hypothesis: The hypothesis to validate.
+
+        Returns:
+            A ValidationResult of type "expert_validation".
+        """
+        assessments = self._collect_expert_assessments(hypothesis)
+
+        if not assessments:
+            return ValidationResult(
+                validation_type="expert_validation",
+                score=0.0,
+                details={
+                    "num_assessments": 0,
+                    "note": "No expert assessments available",
+                },
+                methodology="Confidence-weighted expert consensus",
+            )
+
+        total_confidence = sum(
+            a.confidence_in_assessment or 1.0 for a in assessments
+        )
+        weighted_score = sum(
+            a.assessment_score * (a.confidence_in_assessment or 1.0)
+            for a in assessments
+        )
+        score = weighted_score / total_confidence if total_confidence else 0.0
+
+        return ValidationResult(
+            validation_type="expert_validation",
+            score=float(max(0.0, min(1.0, score))),
+            details={
+                "num_assessments": len(assessments),
+                "experts": [a.expert_id for a in assessments],
+                "domains": sorted({a.expertise_domain for a in assessments if a.expertise_domain}),
+                "recommendations": [a.recommendation for a in assessments if a.recommendation],
+            },
+            methodology="Confidence-weighted expert consensus",
+            predictions_tested=len(assessments),
+        )
+
     def create_expert_assessment_form(
         self,
         item: Any,
@@ -723,12 +1213,94 @@ class ComprehensiveValidationSystem(LoggerMixin):
         self.literature_validator = LiteratureCrossValidator(validation_split=validation_split)
         self.temporal_validator = TemporalValidator(temporal_split_date=temporal_split_date)
         self.expert_interface = ExpertValidationInterface()
-        
+        # Alias: the expert interface acts as the expert validator
+        self.expert_validator = self.expert_interface
+
         # Results storage
         self.validation_results = []
         self.expert_assessments = []
-        
+
         self.logger.info("Initialized ComprehensiveValidationSystem")
+
+    @staticmethod
+    def aggregate_validation_scores(
+        validation_scores: Dict[str, float],
+        weights: Optional[Dict[str, float]] = None
+    ) -> float:
+        """
+        Combine per-validator scores into one overall validation score.
+
+        Weights are renormalized over whichever validators actually reported,
+        so a hypothesis assessed by two validators is not penalized against one
+        assessed by four.
+
+        Args:
+            validation_scores: Score in [0, 1] per validator name.
+            weights: Optional per-validator weight overrides.
+
+        Returns:
+            Aggregate score in [0, 1]; 0.0 when nothing was reported.
+        """
+        default_weights = {
+            "literature": 0.3,
+            "temporal": 0.2,
+            "expert": 0.3,
+            "biological_plausibility": 0.2,
+        }
+        score_weights = {**default_weights, **(weights or {})}
+
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for name, score in validation_scores.items():
+            if score is None:
+                continue
+            # Unrecognized validators still count, at the mean default weight
+            weight = score_weights.get(name, 0.25)
+            weighted_sum += weight * float(score)
+            total_weight += weight
+
+        if total_weight == 0.0:
+            return 0.0
+
+        return float(max(0.0, min(1.0, weighted_sum / total_weight)))
+
+    def validate_hypothesis(
+        self,
+        hypothesis: BiomedicalHypothesis
+    ) -> Dict[str, Any]:
+        """
+        Validate one hypothesis through every available validator.
+
+        Args:
+            hypothesis: The hypothesis to validate.
+
+        Returns:
+            Per-validator ValidationResults plus an aggregate "overall_score".
+        """
+        literature_result = self.literature_validator.validate(hypothesis)
+        temporal_result = self.temporal_validator.validate(hypothesis)
+        expert_result = self.expert_validator.validate(hypothesis)
+
+        overall_score = self.aggregate_validation_scores({
+            "literature": literature_result.score,
+            "temporal": temporal_result.score,
+            "expert": expert_result.score,
+        })
+
+        results = {
+            "hypothesis_id": hypothesis.id,
+            "literature_validation": literature_result,
+            "temporal_validation": temporal_result,
+            "expert_validation": expert_result,
+            "overall_score": overall_score,
+            "validation_timestamp": datetime.now().isoformat(),
+        }
+
+        self.validation_results.append(results)
+        self.logger.info(
+            f"Validated hypothesis {hypothesis.id!r}: overall score {overall_score:.2f}"
+        )
+        return results
     
     def comprehensive_validation(
         self,

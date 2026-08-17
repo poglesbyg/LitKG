@@ -18,7 +18,7 @@ import json
 import time
 import requests
 import subprocess
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Iterator, Optional, Union, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import logging
@@ -43,6 +43,21 @@ except ImportError:
 
 # Local imports
 from ..utils.logging import LoggerMixin
+
+
+def _ollama_config():
+    """
+    Read the llm.ollama section of the project config.
+
+    Imported lazily so this module stays importable if config loading fails,
+    in which case the built-in OllamaConfig defaults apply.
+    """
+    from ..utils.config import load_config, OllamaConfig
+
+    try:
+        return load_config().llm.ollama
+    except Exception:
+        return OllamaConfig()
 
 
 @dataclass
@@ -81,18 +96,44 @@ class OllamaManager(LoggerMixin):
     
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
-        timeout: int = 30,
+        base_url: Optional[str] = None,
+        timeout: Optional[int] = None,
         auto_start: bool = True
     ):
-        self.base_url = base_url
-        self.timeout = timeout
+        ollama_config = _ollama_config()
+        self.base_url = base_url or ollama_config.host
+        self.timeout = timeout if timeout is not None else ollama_config.timeout
         self.auto_start = auto_start
         self.client = None
         
         # Biomedical model recommendations
         self.biomedical_models = {
             # Open source biomedical models
+            "qwen3:8b": ModelInfo(
+                name="qwen3:8b",
+                size="5.2GB",
+                parameters="8B",
+                family="qwen",
+                description="Alibaba's Qwen3 8B - Strong reasoning at 8B with a long context window",
+                biomedical_optimized=False,
+                recommended_use=[
+                    "general_biomedical", "entity_extraction", "relation_extraction",
+                    "hypothesis_generation", "literature_analysis"
+                ],
+                memory_requirements="8GB",
+                performance_tier="high"
+            ),
+            "qwen3-coder:30b": ModelInfo(
+                name="qwen3-coder:30b",
+                size="18GB",
+                parameters="30B",
+                family="qwen",
+                description="Alibaba's Qwen3 Coder 30B - Code-tuned; strong structured/JSON output",
+                biomedical_optimized=False,
+                recommended_use=["structured_extraction", "complex_reasoning"],
+                memory_requirements="24GB",
+                performance_tier="premium"
+            ),
             "llama3.1:8b": ModelInfo(
                 name="llama3.1:8b",
                 size="4.7GB",
@@ -217,17 +258,152 @@ class OllamaManager(LoggerMixin):
             self.logger.error(f"Error starting Ollama server: {e}")
             return False
     
-    def list_available_models(self) -> List[str]:
-        """List models available on the Ollama server."""
+    def list_models(self) -> List[str]:
+        """
+        List the names of models pulled on the Ollama server.
+
+        Returns:
+            Model names, or an empty list if the server is unreachable.
+        """
         if not self.client:
             return []
-        
+
         try:
-            models = self.client.list()
-            return [model['name'] for model in models.get('models', [])]
+            response = self.client.list()
         except Exception as e:
             self.logger.error(f"Error listing models: {e}")
             return []
+
+        # Modern ollama clients return a ListResponse of Model objects exposing
+        # `.model`; older ones returned {"models": [{"name": ...}]}.
+        entries = getattr(response, 'models', None)
+        if entries is None and isinstance(response, dict):
+            entries = response.get('models', [])
+        entries = entries or []
+
+        names = []
+        for entry in entries:
+            name = getattr(entry, 'model', None) or getattr(entry, 'name', None)
+            if name is None and isinstance(entry, dict):
+                name = entry.get('model') or entry.get('name')
+            if name:
+                names.append(name)
+
+        return names
+
+    def list_available_models(self) -> List[str]:
+        """Alias for list_models()."""
+        return self.list_models()
+
+    def chat(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Send a multi-turn chat request to the Ollama server.
+
+        Args:
+            model: Model name, e.g. "llama3.1:8b".
+            messages: Chat messages as {"role", "content"} dicts.
+            **kwargs: Additional options forwarded to the Ollama client.
+
+        Returns:
+            The raw Ollama chat response, or {} if the request fails.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        try:
+            return self.client.chat(model=model, messages=messages, **kwargs)
+        except Exception as e:
+            self.logger.error(f"Error in chat with {model}: {e}")
+            return {}
+
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate a completion from the Ollama server.
+
+        This is the raw passthrough; use OllamaLLM for the LangChain-style
+        interface that returns just the text.
+
+        Args:
+            model: Model name.
+            prompt: The prompt to complete.
+            system: Optional system prompt.
+            temperature: Optional sampling temperature.
+            **kwargs: Additional options forwarded to the Ollama client.
+
+        Returns:
+            The raw Ollama generate response, or {} if the request fails.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        options = kwargs.pop("options", {})
+        if temperature is not None:
+            options["temperature"] = temperature
+
+        try:
+            request = {"model": model, "prompt": prompt, **kwargs}
+            if system is not None:
+                request["system"] = system
+            if options:
+                request["options"] = options
+            return self.client.generate(**request)
+        except Exception as e:
+            self.logger.error(f"Error generating with {model}: {e}")
+            return {}
+
+    def generate_stream(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Stream a completion from the Ollama server, chunk by chunk.
+
+        Yields:
+            Each raw response chunk. Nothing is yielded if the request fails,
+            so callers see an empty stream rather than an exception.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return
+
+        options = kwargs.pop("options", {})
+        if temperature is not None:
+            options["temperature"] = temperature
+
+        try:
+            request = {"model": model, "prompt": prompt, "stream": True, **kwargs}
+            if system is not None:
+                request["system"] = system
+            if options:
+                request["options"] = options
+            stream = self.client.generate(**request)
+        except Exception as e:
+            self.logger.error(f"Error starting stream for {model}: {e}")
+            return
+
+        try:
+            for chunk in stream:
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"Error during stream for {model}: {e}")
     
     def pull_model(self, model_name: str) -> bool:
         """Download a model if not already available."""
@@ -271,8 +447,31 @@ class OllamaManager(LoggerMixin):
             self.logger.error(f"Error deleting model {model_name}: {e}")
             return False
     
-    def get_model_info(self, model_name: str) -> Optional[ModelInfo]:
-        """Get information about a model."""
+    def get_model_info(self, model_name: str) -> Dict[str, Any]:
+        """
+        Query the Ollama server for a model's details.
+
+        Args:
+            model_name: Model name to describe.
+
+        Returns:
+            The raw Ollama ``show`` response (modelfile, parameters, template,
+            details), or {} if the model is unknown or the server is
+            unreachable. For LitKG's curated catalog entries, see
+            get_biomedical_model_info().
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        try:
+            return self.client.show(model_name)
+        except Exception as e:
+            self.logger.error(f"Error getting info for {model_name}: {e}")
+            return {}
+
+    def get_biomedical_model_info(self, model_name: str) -> Optional[ModelInfo]:
+        """Look up a model in LitKG's curated biomedical model catalog."""
         return self.biomedical_models.get(model_name)
     
     def recommend_models_for_task(self, task: str, memory_limit: str = "8GB") -> List[ModelInfo]:
@@ -337,35 +536,45 @@ class OllamaLLM(LoggerMixin):
     
     def __init__(
         self,
-        model: str = "llama3.1:8b",
-        base_url: str = "http://localhost:11434",
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         timeout: int = 60,
-        biomedical_mode: bool = True
+        biomedical_mode: bool = True,
+        reasoning: Optional[bool] = None
     ):
-        self.model = model
-        self.base_url = base_url
+        # Fall back to the configured local model/host (see config.yaml: llm.ollama)
+        ollama_config = _ollama_config()
+        self.model = model or ollama_config.model
+        self.base_url = base_url or ollama_config.host
         self.temperature = temperature
         self.top_p = top_p
         self.timeout = timeout
         self.biomedical_mode = biomedical_mode
-        
+        self.reasoning = ollama_config.think if reasoning is None else reasoning
+
         # Initialize Ollama manager
-        self.ollama_manager = OllamaManager(base_url=base_url)
-        
+        self.ollama_manager = OllamaManager(base_url=self.base_url)
+
         # Initialize LangChain Ollama LLM if available
         self.llm = None
         if OLLAMA_AVAILABLE:
             try:
                 self.llm = LangChainOllamaLLM(
-                    model=model,
-                    base_url=base_url,
+                    model=self.model,
+                    base_url=self.base_url,
                     temperature=temperature,
                     top_p=top_p,
-                    timeout=timeout
+                    timeout=timeout,
+                    # Reasoning models otherwise spend the whole token budget
+                    # thinking and can return an empty answer
+                    reasoning=self.reasoning
                 )
-                self.logger.info(f"Initialized Ollama LLM with model: {model}")
+                self.logger.info(
+                    f"Initialized Ollama LLM with model: {self.model} "
+                    f"(reasoning={self.reasoning})"
+                )
             except Exception as e:
                 self.logger.error(f"Failed to initialize Ollama LLM: {e}")
         
@@ -419,10 +628,13 @@ When uncertain, acknowledge limitations and suggest further investigation."""
             
             response = self.llm.invoke(formatted_prompt, **kwargs)
             return response
-            
+
         except Exception as e:
-            self.logger.error(f"Error generating response: {e}")
-            return f"Error: {str(e)}"
+            # Raise rather than returning the error text as content: callers
+            # wrap this in an LLMResponse and would otherwise treat a failure
+            # as a successful generation whose body happens to say "Error:".
+            self.logger.error(f"Error generating response with {self.model}: {e}")
+            raise
     
     def batch_generate(
         self,
@@ -472,18 +684,19 @@ class BiomedicalOllamaChain(LoggerMixin):
     
     def __init__(
         self,
-        model: str = "llama3.1:8b",
+        model: Optional[str] = None,
         task_type: str = "general",
-        base_url: str = "http://localhost:11434"
+        base_url: Optional[str] = None
     ):
-        self.model = model
+        ollama_config = _ollama_config()
+        self.model = model or ollama_config.model
         self.task_type = task_type
-        self.base_url = base_url
+        self.base_url = base_url or ollama_config.host
         
         # Initialize Ollama LLM
         self.llm = OllamaLLM(
-            model=model,
-            base_url=base_url,
+            model=self.model,
+            base_url=self.base_url,
             biomedical_mode=True
         )
         
@@ -547,15 +760,29 @@ class BiomedicalOllamaChain(LoggerMixin):
             self.logger.warning(f"Unknown task type: {task_type}")
     
     def run(self, **kwargs) -> str:
-        """Run the chain with provided inputs."""
+        """
+        Run the chain with provided inputs.
+
+        Returns:
+            The chain's text output.
+
+        Raises:
+            RuntimeError: if the chain was never initialized.
+            Exception: whatever the chain raised. Errors are not returned as
+                content, which would make a failure look like a successful
+                generation whose text happens to start with "Error:".
+        """
         if not self.chain:
-            return "Error: Chain not initialized"
-        
+            raise RuntimeError(
+                f"Chain not initialized for task type {self.task_type!r}; "
+                f"known types: {sorted(self.prompts)}"
+            )
+
         try:
             return self.chain.run(**kwargs)
         except Exception as e:
-            self.logger.error(f"Error running chain: {e}")
-            return f"Error: {str(e)}"
+            self.logger.error(f"Error running {self.task_type} chain: {e}")
+            raise
     
     def extract_entities(self, text: str) -> str:
         """Extract biomedical entities from text."""

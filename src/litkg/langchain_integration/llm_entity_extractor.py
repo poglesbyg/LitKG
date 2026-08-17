@@ -22,10 +22,10 @@ from pathlib import Path
 
 # LangChain imports
 from langchain.chains import LLMChain
-from langchain.prompts import PromptTemplate, FewShotPromptTemplate
+from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain.output_parsers import PydanticOutputParser, OutputFixingParser
-from langchain.schema import BaseOutputParser
-from langchain.llms.base import LLM
+from langchain_core.output_parsers import BaseOutputParser
+from langchain_core.language_models.llms import LLM
 
 # LangChain provider imports
 try:

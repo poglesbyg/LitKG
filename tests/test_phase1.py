@@ -12,6 +12,7 @@ import networkx as nx
 from litkg.phase1.literature_processor import LiteratureProcessor, DocumentProcessor, EntityExtractor
 from litkg.phase1.kg_preprocessor import KnowledgeGraphPreprocessor, OntologyMapper
 from litkg.phase1.entity_linker import EntityLinker, FuzzyMatcher, DisambiguationEngine
+from litkg.utils.config import LitKGConfig
 
 
 class TestLiteratureProcessor:
@@ -196,8 +197,10 @@ class TestKnowledgeGraphPreprocessor:
     def test_kg_preprocessor_init(self, sample_config):
         """Test KnowledgeGraphPreprocessor initialization."""
         preprocessor = KnowledgeGraphPreprocessor(sample_config)
-        
-        assert preprocessor.config == sample_config
+
+        # The constructor normalizes whatever it is given into a LitKGConfig,
+        # which is what the rest of the class reads from.
+        assert isinstance(preprocessor.config, LitKGConfig)
         assert hasattr(preprocessor, 'logger')
     
     def test_load_knowledge_graph(self, sample_knowledge_graph):
@@ -335,8 +338,10 @@ class TestEntityLinker:
     def test_entity_linker_init(self, sample_config):
         """Test EntityLinker initialization."""
         linker = EntityLinker(sample_config)
-        
-        assert linker.config == sample_config
+
+        # The constructor normalizes whatever it is given into a LitKGConfig,
+        # which is what the rest of the class reads from.
+        assert isinstance(linker.config, LitKGConfig)
         assert hasattr(linker, 'logger')
     
     def test_link_entities(self, sample_entities, sample_knowledge_graph):
