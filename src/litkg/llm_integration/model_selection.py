@@ -82,10 +82,12 @@ class BiomedicalModelRecommendations:
             "entity_extraction": {
                 TaskComplexity.SIMPLE: [
                     ("mistral:7b", "ollama", 0.85),
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75)
                 ],
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.93),
                     ("llama3.1:8b", "ollama", 0.90),
                     ("gpt-3.5-turbo", "openai", 0.85),
                     ("claude-3-haiku", "anthropic", 0.80)
@@ -100,11 +102,13 @@ class BiomedicalModelRecommendations:
             # Relation Extraction
             "relation_extraction": {
                 TaskComplexity.SIMPLE: [
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75),
                     ("mistral:7b", "ollama", 0.70)
                 ],
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.88),
                     ("llama3.1:8b", "ollama", 0.85),
                     ("gpt-4", "openai", 0.90),
                     ("claude-3-sonnet", "anthropic", 0.85)
@@ -119,6 +123,7 @@ class BiomedicalModelRecommendations:
             # Hypothesis Generation
             "hypothesis_generation": {
                 TaskComplexity.MODERATE: [
+                    ("qwen3:8b", "ollama", 0.78),
                     ("llama3.1:8b", "ollama", 0.75),
                     ("gpt-3.5-turbo", "openai", 0.80),
                     ("claude-3-haiku", "anthropic", 0.75)
@@ -139,6 +144,7 @@ class BiomedicalModelRecommendations:
             "validation": {
                 TaskComplexity.MODERATE: [
                     ("gpt-3.5-turbo", "openai", 0.80),
+                    ("qwen3:8b", "ollama", 0.78),
                     ("llama3.1:8b", "ollama", 0.75),
                     ("claude-3-haiku", "anthropic", 0.78)
                 ],
@@ -157,6 +163,7 @@ class BiomedicalModelRecommendations:
             # Literature Analysis
             "literature_analysis": {
                 TaskComplexity.SIMPLE: [
+                    ("qwen3:8b", "ollama", 0.83),
                     ("llama3.1:8b", "ollama", 0.80),
                     ("gpt-3.5-turbo", "openai", 0.75)
                 ],
@@ -184,11 +191,15 @@ class BiomedicalModelRecommendations:
             "gpt-4-turbo": {"memory": "0GB", "cpu": "none", "gpu": "none"},
             "claude-3-haiku": {"memory": "0GB", "cpu": "none", "gpu": "none"},
             "claude-3-sonnet": {"memory": "0GB", "cpu": "none", "gpu": "none"},
-            "claude-3-opus": {"memory": "0GB", "cpu": "none", "gpu": "none"}
+            "claude-3-opus": {"memory": "0GB", "cpu": "none", "gpu": "none"},
+            "qwen3:8b": {"memory": "8GB", "cpu": "moderate", "gpu": "optional"},
+            "qwen3-coder:30b": {"memory": "24GB", "cpu": "high", "gpu": "recommended"}
         }
         
         # Cost estimates (per 1K tokens)
         self.cost_estimates = {
+            "qwen3:8b": 0.0,
+            "qwen3-coder:30b": 0.0,
             "mistral:7b": 0.0,
             "llama3.1:8b": 0.0,
             "llama3.1:70b": 0.0,

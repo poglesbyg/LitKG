@@ -45,6 +45,21 @@ except ImportError:
 from ..utils.logging import LoggerMixin
 
 
+def _ollama_config():
+    """
+    Read the llm.ollama section of the project config.
+
+    Imported lazily so this module stays importable if config loading fails,
+    in which case the built-in OllamaConfig defaults apply.
+    """
+    from ..utils.config import load_config, OllamaConfig
+
+    try:
+        return load_config().llm.ollama
+    except Exception:
+        return OllamaConfig()
+
+
 @dataclass
 class ModelInfo:
     """Information about an available model."""
@@ -81,18 +96,44 @@ class OllamaManager(LoggerMixin):
     
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
-        timeout: int = 30,
+        base_url: Optional[str] = None,
+        timeout: Optional[int] = None,
         auto_start: bool = True
     ):
-        self.base_url = base_url
-        self.timeout = timeout
+        ollama_config = _ollama_config()
+        self.base_url = base_url or ollama_config.host
+        self.timeout = timeout if timeout is not None else ollama_config.timeout
         self.auto_start = auto_start
         self.client = None
         
         # Biomedical model recommendations
         self.biomedical_models = {
             # Open source biomedical models
+            "qwen3:8b": ModelInfo(
+                name="qwen3:8b",
+                size="5.2GB",
+                parameters="8B",
+                family="qwen",
+                description="Alibaba's Qwen3 8B - Strong reasoning at 8B with a long context window",
+                biomedical_optimized=False,
+                recommended_use=[
+                    "general_biomedical", "entity_extraction", "relation_extraction",
+                    "hypothesis_generation", "literature_analysis"
+                ],
+                memory_requirements="8GB",
+                performance_tier="high"
+            ),
+            "qwen3-coder:30b": ModelInfo(
+                name="qwen3-coder:30b",
+                size="18GB",
+                parameters="30B",
+                family="qwen",
+                description="Alibaba's Qwen3 Coder 30B - Code-tuned; strong structured/JSON output",
+                biomedical_optimized=False,
+                recommended_use=["structured_extraction", "complex_reasoning"],
+                memory_requirements="24GB",
+                performance_tier="premium"
+            ),
             "llama3.1:8b": ModelInfo(
                 name="llama3.1:8b",
                 size="4.7GB",
@@ -228,14 +269,27 @@ class OllamaManager(LoggerMixin):
             return []
 
         try:
-            models = self.client.list()
-            return [
-                model['name'] for model in models.get('models', [])
-                if 'name' in model
-            ]
+            response = self.client.list()
         except Exception as e:
             self.logger.error(f"Error listing models: {e}")
             return []
+
+        # Modern ollama clients return a ListResponse of Model objects exposing
+        # `.model`; older ones returned {"models": [{"name": ...}]}.
+        entries = getattr(response, 'models', None)
+        if entries is None and isinstance(response, dict):
+            entries = response.get('models', [])
+        entries = entries or []
+
+        names = []
+        for entry in entries:
+            name = getattr(entry, 'model', None) or getattr(entry, 'name', None)
+            if name is None and isinstance(entry, dict):
+                name = entry.get('model') or entry.get('name')
+            if name:
+                names.append(name)
+
+        return names
 
     def list_available_models(self) -> List[str]:
         """Alias for list_models()."""
@@ -482,35 +536,45 @@ class OllamaLLM(LoggerMixin):
     
     def __init__(
         self,
-        model: str = "llama3.1:8b",
-        base_url: str = "http://localhost:11434",
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
         temperature: float = 0.1,
         top_p: float = 0.9,
         timeout: int = 60,
-        biomedical_mode: bool = True
+        biomedical_mode: bool = True,
+        reasoning: Optional[bool] = None
     ):
-        self.model = model
-        self.base_url = base_url
+        # Fall back to the configured local model/host (see config.yaml: llm.ollama)
+        ollama_config = _ollama_config()
+        self.model = model or ollama_config.model
+        self.base_url = base_url or ollama_config.host
         self.temperature = temperature
         self.top_p = top_p
         self.timeout = timeout
         self.biomedical_mode = biomedical_mode
-        
+        self.reasoning = ollama_config.think if reasoning is None else reasoning
+
         # Initialize Ollama manager
-        self.ollama_manager = OllamaManager(base_url=base_url)
-        
+        self.ollama_manager = OllamaManager(base_url=self.base_url)
+
         # Initialize LangChain Ollama LLM if available
         self.llm = None
         if OLLAMA_AVAILABLE:
             try:
                 self.llm = LangChainOllamaLLM(
-                    model=model,
-                    base_url=base_url,
+                    model=self.model,
+                    base_url=self.base_url,
                     temperature=temperature,
                     top_p=top_p,
-                    timeout=timeout
+                    timeout=timeout,
+                    # Reasoning models otherwise spend the whole token budget
+                    # thinking and can return an empty answer
+                    reasoning=self.reasoning
                 )
-                self.logger.info(f"Initialized Ollama LLM with model: {model}")
+                self.logger.info(
+                    f"Initialized Ollama LLM with model: {self.model} "
+                    f"(reasoning={self.reasoning})"
+                )
             except Exception as e:
                 self.logger.error(f"Failed to initialize Ollama LLM: {e}")
         
@@ -564,10 +628,13 @@ When uncertain, acknowledge limitations and suggest further investigation."""
             
             response = self.llm.invoke(formatted_prompt, **kwargs)
             return response
-            
+
         except Exception as e:
-            self.logger.error(f"Error generating response: {e}")
-            return f"Error: {str(e)}"
+            # Raise rather than returning the error text as content: callers
+            # wrap this in an LLMResponse and would otherwise treat a failure
+            # as a successful generation whose body happens to say "Error:".
+            self.logger.error(f"Error generating response with {self.model}: {e}")
+            raise
     
     def batch_generate(
         self,
@@ -617,18 +684,19 @@ class BiomedicalOllamaChain(LoggerMixin):
     
     def __init__(
         self,
-        model: str = "llama3.1:8b",
+        model: Optional[str] = None,
         task_type: str = "general",
-        base_url: str = "http://localhost:11434"
+        base_url: Optional[str] = None
     ):
-        self.model = model
+        ollama_config = _ollama_config()
+        self.model = model or ollama_config.model
         self.task_type = task_type
-        self.base_url = base_url
+        self.base_url = base_url or ollama_config.host
         
         # Initialize Ollama LLM
         self.llm = OllamaLLM(
-            model=model,
-            base_url=base_url,
+            model=self.model,
+            base_url=self.base_url,
             biomedical_mode=True
         )
         

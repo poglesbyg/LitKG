@@ -98,23 +98,33 @@ class BiomedicalLLMInterface(LoggerMixin):
         self,
         preferred_providers: List[LLMProvider] = None,
         fallback_enabled: bool = True,
-        cost_optimization: bool = True
+        cost_optimization: bool = True,
+        config=None
     ):
-        self.preferred_providers = preferred_providers or [
-            LLMProvider.OLLAMA,  # Local first for privacy
-            LLMProvider.OPENAI,
-            LLMProvider.ANTHROPIC
-        ]
+        from ..utils.config import load_config
+
+        self.config = load_config(config)
+        self.llm_config = self.config.llm
+
+        # Provider precedence comes from config unless explicitly overridden
+        if preferred_providers is not None:
+            self.preferred_providers = preferred_providers
+        else:
+            self.preferred_providers = self._providers_from_config()
+
+        # Default model for local inference, e.g. "qwen3:8b"
+        self.default_model = self.llm_config.ollama.model
+
         self.fallback_enabled = fallback_enabled
         self.cost_optimization = cost_optimization
-        
+
         # Initialize clients
         self.clients = {}
         self._initialize_clients()
-        
+
         # Model capabilities database
         self.model_capabilities = self._load_model_capabilities()
-        
+
         # Usage tracking
         self.usage_stats = {
             "total_requests": 0,
@@ -124,8 +134,27 @@ class BiomedicalLLMInterface(LoggerMixin):
             "model_usage": {}
         }
         
-        self.logger.info("Initialized BiomedicalLLMInterface")
-    
+        self.logger.info(
+            f"Initialized BiomedicalLLMInterface "
+            f"(providers: {[p.value for p in self.preferred_providers]}, "
+            f"default model: {self.default_model})"
+        )
+
+    def _providers_from_config(self) -> List[LLMProvider]:
+        """Resolve the configured provider_order into LLMProvider members."""
+        providers = []
+        for name in self.llm_config.provider_order:
+            try:
+                providers.append(LLMProvider(name))
+            except ValueError:
+                self.logger.warning(f"Unknown provider in provider_order: {name!r}")
+
+        if not providers:
+            self.logger.warning("No valid providers configured; defaulting to Ollama")
+            providers = [LLMProvider.OLLAMA]
+
+        return providers
+
     def _initialize_clients(self):
         """Initialize every available LLM client."""
         self._initialize_ollama_client()
@@ -134,10 +163,15 @@ class BiomedicalLLMInterface(LoggerMixin):
         self._initialize_openai_compatible_client()
 
     def _initialize_ollama_client(self) -> bool:
-        """Initialize the Ollama client. Returns True on success."""
+        """Initialize the Ollama client at the configured host. True on success."""
         try:
-            self.clients[LLMProvider.OLLAMA] = OllamaManager()
-            self.logger.info("Initialized Ollama client")
+            self.clients[LLMProvider.OLLAMA] = OllamaManager(
+                base_url=self.llm_config.ollama.host,
+                timeout=self.llm_config.ollama.timeout,
+            )
+            self.logger.info(
+                f"Initialized Ollama client at {self.llm_config.ollama.host}"
+            )
             return True
         except Exception as e:
             self.logger.warning(f"Failed to initialize Ollama: {e}")
@@ -200,6 +234,30 @@ class BiomedicalLLMInterface(LoggerMixin):
         """Load model capabilities database."""
         return {
             # Ollama models
+            "qwen3:8b": ModelCapabilities(
+                provider=LLMProvider.OLLAMA,
+                model_name="qwen3:8b",
+                max_tokens=32768,
+                supports_system_prompt=True,
+                supports_streaming=True,
+                cost_per_1k_tokens=0.0,  # Free for local
+                performance_tier="high",
+                biomedical_score=0.75,
+                local_inference=True,
+                memory_requirements="8GB"
+            ),
+            "qwen3-coder:30b": ModelCapabilities(
+                provider=LLMProvider.OLLAMA,
+                model_name="qwen3-coder:30b",
+                max_tokens=32768,
+                supports_system_prompt=True,
+                supports_streaming=True,
+                cost_per_1k_tokens=0.0,
+                performance_tier="premium",
+                biomedical_score=0.7,  # Code-tuned, not biomedical-tuned
+                local_inference=True,
+                memory_requirements="24GB"
+            ),
             "llama3.1:8b": ModelCapabilities(
                 provider=LLMProvider.OLLAMA,
                 model_name="llama3.1:8b",
@@ -301,7 +359,8 @@ class BiomedicalLLMInterface(LoggerMixin):
         max_cost: float = None,
         require_local: bool = False,
         min_biomedical_score: float = 0.6,
-        available_only: bool = True
+        available_only: bool = True,
+        respect_default: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
         Select the best model for a task and return it with its provider.
@@ -315,6 +374,9 @@ class BiomedicalLLMInterface(LoggerMixin):
                 an initialized client (and, for Ollama, is actually pulled).
                 Set False to get a recommendation regardless of what is
                 currently reachable.
+            respect_default: When True, the configured default model
+                (llm.ollama.model) is chosen whenever it satisfies the
+                constraints. Set False to rank purely on capability scores.
 
         Returns:
             {"model", "provider", "capabilities"} or None if nothing qualifies.
@@ -355,7 +417,22 @@ class BiomedicalLLMInterface(LoggerMixin):
             )
             return None
 
-        # Sort by biomedical score, then by cost (lower is better for cost)
+        # An explicitly configured default model is an instruction, not a hint:
+        # if it cleared the constraints above, it wins outright. Pass
+        # respect_default=False to get pure heuristic ranking instead.
+        if respect_default and self.default_model:
+            for name, capabilities in candidates:
+                if name == self.default_model:
+                    self.logger.debug(
+                        f"Using configured default model {name} for task {task!r}"
+                    )
+                    return {
+                        "model": name,
+                        "provider": capabilities.provider,
+                        "capabilities": capabilities,
+                    }
+
+        # Otherwise sort by biomedical score, then by cost (lower is better)
         candidates.sort(
             key=lambda x: (x[1].biomedical_score, -x[1].cost_per_1k_tokens),
             reverse=True
@@ -397,6 +474,7 @@ class BiomedicalLLMInterface(LoggerMixin):
         prompt: str,
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
+        provider: Optional[LLMProvider] = None,
         task: str = "general",
         max_tokens: int = 1000,
         temperature: float = 0.1,
@@ -404,32 +482,55 @@ class BiomedicalLLMInterface(LoggerMixin):
     ) -> LLMResponse:
         """
         Generate response using the best available model.
-        
+
         Args:
             prompt: User prompt
             system_prompt: System prompt
             model: Specific model to use (optional)
+            provider: Pin generation to one provider. When given without a
+                model, the best model for that provider is selected; when given
+                with a model, the two must agree.
             task: Task type for model selection
             max_tokens: Maximum tokens to generate
             temperature: Generation temperature
             **kwargs: Additional provider-specific parameters
-            
+
         Returns:
             LLMResponse object
         """
         start_time = time.time()
-        
+
+        # An explicit model/provider is an instruction; it disables fallback below
+        pinned = model is not None or provider is not None
+
         # Select model if not specified
         if not model:
-            model = self.select_best_model(task)
-            if not model:
-                raise RuntimeError("No suitable model available for task")
-        
+            if provider is not None:
+                model = next(
+                    (
+                        name for name, caps in self.model_capabilities.items()
+                        if caps.provider == provider
+                    ),
+                    None
+                )
+                if not model:
+                    raise RuntimeError(f"No known model for provider: {provider.value}")
+            else:
+                model = self.select_best_model(task)
+                if not model:
+                    raise RuntimeError("No suitable model available for task")
+
         # Get model capabilities
         capabilities = self.model_capabilities.get(model)
         if not capabilities:
             raise ValueError(f"Unknown model: {model}")
-        
+
+        if provider is not None and capabilities.provider != provider:
+            raise ValueError(
+                f"Model {model!r} belongs to provider "
+                f"{capabilities.provider.value!r}, not {provider.value!r}"
+            )
+
         # Generate response based on provider
         try:
             if capabilities.provider == LLMProvider.OLLAMA:
@@ -473,14 +574,22 @@ class BiomedicalLLMInterface(LoggerMixin):
             )
             
         except Exception as e:
-            # Try fallback if enabled
+            # A caller who pinned a model or provider gets the real error, not a
+            # silent switch to something they did not ask for.
+            if pinned:
+                self.logger.error(
+                    f"Pinned model {model} failed and fallback is not applied "
+                    f"to explicit selections: {e}"
+                )
+                raise
+
             if self.fallback_enabled and len(self.preferred_providers) > 1:
                 self.logger.warning(f"Primary model failed, trying fallback: {e}")
                 return self._generate_with_fallback(
                     prompt, system_prompt, task, max_tokens, temperature, **kwargs
                 )
-            else:
-                raise e
+
+            raise
     
     def _generate_ollama(
         self,

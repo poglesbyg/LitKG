@@ -126,7 +126,7 @@ general:
     gpu_enabled: true
     device: "auto"  # auto, cpu, cuda:0, etc.
   
-  # AI API settings (Anthropic Claude preferred)
+  # AI API settings (cloud providers; used as fallback behind local Ollama)
   ai_api:
     provider: "anthropic"  # anthropic, openai
     anthropic:
@@ -137,3 +137,24 @@ general:
       api_key: null  # Fallback option
       model: "gpt-4"
       max_tokens: 4096
+
+# LLM provider settings
+llm:
+  # Fallback precedence; first entry is preferred.
+  # Local-first, so the system runs with no API keys configured.
+  provider_order:
+    - "ollama"
+    - "anthropic"
+    - "openai"
+
+  ollama:
+    host: "http://localhost:11434"  # override with OLLAMA_HOST
+    model: "qwen3:8b"               # override with LITKG_OLLAMA_MODEL
+    embedding_model: "nomic-embed-text:latest"
+    temperature: 0.2
+    max_tokens: 2048
+    timeout: 300
+    # Reasoning models (Qwen3, DeepSeek-R1) spend the token budget on hidden
+    # reasoning before answering, which can return an empty response and take
+    # ~20x longer. Leave false for extraction; set true for hard reasoning.
+    think: false

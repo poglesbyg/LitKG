@@ -80,12 +80,42 @@ class GeneralConfig(BaseModel):
     ai_api: Dict[str, Any]
 
 
+class OllamaConfig(BaseModel):
+    """Configuration for the local Ollama server."""
+    host: str = "http://localhost:11434"
+    model: str = "qwen3:8b"
+    embedding_model: str = "nomic-embed-text:latest"
+    temperature: float = 0.2
+    max_tokens: int = 2048
+    timeout: int = 300
+
+    # Reasoning models (Qwen3, DeepSeek-R1, ...) emit hidden reasoning tokens
+    # before answering. Those tokens count against the generation budget, so a
+    # modest max_tokens can be consumed entirely by reasoning and return an
+    # empty answer. Off by default for the extraction-style tasks LitKG runs.
+    think: bool = False
+
+
+class LLMConfig(BaseModel):
+    """
+    LLM provider configuration.
+
+    ``provider_order`` sets fallback precedence; the first entry is preferred.
+    Defaults are local-first so the system runs without any API keys.
+    """
+    provider_order: list[str] = Field(
+        default_factory=lambda: ["ollama", "anthropic", "openai"]
+    )
+    ollama: OllamaConfig = Field(default_factory=OllamaConfig)
+
+
 class LitKGConfig(BaseModel):
     """Main configuration class."""
     phase1: Phase1Config
     phase2: Phase2Config
     phase3: Phase3Config
     general: GeneralConfig
+    llm: LLMConfig = Field(default_factory=LLMConfig)
 
 
 def load_config(config_path: Optional[Union[str, Dict[str, Any], LitKGConfig]] = None) -> LitKGConfig:
@@ -185,6 +215,22 @@ def load_config(config_path: Optional[Union[str, Dict[str, Any], LitKGConfig]] =
             }
         }
     
+    # LLM section is optional; OllamaConfig supplies the defaults
+    config_data.setdefault('llm', {})
+    config_data['llm'].setdefault('ollama', {})
+
+    # Environment overrides for the local Ollama server
+    if 'OLLAMA_HOST' in os.environ:
+        config_data['llm']['ollama']['host'] = os.environ['OLLAMA_HOST']
+
+    if 'LITKG_OLLAMA_MODEL' in os.environ:
+        config_data['llm']['ollama']['model'] = os.environ['LITKG_OLLAMA_MODEL']
+
+    if 'LITKG_OLLAMA_EMBEDDING_MODEL' in os.environ:
+        config_data['llm']['ollama']['embedding_model'] = (
+            os.environ['LITKG_OLLAMA_EMBEDDING_MODEL']
+        )
+
     # Load environment variables for API keys
     if 'ANTHROPIC_API_KEY' in os.environ:
         config_data['general']['ai_api']['anthropic']['api_key'] = os.environ['ANTHROPIC_API_KEY']
