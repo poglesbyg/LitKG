@@ -428,8 +428,12 @@ class KGSubgraphExtractor(LoggerMixin):
         """
         self.logger.info(f"Extracting KG subgraph {subgraph_id} for {len(target_entities)} entities")
         
-        # Build NetworkX graph for easier subgraph extraction
-        G = nx.Graph()
+        # MultiGraph, not Graph: edge features below one-hot encode
+        # relation_type, so collapsing parallel edges would keep only the last
+        # relation between a pair of entities and hide the others from the GNN.
+        # Undirected is fine here because the PyG conversion emits both
+        # directions explicitly.
+        G = nx.MultiGraph()
         
         # Add nodes
         entities = kg_data.get('entities', {})

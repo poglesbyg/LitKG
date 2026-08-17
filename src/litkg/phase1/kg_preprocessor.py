@@ -1390,12 +1390,58 @@ class KnowledgeGraphPreprocessor(LoggerMixin):
             processed.append({"source": src, "target": dst, **{k: v for k, v in e.items() if k not in ("source", "target")}})
         return processed
 
-    def build_networkx_graph(self, kg: Dict[str, Any]) -> nx.Graph:
-        G = nx.Graph()
+    def build_networkx_graph(
+        self,
+        kg: Dict[str, Any],
+        directed: bool = True,
+        multigraph: bool = True
+    ) -> nx.Graph:
+        """
+        Build a NetworkX graph from a node/edge payload.
+
+        Defaults preserve what a biomedical knowledge graph actually encodes:
+
+        - **Directed**, because relation direction carries meaning: a drug
+          TREATS a disease, and the reverse is not a fact.
+        - **Multigraph**, because a pair of entities can be joined by several
+          distinct relations (ASSOCIATED_WITH and MUTATED_IN are different
+          claims), and a simple graph silently keeps only the last one.
+
+        Pass directed=False/multigraph=False only for algorithms that require a
+        simple undirected graph, and expect that to discard information.
+
+        Args:
+            kg: {"nodes": [{"id", ...}], "edges": [{"source", "target", ...}]}
+            directed: Preserve relation direction.
+            multigraph: Preserve parallel edges between the same pair.
+
+        Returns:
+            The graph, of the type implied by the flags.
+        """
+        graph_type = {
+            (True, True): nx.MultiDiGraph,
+            (True, False): nx.DiGraph,
+            (False, True): nx.MultiGraph,
+            (False, False): nx.Graph,
+        }[(directed, multigraph)]
+
+        G = graph_type()
         for n in kg.get("nodes", []):
             G.add_node(n.get("id", n.get("name", "node")), **n)
+
+        dropped = 0
         for e in kg.get("edges", []):
-            G.add_edge(e.get("source"), e.get("target"), **e)
+            source, target = e.get("source"), e.get("target")
+            if not multigraph and G.has_edge(source, target):
+                dropped += 1
+            G.add_edge(source, target, **e)
+
+        if dropped:
+            self.logger.warning(
+                f"{dropped} parallel edge(s) collapsed because multigraph=False; "
+                "distinct relation types between the same entities were merged"
+            )
+
         return G
 
     def compute_graph_statistics(self, G: nx.Graph) -> Dict[str, Any]:
