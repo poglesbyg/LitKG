@@ -985,10 +985,6 @@ class EntityLinker(LoggerMixin):
         return results
 
 
-# Backward-compatibility alias expected by tests
-class DisambiguationEngine(ContextualDisambiguator):
-    pass
-    
     def _log_overall_statistics(self):
         """Log overall linking statistics."""
         total = self.linking_stats["total_processed"]
@@ -1067,3 +1063,9 @@ class DisambiguationEngine(ContextualDisambiguator):
         self.logger.info(f"Loaded {len(results)} linking results")
         
         return results
+
+
+# Backward-compatibility alias: DisambiguationEngine is the contextual
+# disambiguator under its older name.
+class DisambiguationEngine(ContextualDisambiguator):
+    pass

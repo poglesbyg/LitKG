@@ -9,6 +9,8 @@ This module handles:
 """
 
 import json
+from collections import defaultdict
+
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -272,19 +274,24 @@ class OntologyMapper(LoggerMixin):
         # For now, use heuristics
         return self._heuristic_umls_mapping(entity_name, entity_type)
     
+    # Fallback CUIs for common entities, keyed by uppercased name so that the
+    # lookup below cannot disagree with the keys. Distinct genes must have
+    # distinct CUIs: entity resolution treats a shared CUI as decisive, so a
+    # copy-paste collision here would silently merge two different genes.
+    COMMON_UMLS_MAPPINGS = {
+        ("BRCA1", "GENE"): "C0376571",
+        ("BRCA2", "GENE"): "C0376572",
+        ("TP53", "GENE"): "C0080055",
+        ("BREAST CANCER", "DISEASE"): "C0006142",
+        ("LUNG CANCER", "DISEASE"): "C0242379",
+        ("MELANOMA", "DISEASE"): "C0025202",
+    }
+
     def _heuristic_umls_mapping(self, entity_name: str, entity_type: str) -> Optional[str]:
         """Heuristic UMLS mapping for common entities."""
-        # Simple mapping for demonstration
-        common_mappings = {
-            ("BRCA1", "GENE"): "C0376571",
-            ("BRCA2", "GENE"): "C0376571",
-            ("TP53", "GENE"): "C0080055",
-            ("breast cancer", "DISEASE"): "C0006142",
-            ("lung cancer", "DISEASE"): "C0242379",
-            ("melanoma", "DISEASE"): "C0025202",
-        }
-        
-        return common_mappings.get((entity_name.upper(), entity_type))
+        return self.COMMON_UMLS_MAPPINGS.get(
+            (entity_name.upper().strip(), entity_type.upper())
+        )
     
     def map_to_gene_ontology(self, gene_name: str) -> Optional[str]:
         """Map gene to Gene Ontology ID."""
@@ -882,42 +889,221 @@ class KnowledgeGraphBuilder(LoggerMixin):
                 **relation.attributes
             )
     
-    def merge_duplicate_entities(self, similarity_threshold: float = 0.9):
-        """Merge duplicate entities based on name similarity."""
-        self.logger.info("Merging duplicate entities...")
-        
-        # Simple name-based merging (can be improved with more sophisticated methods)
-        entity_groups = {}
-        
-        for entity_id, entity in self.entities.items():
-            key = (entity.name.lower(), entity.type)
-            if key not in entity_groups:
-                entity_groups[key] = []
-            entity_groups[key].append(entity)
-        
-        # Merge entities in each group
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """Normalize a surface form for comparison."""
+        import re
+
+        lowered = str(name).lower().strip()
+        # Fold the punctuation that distinguishes BRCA1 / BRCA-1 / BRCA 1
+        collapsed = re.sub(r"[\s\-_/.]+", "", lowered)
+        return collapsed
+
+    def _blocking_key(self, entity: StandardizedEntity) -> Tuple[str, str]:
+        """
+        Cheap key restricting which entities are compared to each other.
+
+        Fuzzy comparison is quadratic, so candidates are blocked by type and by
+        the first character of the normalized name. Entities in different
+        blocks are never compared, which keeps merging tractable as the graph
+        grows without materially affecting recall: near-duplicate surface forms
+        almost always agree on their first character.
+        """
+        normalized = self._normalize_name(entity.name)
+        return (entity.type, normalized[:1])
+
+    def merge_duplicate_entities(
+        self,
+        similarity_threshold: float = 0.9,
+        use_ontology: bool = True
+    ) -> Dict[str, int]:
+        """
+        Merge entities that refer to the same real-world thing.
+
+        Resolution runs as a cascade, strongest evidence first:
+
+        1. **Shared ontology identifier** (UMLS CUI or GO ID). Decisive
+           regardless of surface form, so "BRCA1" and "breast cancer 1" merge
+           when both carry CUI C0376571.
+        2. **Identical normalized name**, after folding case, spaces, and
+           hyphens, so "BRCA-1" meets "BRCA1".
+        3. **Synonym overlap** between the two entities.
+        4. **Fuzzy surface similarity** at or above ``similarity_threshold``,
+           within the same entity type.
+
+        Matches are accumulated with union-find so resolution is transitive: if
+        A matches B and B matches C, all three collapse into one node even when
+        A and C would not have matched directly.
+
+        Args:
+            similarity_threshold: Minimum fuzzy similarity for rule 4.
+            use_ontology: Whether to use ontology identifiers (rule 1).
+
+        Returns:
+            Counts per rule, plus "merged" and "remaining".
+        """
+        self.logger.info(
+            f"Merging duplicate entities (threshold={similarity_threshold}, "
+            f"ontology={use_ontology})"
+        )
+
+        entity_ids = list(self.entities)
+        parent = {eid: eid for eid in entity_ids}
+
+        def find(eid: str) -> str:
+            while parent[eid] != eid:
+                parent[eid] = parent[parent[eid]]  # path compression
+                eid = parent[eid]
+            return eid
+
+        def union(a: str, b: str) -> bool:
+            root_a, root_b = find(a), find(b)
+            if root_a == root_b:
+                return False
+            parent[root_b] = root_a
+            return True
+
+        stats = {"ontology": 0, "exact_name": 0, "synonym": 0, "fuzzy": 0}
+
+        # Rule 1: shared ontology identifier
+        if use_ontology:
+            for attribute in ("cui", "go_id"):
+                by_identifier: Dict[str, List[str]] = defaultdict(list)
+                for eid in entity_ids:
+                    value = getattr(self.entities[eid], attribute, None)
+                    if value:
+                        by_identifier[value].append(eid)
+
+                for group in by_identifier.values():
+                    for other in group[1:]:
+                        if union(group[0], other):
+                            stats["ontology"] += 1
+
+        # Rules 2-3: index every surface form an entity is known by, so a
+        # collision means two entities share a name or a synonym. Done globally
+        # rather than per block: synonyms are precisely the case where surface
+        # forms diverge at the first character ("TP53" vs its synonym "p53"),
+        # which blocking would hide.
+        by_surface_form: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        for eid in entity_ids:
+            entity = self.entities[eid]
+            for surface in {entity.name, *entity.synonyms}:
+                normalized = self._normalize_name(surface)
+                if normalized:
+                    by_surface_form[(entity.type, normalized)].append(eid)
+
+        for (_, normalized), group in by_surface_form.items():
+            if len(group) < 2:
+                continue
+            for other in group[1:]:
+                if union(group[0], other):
+                    # Sharing a primary name is an exact match; sharing only a
+                    # synonym is weaker evidence, counted separately.
+                    is_exact = all(
+                        self._normalize_name(self.entities[e].name) == normalized
+                        for e in (group[0], other)
+                    )
+                    stats["exact_name" if is_exact else "synonym"] += 1
+
+        # Rule 4 operates within blocks
+        blocks: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        for eid in entity_ids:
+            blocks[self._blocking_key(self.entities[eid])].append(eid)
+
+        fuzzy_matcher = None
+        if similarity_threshold < 1.0:
+            try:
+                # Imported here: entity_linker imports this module
+                from .entity_linker import FuzzyMatcher
+                fuzzy_matcher = FuzzyMatcher(self.config)
+            except Exception as e:
+                self.logger.warning(f"Fuzzy matching unavailable ({e}); using exact rules only")
+
+        if fuzzy_matcher is not None:
+            for block in blocks.values():
+                if len(block) < 2:
+                    continue
+
+                for i, first_id in enumerate(block):
+                    first = self.entities[first_id]
+
+                    for second_id in block[i + 1:]:
+                        # Already resolved by a stronger rule
+                        if find(first_id) == find(second_id):
+                            continue
+
+                        second = self.entities[second_id]
+                        score = fuzzy_matcher.calculate_similarity(first.name, second.name)
+                        if score >= similarity_threshold:
+                            if union(first_id, second_id):
+                                stats["fuzzy"] += 1
+
+        merged_count = self._apply_entity_clusters(parent, find)
+
+        stats["merged"] = merged_count
+        stats["remaining"] = len(self.entities)
+        self.logger.info(
+            f"Merged {merged_count} duplicate entities "
+            f"(ontology={stats['ontology']}, exact={stats['exact_name']}, "
+            f"synonym={stats['synonym']}, fuzzy={stats['fuzzy']}); "
+            f"{stats['remaining']} entities remain"
+        )
+        return stats
+
+    def _apply_entity_clusters(self, parent: Dict[str, str], find) -> int:
+        """
+        Collapse each resolved cluster into a single canonical entity.
+
+        The canonical entity is the one carrying an ontology identifier where
+        available, then the one with the richest synonym set, so merging never
+        discards the best-described member of a cluster.
+
+        Returns:
+            The number of entities removed.
+        """
+        clusters: Dict[str, List[str]] = defaultdict(list)
+        for eid in list(parent):
+            clusters[find(eid)].append(eid)
+
         merged_count = 0
-        for group in entity_groups.values():
-            if len(group) > 1:
-                # Keep the first entity as primary
-                primary = group[0]
-                
-                for duplicate in group[1:]:
-                    # Merge attributes
-                    primary.synonyms.extend(duplicate.synonyms)
-                    primary.attributes.update(duplicate.attributes)
-                    
-                    # Update graph references
-                    self._update_entity_references(duplicate.id, primary.id)
-                    
-                    # Remove duplicate
-                    del self.entities[duplicate.id]
-                    if self.graph.has_node(duplicate.id):
-                        self.graph.remove_node(duplicate.id)
-                    
-                    merged_count += 1
-        
-        self.logger.info(f"Merged {merged_count} duplicate entities")
+
+        for members in clusters.values():
+            if len(members) < 2:
+                continue
+
+            def rank(eid: str) -> Tuple[int, int, int]:
+                entity = self.entities[eid]
+                has_ontology = 1 if (entity.cui or entity.go_id) else 0
+                return (has_ontology, len(entity.synonyms), len(entity.attributes))
+
+            ordered = sorted(members, key=rank, reverse=True)
+            primary = self.entities[ordered[0]]
+
+            for duplicate_id in ordered[1:]:
+                duplicate = self.entities[duplicate_id]
+
+                # Preserve every surface form the cluster knew about
+                for surface in [duplicate.name, *duplicate.synonyms]:
+                    if surface and surface not in primary.synonyms and surface != primary.name:
+                        primary.synonyms.append(surface)
+
+                # Keep ontology identifiers the primary lacks
+                if not primary.cui and duplicate.cui:
+                    primary.cui = duplicate.cui
+                if not primary.go_id and duplicate.go_id:
+                    primary.go_id = duplicate.go_id
+
+                primary.attributes.update(duplicate.attributes)
+
+                self._update_entity_references(duplicate_id, primary.id)
+
+                del self.entities[duplicate_id]
+                if self.graph.has_node(duplicate_id):
+                    self.graph.remove_node(duplicate_id)
+
+                merged_count += 1
+
+        return merged_count
     
     def _update_entity_references(self, old_id: str, new_id: str):
         """Update entity references in relations."""
@@ -1218,3 +1404,7 @@ class KnowledgeGraphPreprocessor(LoggerMixin):
             "num_edges": G.number_of_edges(),
             "density": nx.density(G) if G.number_of_nodes() > 1 else 0.0,
         }
+
+# Short alias used across the package and by scripts. Defined here so that both
+# `litkg.phase1` and this module expose the same name.
+KGPreprocessor = KnowledgeGraphPreprocessor
