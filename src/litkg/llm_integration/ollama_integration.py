@@ -18,7 +18,7 @@ import json
 import time
 import requests
 import subprocess
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, List, Any, Iterator, Optional, Union, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import logging
@@ -217,17 +217,139 @@ class OllamaManager(LoggerMixin):
             self.logger.error(f"Error starting Ollama server: {e}")
             return False
     
-    def list_available_models(self) -> List[str]:
-        """List models available on the Ollama server."""
+    def list_models(self) -> List[str]:
+        """
+        List the names of models pulled on the Ollama server.
+
+        Returns:
+            Model names, or an empty list if the server is unreachable.
+        """
         if not self.client:
             return []
-        
+
         try:
             models = self.client.list()
-            return [model['name'] for model in models.get('models', [])]
+            return [
+                model['name'] for model in models.get('models', [])
+                if 'name' in model
+            ]
         except Exception as e:
             self.logger.error(f"Error listing models: {e}")
             return []
+
+    def list_available_models(self) -> List[str]:
+        """Alias for list_models()."""
+        return self.list_models()
+
+    def chat(
+        self,
+        model: str,
+        messages: List[Dict[str, str]],
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Send a multi-turn chat request to the Ollama server.
+
+        Args:
+            model: Model name, e.g. "llama3.1:8b".
+            messages: Chat messages as {"role", "content"} dicts.
+            **kwargs: Additional options forwarded to the Ollama client.
+
+        Returns:
+            The raw Ollama chat response, or {} if the request fails.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        try:
+            return self.client.chat(model=model, messages=messages, **kwargs)
+        except Exception as e:
+            self.logger.error(f"Error in chat with {model}: {e}")
+            return {}
+
+    def generate(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate a completion from the Ollama server.
+
+        This is the raw passthrough; use OllamaLLM for the LangChain-style
+        interface that returns just the text.
+
+        Args:
+            model: Model name.
+            prompt: The prompt to complete.
+            system: Optional system prompt.
+            temperature: Optional sampling temperature.
+            **kwargs: Additional options forwarded to the Ollama client.
+
+        Returns:
+            The raw Ollama generate response, or {} if the request fails.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        options = kwargs.pop("options", {})
+        if temperature is not None:
+            options["temperature"] = temperature
+
+        try:
+            request = {"model": model, "prompt": prompt, **kwargs}
+            if system is not None:
+                request["system"] = system
+            if options:
+                request["options"] = options
+            return self.client.generate(**request)
+        except Exception as e:
+            self.logger.error(f"Error generating with {model}: {e}")
+            return {}
+
+    def generate_stream(
+        self,
+        model: str,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs
+    ) -> Iterator[Dict[str, Any]]:
+        """
+        Stream a completion from the Ollama server, chunk by chunk.
+
+        Yields:
+            Each raw response chunk. Nothing is yielded if the request fails,
+            so callers see an empty stream rather than an exception.
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return
+
+        options = kwargs.pop("options", {})
+        if temperature is not None:
+            options["temperature"] = temperature
+
+        try:
+            request = {"model": model, "prompt": prompt, "stream": True, **kwargs}
+            if system is not None:
+                request["system"] = system
+            if options:
+                request["options"] = options
+            stream = self.client.generate(**request)
+        except Exception as e:
+            self.logger.error(f"Error starting stream for {model}: {e}")
+            return
+
+        try:
+            for chunk in stream:
+                yield chunk
+        except Exception as e:
+            self.logger.error(f"Error during stream for {model}: {e}")
     
     def pull_model(self, model_name: str) -> bool:
         """Download a model if not already available."""
@@ -271,8 +393,31 @@ class OllamaManager(LoggerMixin):
             self.logger.error(f"Error deleting model {model_name}: {e}")
             return False
     
-    def get_model_info(self, model_name: str) -> Optional[ModelInfo]:
-        """Get information about a model."""
+    def get_model_info(self, model_name: str) -> Dict[str, Any]:
+        """
+        Query the Ollama server for a model's details.
+
+        Args:
+            model_name: Model name to describe.
+
+        Returns:
+            The raw Ollama ``show`` response (modelfile, parameters, template,
+            details), or {} if the model is unknown or the server is
+            unreachable. For LitKG's curated catalog entries, see
+            get_biomedical_model_info().
+        """
+        if not self.client:
+            self.logger.error("Ollama client not available")
+            return {}
+
+        try:
+            return self.client.show(model_name)
+        except Exception as e:
+            self.logger.error(f"Error getting info for {model_name}: {e}")
+            return {}
+
+    def get_biomedical_model_info(self, model_name: str) -> Optional[ModelInfo]:
+        """Look up a model in LitKG's curated biomedical model catalog."""
         return self.biomedical_models.get(model_name)
     
     def recommend_models_for_task(self, task: str, memory_limit: str = "8GB") -> List[ModelInfo]:

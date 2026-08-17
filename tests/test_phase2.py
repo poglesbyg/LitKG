@@ -53,16 +53,18 @@ class TestHybridGNNModel:
         kg_relation_types = torch.randn(3, 32)
         
         # Forward pass
-        output = model(
+        outputs = model(
             lit_x=lit_x,
             lit_edge_index=lit_edge_index,
             kg_x=kg_x,
             kg_edge_index=kg_edge_index,
             kg_relation_types=kg_relation_types
         )
-        
-        assert output.shape[0] == 10  # Literature nodes
-        assert output.shape[1] == 64  # Output dimension
+
+        # Node embeddings are projected to output_dim
+        assert outputs['lit_node_embeddings'].shape[0] == 10  # Literature nodes
+        assert outputs['lit_node_embeddings'].shape[1] == 64  # Output dimension
+        assert outputs['kg_node_embeddings'].shape == (8, 64)
     
     def test_literature_encoder(self):
         """Test LiteratureEncoder component."""
@@ -78,19 +80,22 @@ class TestHybridGNNModel:
     def test_knowledge_graph_encoder(self):
         """Test KnowledgeGraphEncoder component."""
         encoder = KnowledgeGraphEncoder(
-            node_input_dim=512,
-            relation_input_dim=64,
+            node_dim=512,
+            edge_dim=32,
+            relation_dim=64,
             hidden_dim=256,
             num_layers=2
         )
-        
+
         x = torch.randn(8, 512)
         edge_index = torch.tensor([[0, 1, 2], [1, 2, 0]], dtype=torch.long)
         relation_types = torch.randn(3, 64)
-        
-        output = encoder(x, edge_index, relation_types)
-        
-        assert output.shape == (8, 256)
+
+        # edge_attr is optional; the encoder defaults it to zeros at edge_dim
+        outputs = encoder(x, edge_index, relation_types=relation_types)
+
+        assert outputs['node_embeddings'].shape == (8, 256)
+        assert outputs['graph_embedding'].shape == (1, 256)
     
     def test_model_parameters(self):
         """Test model parameter counting."""
@@ -163,11 +168,16 @@ class TestAttentionMechanisms:
         
         lit_features = torch.randn(10, 256)
         kg_features = torch.randn(8, 256)
-        
-        attended_features = attention(lit_features, kg_features)
-        
-        assert attended_features.shape == (10, 256)
-    
+
+        lit_enhanced, kg_enhanced, attention_weights = attention(lit_features, kg_features)
+
+        # Each modality keeps its own node count and feature dim
+        assert lit_enhanced.shape == (10, 256)
+        assert kg_enhanced.shape == (8, 256)
+        # Literature attends over KG nodes and vice versa
+        assert attention_weights['lit_to_kg'].shape == (4, 10, 8)
+        assert attention_weights['kg_to_lit'].shape == (4, 8, 10)
+
     def test_multi_head_attention(self):
         """Test MultiHeadAttention component."""
         attention = MultiHeadAttention(
@@ -208,10 +218,19 @@ class TestAttentionMechanisms:
         # Create attention mask (mask out last 2 KG nodes)
         mask = torch.zeros(8, dtype=torch.bool)
         mask[-2:] = True
-        
-        attended_features = attention(lit_features, kg_features, kg_mask=mask)
-        
-        assert attended_features.shape == (10, 256)
+
+        lit_enhanced, kg_enhanced, attention_weights = attention(
+            lit_features, kg_features, kg_mask=mask
+        )
+
+        assert lit_enhanced.shape == (10, 256)
+        assert kg_enhanced.shape == (8, 256)
+        # Masked KG nodes receive no attention from the literature side
+        assert torch.allclose(
+            attention_weights['lit_to_kg'][:, :, -2:],
+            torch.zeros(4, 10, 2),
+            atol=1e-6,
+        )
     
     def test_attention_gradients(self):
         """Test attention gradient flow."""
@@ -225,10 +244,10 @@ class TestAttentionMechanisms:
         lit_features = torch.randn(10, 256, requires_grad=True)
         kg_features = torch.randn(8, 256, requires_grad=True)
         
-        attended_features = attention(lit_features, kg_features)
-        loss = attended_features.sum()
+        lit_enhanced, kg_enhanced, _ = attention(lit_features, kg_features)
+        loss = lit_enhanced.sum() + kg_enhanced.sum()
         loss.backward()
-        
+
         assert lit_features.grad is not None
         assert kg_features.grad is not None
 
@@ -453,16 +472,17 @@ class TestTraining:
         config = TrainingConfig(num_epochs=100, patience=2)
         trainer = GNNTrainer(model, config)
         
-        # Mock validation losses that don't improve
-        val_losses = [1.0, 0.9, 1.1, 1.2, 1.3]  # Stops improving after epoch 1
-        
-        with patch.object(trainer, 'validation_step') as mock_val:
-            mock_val.side_effect = [{'loss': loss} for loss in val_losses]
-            
-            # This should trigger early stopping
-            stopped_early = trainer._check_early_stopping([1.0, 0.9, 1.1])
-            
-            assert stopped_early
+        # Validation loss stops improving after epoch 1 (best = 0.9)
+        val_losses = [1.0, 0.9, 1.1, 1.2, 1.3]
+
+        # 3 epochs without improvement exceeds patience=2
+        assert trainer._check_early_stopping(val_losses)
+
+        # Within patience: only 1 epoch since the best loss
+        assert not trainer._check_early_stopping([1.0, 0.9, 1.1])
+
+        # Still improving
+        assert not trainer._check_early_stopping([1.0, 0.9, 0.8])
     
     def test_model_checkpointing(self, temp_dir):
         """Test model checkpointing."""
@@ -501,33 +521,51 @@ class TestDataLoader:
         
         assert hasattr(loader, 'logger')
     
-    def test_create_data_loaders(self, sample_literature_data, sample_knowledge_graph):
-        """Test data loader creation."""
-        config = {
-            'batch_size': 2,
-            'num_workers': 0,
-            'shuffle': True
-        }
-        
-        with patch('litkg.phase2.data_loader.BiomedicalDataset') as MockDataset:
-            mock_dataset = Mock()
-            mock_dataset.__len__.return_value = 10
-            mock_dataset.__getitem__.return_value = {
-                'lit_x': torch.randn(5, 64),
-                'kg_x': torch.randn(3, 64),
-                'labels': torch.randn(5, 1)
-            }
-            MockDataset.return_value = mock_dataset
-            
-            train_loader, val_loader, test_loader = create_data_loaders(
-                literature_data=sample_literature_data,
-                kg_data=sample_knowledge_graph,
-                config=config
+    def test_create_data_loaders(self, temp_dir):
+        """Test data loader creation from a directory of pickled examples."""
+        import pickle
+        from torch_geometric.data import Data
+
+        def make_example():
+            """A minimal literature/KG example pair."""
+            lit_graph = Data(
+                x=torch.randn(4, 780),
+                edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long),
+                edge_attr=torch.randn(2, 12),
+                num_nodes=4,
             )
-            
-            assert train_loader is not None
-            assert val_loader is not None
-            assert test_loader is not None
+            kg_graph = Data(
+                x=torch.randn(3, 780),
+                edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long),
+                edge_attr=torch.randn(2, 12),
+                relation_types=torch.tensor([0, 1], dtype=torch.long),
+                num_nodes=3,
+            )
+            return {
+                'lit_graph': lit_graph,
+                'kg_graph': kg_graph,
+                'alignments': [],
+                'labels': {'link_labels': torch.tensor([1.0])},
+            }
+
+        # HybridGraphDataset globs "{split}_*.pkl" from the data dir
+        for split in ('train', 'val', 'test'):
+            for i in range(4):
+                with open(temp_dir / f"{split}_{i}.pkl", 'wb') as f:
+                    pickle.dump(make_example(), f)
+
+        train_loader, val_loader, test_loader = create_data_loaders(
+            data_dir=temp_dir,
+            batch_size=2,
+            num_workers=0,
+        )
+
+        assert train_loader is not None
+        assert val_loader is not None
+        assert test_loader is not None
+        assert len(train_loader.dataset) == 4
+        assert len(val_loader.dataset) == 4
+        assert len(test_loader.dataset) == 4
     
     def test_data_preprocessing(self):
         """Test data preprocessing for GNN input."""
@@ -593,8 +631,8 @@ class TestPhase2Integration:
             num_heads=4
         )
         
-        # Create trainer
-        config = TrainingConfig(num_epochs=2, batch_size=1)
+        # Create trainer. eval_every=1 so validation runs on every epoch.
+        config = TrainingConfig(num_epochs=2, batch_size=1, eval_every=1)
         trainer = GNNTrainer(model, config)
         
         # Create mock data
@@ -637,10 +675,17 @@ class TestPhase2Integration:
             kg_relation_types = torch.randn(2, 32)
             
             # Run inference
-            output = model(lit_x, lit_edge_index, kg_x, kg_edge_index, kg_relation_types)
-            
-            assert output.shape == (5, 64)
-            assert not output.requires_grad
+            outputs = model(
+                lit_x=lit_x,
+                lit_edge_index=lit_edge_index,
+                kg_x=kg_x,
+                kg_edge_index=kg_edge_index,
+                kg_relation_types=kg_relation_types
+            )
+
+            embeddings = outputs['lit_node_embeddings']
+            assert embeddings.shape == (5, 64)
+            assert not embeddings.requires_grad
     
     @pytest.mark.slow
     def test_large_graph_processing(self):
@@ -662,9 +707,15 @@ class TestPhase2Integration:
         
         # Should handle large graphs without errors
         with torch.no_grad():
-            output = model(lit_x, lit_edge_index, kg_x, kg_edge_index, kg_relation_types)
-            
-            assert output.shape == (1000, 128)
+            outputs = model(
+                lit_x=lit_x,
+                lit_edge_index=lit_edge_index,
+                kg_x=kg_x,
+                kg_edge_index=kg_edge_index,
+                kg_relation_types=kg_relation_types
+            )
+
+            assert outputs['lit_node_embeddings'].shape == (1000, 128)
 
 
 if __name__ == "__main__":

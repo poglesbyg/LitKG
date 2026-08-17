@@ -56,65 +56,98 @@ class MultiHeadAttention(nn.Module):
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0)
     
+    @staticmethod
+    def _broadcast_mask(
+        mask: torch.Tensor, batch_size: int, tgt_len: int, src_len: int
+    ) -> torch.Tensor:
+        """
+        Reshape a mask to broadcast against scores of [batch, heads, tgt_len, src_len].
+
+        Accepts a key-padding mask [src_len] or [batch, src_len], a full attention
+        mask [tgt_len, src_len] or [batch, tgt_len, src_len], and any mask that is
+        already 4D.
+        """
+        if mask.dim() == 1:
+            # Key padding mask over source positions
+            return mask.view(1, 1, 1, -1)
+        if mask.dim() == 2:
+            if mask.shape == (batch_size, src_len) and (tgt_len, src_len) != (batch_size, src_len):
+                return mask.view(batch_size, 1, 1, src_len)
+            return mask.view(1, 1, *mask.shape)
+        if mask.dim() == 3:
+            return mask.unsqueeze(1)
+        return mask
+
     def forward(
         self,
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
-        return_attention: bool = False
+        return_attention: bool = True
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Forward pass.
-        
+
+        Query and key/value may have different sequence lengths, as they do in
+        cross-modal attention.
+
         Args:
-            query: Query tensor [batch_size, seq_len, d_model]
-            key: Key tensor [batch_size, seq_len, d_model]
-            value: Value tensor [batch_size, seq_len, d_model]
-            mask: Attention mask [batch_size, seq_len, seq_len]
+            query: Query tensor [batch_size, tgt_len, d_model] or [tgt_len, d_model]
+            key: Key tensor [batch_size, src_len, d_model] or [src_len, d_model]
+            value: Value tensor, same shape as key
+            mask: Attention mask; nonzero entries are kept, zeros are masked out.
+                See :meth:`_broadcast_mask` for accepted shapes.
             return_attention: Whether to return attention weights
-            
+
         Returns:
-            output: Attended output [batch_size, seq_len, d_model]
+            output: Attended output, shaped like query
             attention_weights: Attention weights if return_attention=True
         """
-        # Accept 2D or 3D: [batch, seq, dim] or [seq, dim] or [batch, dim]
-        if query.dim() == 2:
+        # Accept 2D or 3D: [batch, seq, dim] or [seq, dim]. Unbatched inputs get a
+        # temporary batch dim which is stripped from the outputs again below.
+        squeeze_batch = query.dim() == 2
+        if squeeze_batch:
             query = query.unsqueeze(0)
             key = key.unsqueeze(0)
             value = value.unsqueeze(0)
-        batch_size, seq_len = query.size(0), query.size(1)
+        batch_size, tgt_len = query.size(0), query.size(1)
+        # Key and value carry their own sequence length: in cross-modal attention the
+        # query modality and the attended-to modality have different node counts.
+        src_len = key.size(1)
         residual = query
-        
+
         # Linear transformations and reshape
-        Q = self.w_q(query).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        K = self.w_k(key).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        V = self.w_v(value).view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
-        
+        Q = self.w_q(query).view(batch_size, tgt_len, self.num_heads, self.d_k).transpose(1, 2)
+        K = self.w_k(key).view(batch_size, src_len, self.num_heads, self.d_k).transpose(1, 2)
+        V = self.w_v(value).view(batch_size, src_len, self.num_heads, self.d_k).transpose(1, 2)
+
         # Scaled dot-product attention
         attention_scores = torch.matmul(Q, K.transpose(-2, -1)) / (math.sqrt(self.d_k) * self.temperature)
-        
-        # Apply mask if provided
+
+        # Apply mask if provided. Nonzero entries are kept, zero entries are masked out.
         if mask is not None:
-            attention_scores.masked_fill_(mask == 0, -1e9)
-        
+            attention_scores = attention_scores.masked_fill(
+                self._broadcast_mask(mask, batch_size, tgt_len, src_len) == 0, -1e9
+            )
+
         attention_weights = F.softmax(attention_scores, dim=-1)
         attention_weights = self.dropout(attention_weights)
-        
+
         # Apply attention to values
         context = torch.matmul(attention_weights, V)
         context = context.transpose(1, 2).contiguous().view(
-            batch_size, seq_len, self.d_model
+            batch_size, tgt_len, self.d_model
         )
-        
+
         # Output projection and residual connection
         output = self.w_o(context)
         output = self.layer_norm(output + residual)
-        if return_attention:
-            return output, attention_weights
-        else:
-            return output, None
-        
+
+        if squeeze_batch:
+            output = output.squeeze(0)
+            attention_weights = attention_weights.squeeze(0)
+
         if return_attention:
             return output, attention_weights
         else:
@@ -206,9 +239,9 @@ class CrossModalAttention(nn.Module):
         Args:
             lit_features: Literature features [batch_size, lit_seq_len, lit_dim]
             kg_features: KG features [batch_size, kg_seq_len, kg_dim]
-            lit_mask: Literature attention mask
-            kg_mask: KG attention mask
-            
+            lit_mask: Boolean padding mask over literature nodes, True = ignore
+            kg_mask: Boolean padding mask over KG nodes, True = ignore
+
         Returns:
             lit_enhanced: Enhanced literature features
             kg_enhanced: Enhanced KG features
@@ -227,7 +260,7 @@ class CrossModalAttention(nn.Module):
             query=lit_proj,
             key=kg_proj,
             value=kg_proj,
-            mask=kg_mask.unsqueeze(1).unsqueeze(1) if kg_mask is not None else None,
+            mask=~kg_mask if kg_mask is not None else None,
             return_attention=True
         )
         
@@ -236,7 +269,7 @@ class CrossModalAttention(nn.Module):
             query=kg_proj,
             key=lit_proj,
             value=lit_proj,
-            mask=lit_mask.unsqueeze(1).unsqueeze(1) if lit_mask is not None else None,
+            mask=~lit_mask if lit_mask is not None else None,
             return_attention=True
         )
         

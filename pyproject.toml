@@ -143,11 +143,8 @@ litkg = "litkg.cli:main"
 litkg-setup = "scripts.setup_models:main"
 litkg-phase1 = "scripts.phase1_integration:main"
 
-[tool.hatch.build]
-directory = "src"
-
 [tool.hatch.build.targets.wheel]
-packages = ["litkg"]
+packages = ["src/litkg"]
 
 # Test configuration
 [tool.pytest.ini_options]
@@ -249,13 +246,6 @@ profile = "black"
 multi_line_output = 3
 line_length = 100
 known_first_party = ["litkg"]
-
-
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
-]
 
 # mypy configuration
 [tool.mypy]

@@ -19,6 +19,7 @@ import pickle
 from collections import defaultdict, Counter
 from difflib import SequenceMatcher
 import Levenshtein
+import networkx as nx
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -125,20 +126,58 @@ class FuzzyMatcher(LoggerMixin):
         
         return intersection / union if union > 0 else 0.0
 
-    # --- Additional APIs expected by tests ---
     def compute_similarity(self, text1: str, text2: str) -> float:
+        """Alias for calculate_similarity()."""
         return self.calculate_similarity(text1, text2)
 
-    def find_best_matches(self, query: str, candidates: List[str], top_k: int = 5) -> List[Dict[str, Any]]:
-        matches = self.find_fuzzy_matches(query, candidates)
-        return [
-            {"candidate": cand, "score": score}
-            for cand, score in matches[:top_k]
+    def find_best_matches(
+        self,
+        query: str,
+        candidates: List[str],
+        top_k: int = 5,
+        threshold: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Rank candidates by similarity to the query and return the best ones.
+
+        Unlike find_fuzzy_matches(), this does not apply the configured
+        threshold by default: a ranked shortlist is the point, and callers that
+        want a hard cutoff can pass one explicitly. Ranking lets a caller see
+        the closest available candidate even when nothing is a strong match.
+
+        Args:
+            query: Text to match.
+            candidates: Candidate strings to rank.
+            top_k: Maximum number of matches to return.
+            threshold: Optional minimum score; no cutoff when None.
+
+        Returns:
+            Ranked list of {"candidate", "score"}, best first.
+        """
+        scored = [
+            {"candidate": candidate, "score": self.calculate_similarity(query, candidate)}
+            for candidate in candidates
         ]
 
-    def batch_match(self, queries: List[str], candidates: List[str], top_k: int = 5) -> List[List[Dict[str, Any]]]:
-        return [self.find_best_matches(q, candidates, top_k=top_k) for q in queries]
-    
+        if threshold is not None:
+            scored = [m for m in scored if m["score"] >= threshold]
+
+        scored.sort(key=lambda m: m["score"], reverse=True)
+        return scored[:top_k]
+
+    def batch_match(
+        self,
+        queries: List[str],
+        candidates: List[str],
+        top_k: int = 5,
+        threshold: Optional[float] = None
+    ) -> List[List[Dict[str, Any]]]:
+        """Run find_best_matches() for each query, preserving query order."""
+        return [
+            self.find_best_matches(q, candidates, top_k=top_k, threshold=threshold)
+            for q in queries
+        ]
+
     def find_fuzzy_matches(
         self, 
         query_text: str, 
@@ -309,14 +348,10 @@ class ContextualDisambiguator(LoggerMixin):
     def __init__(self, config: Optional[LitKGConfig] = None):
         self.config = load_config() if config is None else (config if isinstance(config, LitKGConfig) else load_config(config))
         self.disambiguation_config = self.config.phase1.entity_linking.disambiguation or {}
-        # Safe defaults for tests
+        # Context window size
         self.context_window = int(self.disambiguation_config.get("context_window", 100))
         self.confidence_threshold = float(self.disambiguation_config.get("confidence_threshold", 0.7))
-        
-        # Context window size
-        self.context_window = self.disambiguation_config["context_window"]
-        self.confidence_threshold = self.disambiguation_config["confidence_threshold"]
-        
+
         # Load spacy model for context analysis
         try:
             self.nlp = spacy.load("en_core_web_sm")
@@ -517,7 +552,14 @@ class EntityLinker(LoggerMixin):
         # Knowledge graph entities (loaded from preprocessor)
         self.kg_entities = {}
         self.entity_index = defaultdict(list)  # Type-based index
-        
+
+        # NetworkX view of the target KG, set by attach_knowledge_graph().
+        # Used by link_entities() to resolve mentions against graph nodes.
+        self.knowledge_graph: Optional[nx.Graph] = None
+
+        # Cache of context embeddings, keyed by text
+        self._context_embedding_cache: Dict[str, np.ndarray] = {}
+
         # Linking statistics
         self.linking_stats = {
             "total_processed": 0,
@@ -541,7 +583,206 @@ class EntityLinker(LoggerMixin):
         
         self.logger.info(f"Loaded {len(self.kg_entities)} KG entities")
         self.logger.info(f"Entity types: {list(self.entity_index.keys())}")
-    
+
+    def attach_knowledge_graph(self, graph: nx.Graph) -> None:
+        """Attach the NetworkX graph that link_entities() resolves mentions against."""
+        self.knowledge_graph = graph
+        self.logger.info(f"Attached knowledge graph with {graph.number_of_nodes()} nodes")
+
+    def _kg_candidate_names(self) -> List[str]:
+        """Return the candidate surface forms available for linking."""
+        if self.knowledge_graph is not None:
+            return [str(node) for node in self.knowledge_graph.nodes()]
+        return [entity.name for entity in self.kg_entities.values()]
+
+    def fuzzy_match(
+        self, query: str, candidates: List[str], top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Rank candidate strings against a query by fuzzy similarity.
+
+        Args:
+            query: The surface form to match.
+            candidates: Candidate strings to rank.
+            top_k: Maximum number of ranked matches to return.
+
+        Returns:
+            Ranked list of {"candidate", "score"}, best first.
+        """
+        return self.fuzzy_matcher.find_best_matches(query, candidates, top_k=top_k)
+
+    def _find_best_match(
+        self, entity: Dict[str, Any], candidates: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Find the single best KG node for one extracted entity.
+
+        Returns:
+            {"kg_id", "confidence", "match_type"} or None when nothing clears
+            the fuzzy matcher's threshold.
+        """
+        if candidates is None:
+            candidates = self._kg_candidate_names()
+        if not candidates:
+            return None
+
+        name = entity.get("text") or entity.get("name") or ""
+        ranked = self.fuzzy_match(name, candidates, top_k=1)
+        if not ranked:
+            return None
+
+        best = ranked[0]
+        if best["score"] < self.fuzzy_matcher.threshold:
+            return None
+
+        return {
+            "kg_id": best["candidate"],
+            "confidence": best["score"],
+            "match_type": "exact" if best["score"] >= 1.0 else "fuzzy",
+        }
+
+    def link_entities(self, entities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Link extracted entity mentions to knowledge graph nodes.
+
+        Every input entity is returned so that callers keep positional
+        alignment with their source mentions. Unlinked entities carry
+        ``kg_id: None`` and zero confidence.
+
+        Args:
+            entities: Extracted entities, each with at least a "text" key.
+
+        Returns:
+            The entities, each augmented with "kg_id" and "link_confidence".
+        """
+        candidates = self._kg_candidate_names()
+        linked = []
+
+        for entity in entities:
+            match = self._find_best_match(entity, candidates)
+
+            enriched = dict(entity)
+            if match:
+                enriched["kg_id"] = match["kg_id"]
+                enriched["link_confidence"] = match["confidence"]
+                enriched["match_type"] = match.get("match_type", "fuzzy")
+                self.linking_stats["fuzzy_matches"] += 1
+            else:
+                enriched["kg_id"] = None
+                enriched["link_confidence"] = 0.0
+                enriched["match_type"] = "unmatched"
+                self.linking_stats["unmatched"] += 1
+
+            self.linking_stats["total_processed"] += 1
+            linked.append(enriched)
+
+        matched = sum(1 for e in linked if e["kg_id"] is not None)
+        self.logger.info(f"Linked {matched}/{len(linked)} entities to the knowledge graph")
+        return linked
+
+    def _get_context_embeddings(self, text: str) -> Optional[np.ndarray]:
+        """Embed a context string, caching by text."""
+        if text in self._context_embedding_cache:
+            return self._context_embedding_cache[text]
+
+        embedding = self.semantic_matcher.get_embedding(text)
+        if embedding is not None:
+            self._context_embedding_cache[text] = embedding
+        return embedding
+
+    def _compute_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
+        """Cosine similarity between two embedding vectors."""
+        if a is None or b is None:
+            return 0.0
+        return float(cosine_similarity([np.asarray(a)], [np.asarray(b)])[0][0])
+
+    def disambiguate_entities(
+        self, entities: List[Dict[str, Any]], context: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Resolve ambiguous entity mentions using surrounding context.
+
+        When a mention has several candidate KG nodes, the candidate whose
+        context embedding is most similar to the mention's context wins.
+
+        Args:
+            entities: Extracted entities, optionally carrying a "candidates" list.
+            context: Shared context text; falls back to each entity's own
+                "context" key, then to its surface form.
+
+        Returns:
+            The entities, each augmented with "resolved_id" and
+            "disambiguation_score".
+        """
+        disambiguated = []
+
+        for entity in entities:
+            name = entity.get("text") or entity.get("name") or ""
+            entity_context = entity.get("context") or context or name
+            candidates = entity.get("candidates") or []
+
+            enriched = dict(entity)
+            context_embedding = self._get_context_embeddings(entity_context)
+
+            best_candidate, best_score = None, 0.0
+            for candidate in candidates:
+                candidate_embedding = self._get_context_embeddings(str(candidate))
+                score = self._compute_similarity(context_embedding, candidate_embedding)
+                if score > best_score:
+                    best_candidate, best_score = candidate, score
+
+            # With no competing candidates there is nothing to disambiguate;
+            # keep any link already established.
+            if best_candidate is None:
+                enriched["resolved_id"] = entity.get("kg_id")
+                enriched["disambiguation_score"] = float(entity.get("link_confidence", 0.0))
+            else:
+                enriched["resolved_id"] = best_candidate
+                enriched["disambiguation_score"] = float(best_score)
+
+            disambiguated.append(enriched)
+
+        return disambiguated
+
+    def compute_link_confidence(
+        self, link_data: Dict[str, Any], weights: Optional[Dict[str, float]] = None
+    ) -> float:
+        """
+        Combine per-signal match scores into a single link confidence.
+
+        Signals are weighted and renormalized over whichever ones are present,
+        so a link scored on fuzzy similarity alone is not penalized for lacking
+        context or frequency evidence.
+
+        Args:
+            link_data: Any of "fuzzy_score", "semantic_score",
+                "context_similarity", "frequency_score".
+            weights: Optional per-signal weight overrides.
+
+        Returns:
+            Confidence in [0, 1].
+        """
+        default_weights = {
+            "fuzzy_score": 0.4,
+            "semantic_score": 0.3,
+            "context_similarity": 0.2,
+            "frequency_score": 0.1,
+        }
+        signal_weights = {**default_weights, **(weights or {})}
+
+        total_weight = 0.0
+        weighted_sum = 0.0
+        for signal, weight in signal_weights.items():
+            if link_data.get(signal) is None:
+                continue
+            weighted_sum += weight * float(link_data[signal])
+            total_weight += weight
+
+        if total_weight == 0.0:
+            return 0.0
+
+        return max(0.0, min(1.0, weighted_sum / total_weight))
+
     def link_document_entities(
         self, 
         document: ProcessedDocument,
