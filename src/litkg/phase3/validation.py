@@ -145,48 +145,171 @@ class LiteratureCrossValidator(LoggerMixin):
     Validates novel predictions against held-out literature using cross-validation.
     """
     
-    def __init__(self, validation_split: float = 0.2, random_seed: int = 42):
+    # Phrases that mark a finding as arguing against a claim
+    CONTRADICTION_CUES = (
+        "no association", "not associated", "no significant", "not significant",
+        "failed to", "did not", "no evidence", "no correlation", "contrary to",
+        "refute", "contradict", "unable to replicate", "no effect", "absence of",
+    )
+
+    def __init__(
+        self,
+        validation_split: float = 0.2,
+        random_seed: int = 42,
+        literature_retriever: Optional[Any] = None,
+        max_search_results: int = 25
+    ):
         self.validation_split = validation_split
         self.random_seed = random_seed
         self.validation_results = []
-        
+        self.max_search_results = max_search_results
+
+        # PubMed retriever, constructed lazily on first search so that
+        # constructing a validator never requires network or credentials.
+        self._literature_retriever = literature_retriever
+
         np.random.seed(random_seed)
         self.logger.info("Initialized LiteratureCrossValidator")
-    
+
+    @property
+    def literature_retriever(self):
+        """The PubMed retriever, built on first use. None if unavailable."""
+        if self._literature_retriever is None:
+            try:
+                from ..phase1.literature_processor import PubMedRetriever
+                from ..utils.config import load_config
+                self._literature_retriever = PubMedRetriever(load_config())
+            except Exception as e:
+                self.logger.warning(
+                    f"PubMed retriever unavailable ({e}); literature validation "
+                    "will fall back to evidence attached to the hypothesis"
+                )
+        return self._literature_retriever
+
+    @staticmethod
+    def _hypothesis_terms(hypothesis: BiomedicalHypothesis) -> List[str]:
+        """Extract the salient search terms from a hypothesis."""
+        import re
+
+        stopwords = {
+            "the", "and", "for", "with", "that", "this", "may", "are", "was",
+            "were", "have", "has", "from", "into", "than", "then", "its",
+            "increase", "increases", "decrease", "decreases", "contributes",
+        }
+
+        text = f"{hypothesis.hypothesis_text} {hypothesis.description}"
+        words = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]{2,}", text)
+
+        terms, seen = [], set()
+        for word in words:
+            lowered = word.lower()
+            if lowered in stopwords or lowered in seen:
+                continue
+            seen.add(lowered)
+            terms.append(word)
+
+        return terms
+
+    def _build_query(self, hypothesis: BiomedicalHypothesis) -> str:
+        """Build a PubMed query from a hypothesis."""
+        # Capitalized or hyphenated tokens are the entity-like ones worth
+        # querying; fall back to the leading terms when none stand out.
+        terms = self._hypothesis_terms(hypothesis)
+        entities = [t for t in terms if t[0].isupper() or "-" in t] or terms[:4]
+        return " AND ".join(entities[:4])
+
+    def _classify_support(
+        self,
+        article: Dict[str, Any],
+        terms: List[str]
+    ) -> Tuple[bool, float]:
+        """
+        Judge whether an article supports a hypothesis, and how relevant it is.
+
+        Support is inferred from the absence of contradiction cues; relevance is
+        the fraction of hypothesis terms the article mentions.
+
+        Returns:
+            (supports, relevance).
+        """
+        text = f"{article.get('title', '')} {article.get('abstract', '')}".lower()
+
+        matched = sum(1 for term in terms if term.lower() in text)
+        relevance = matched / len(terms) if terms else 0.0
+
+        supports = not any(cue in text for cue in self.CONTRADICTION_CUES)
+        return supports, relevance
+
     def _search_literature(
         self,
         hypothesis: BiomedicalHypothesis,
-        max_results: int = 50
+        max_results: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
-        Find literature bearing on a hypothesis.
+        Find literature bearing on a hypothesis by querying PubMed.
 
-        The default implementation derives records from the evidence already
-        attached to the hypothesis; substitute a real search backend to query
-        PubMed directly.
+        Falls back to the evidence already attached to the hypothesis when
+        PubMed is unreachable or returns nothing, so validation degrades rather
+        than failing. The log records which path ran.
 
         Args:
             hypothesis: The hypothesis to search for.
             max_results: Maximum records to return.
 
         Returns:
-            Records with "title", "relevance", and "supports" keys.
+            Records with "title", "abstract", "pmid", "relevance", "supports".
         """
-        records = []
+        max_results = max_results or self.max_search_results
+        retriever = self.literature_retriever
 
+        if retriever is not None:
+            query = self._build_query(hypothesis)
+            terms = self._hypothesis_terms(hypothesis)
+            try:
+                pmids = retriever.search_pubmed(query, max_results=max_results)
+                articles = retriever.fetch_article_details(pmids) if pmids else []
+
+                if articles:
+                    records = []
+                    for article in articles:
+                        supports, relevance = self._classify_support(article, terms)
+                        records.append({
+                            "pmid": article.get("pmid", ""),
+                            "title": article.get("title", ""),
+                            "abstract": article.get("abstract", ""),
+                            "publication_date": article.get("publication_date"),
+                            "relevance": relevance,
+                            "supports": supports,
+                        })
+
+                    self.logger.info(
+                        f"Retrieved {len(records)} PubMed article(s) for query {query!r}"
+                    )
+                    return records
+
+                self.logger.info(f"PubMed returned no articles for query {query!r}")
+            except Exception as e:
+                self.logger.warning(f"PubMed search failed ({e}); using attached evidence")
+
+        # Fallback: score against evidence already recorded on the hypothesis
+        records = []
         for evidence in hypothesis.supporting_evidence[:max_results]:
             records.append({
-                "title": str(evidence),
-                "relevance": 0.8,
-                "supports": True,
+                "title": str(evidence), "relevance": 0.8,
+                "supports": True, "source": "attached_evidence",
             })
         for evidence in hypothesis.contradicting_evidence[:max_results]:
             records.append({
-                "title": str(evidence),
-                "relevance": 0.8,
-                "supports": False,
+                "title": str(evidence), "relevance": 0.8,
+                "supports": False, "source": "attached_evidence",
             })
 
+        if records:
+            self.logger.info(
+                f"Using {len(records)} item(s) of evidence attached to the hypothesis"
+            )
+        return records
+    
         return records
 
     @staticmethod
@@ -471,32 +594,99 @@ class TemporalValidator(LoggerMixin):
     match relationships discovered in later publications.
     """
     
-    def __init__(self, temporal_split_date: Optional[datetime] = None):
+    def __init__(
+        self,
+        temporal_split_date: Optional[datetime] = None,
+        literature_validator: Optional["LiteratureCrossValidator"] = None
+    ):
         self.temporal_split_date = temporal_split_date or (datetime.now() - timedelta(days=365))
+
+        # Reuses the literature validator's PubMed retrieval and support
+        # classification rather than duplicating them.
+        self._literature_validator = literature_validator or LiteratureCrossValidator()
+
         self.logger.info(f"Initialized TemporalValidator with split date: {self.temporal_split_date}")
     
     def _analyze_temporal_trends(
         self,
-        hypothesis: BiomedicalHypothesis
+        hypothesis: BiomedicalHypothesis,
+        recent_window_years: int = 3
     ) -> Dict[str, Any]:
         """
         Analyze how support for a hypothesis has moved over time.
 
-        Substitute a real implementation backed by dated literature; the
-        default reports a neutral, flat trend.
+        Splits the retrieved literature at ``recent_window_years`` before the
+        configured split date and compares the proportion of supporting papers
+        on each side. A claim gaining support in recent work is stronger than
+        one resting only on older findings.
 
         Args:
             hypothesis: The hypothesis to analyze.
+            recent_window_years: How many years count as "recent".
 
         Returns:
             {"trend_score", "recent_support", "historical_support",
-             "trend_direction"}.
+             "trend_direction", "recent_papers", "historical_papers"}.
         """
+        articles = self._literature_validator._search_literature(hypothesis)
+
+        cutoff = (self.temporal_split_date or datetime.now()) - timedelta(
+            days=365 * recent_window_years
+        )
+
+        recent, historical = [], []
+        for article in articles:
+            published = article.get("publication_date")
+            if isinstance(published, datetime):
+                (recent if published >= cutoff else historical).append(article)
+            else:
+                # Undated records cannot be placed on the timeline
+                historical.append(article)
+
+        def support_ratio(group: List[Dict[str, Any]]) -> Optional[float]:
+            if not group:
+                return None
+            return sum(1 for a in group if a.get("supports")) / len(group)
+
+        recent_support = support_ratio(recent)
+        historical_support = support_ratio(historical)
+
+        # With nothing on one side of the split there is no trend to report
+        if recent_support is None and historical_support is None:
+            self.logger.info("No dated literature found; reporting a neutral trend")
+            return {
+                "trend_score": 0.5,
+                "recent_support": 0.5,
+                "historical_support": 0.5,
+                "trend_direction": "unknown",
+                "recent_papers": 0,
+                "historical_papers": 0,
+            }
+
+        if recent_support is None:
+            recent_support = historical_support
+        if historical_support is None:
+            historical_support = recent_support
+
+        delta = recent_support - historical_support
+        if delta > 0.1:
+            direction = "increasing"
+        elif delta < -0.1:
+            direction = "decreasing"
+        else:
+            direction = "stable"
+
+        # Recent work weighs more heavily than older work
+        trend_score = 0.7 * recent_support + 0.3 * historical_support
+
         return {
-            "trend_score": 0.5,
-            "recent_support": 0.5,
-            "historical_support": 0.5,
-            "trend_direction": "stable",
+            "trend_score": float(max(0.0, min(1.0, trend_score))),
+            "recent_support": float(recent_support),
+            "historical_support": float(historical_support),
+            "trend_direction": direction,
+            "recent_papers": len(recent),
+            "historical_papers": len(historical),
+            "cutoff_date": cutoff.isoformat(),
         }
 
     def validate(self, hypothesis: BiomedicalHypothesis) -> ValidationResult:

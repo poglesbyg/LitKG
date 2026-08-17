@@ -8,18 +8,15 @@ This package provides enhanced capabilities using LangChain for:
 4. Hypothesis generation and validation
 5. Multi-modal RAG systems
 
-Implemented components:
+Components:
 - Enhanced Literature Processor with LangChain document loaders
 - LLM-powered Entity Extractor with confidence scoring
+- Biomedical Query Agent with tool integration
+- RAG system for literature-augmented responses
+- Hypothesis Generation Agent with reasoning chains
 
-Not yet implemented in this package:
-- ``biomedical_agent`` (BiomedicalQueryAgent, BiomedicalToolkit,
-  HypothesisGenerationAgent, LiteratureValidationAgent)
-- ``rag_system`` (BiomedicalRAGSystem, LiteratureRetriever,
-  KnowledgeGraphRetriever, HybridRetriever)
-
-Conversational agents and RAG currently live in the sibling ``litkg.agents``
-package; see litkg.agents.biomedical_rag_agent.
+Agents and RAG default to the configured local Ollama model, so none of this
+requires an API key.
 """
 
 from .enhanced_literature_processor import (
@@ -36,6 +33,20 @@ from .llm_entity_extractor import (
     RelationExtractionChain
 )
 
+from .biomedical_agent import (
+    BiomedicalQueryAgent,
+    BiomedicalToolkit,
+    HypothesisGenerationAgent,
+    LiteratureValidationAgent
+)
+
+from .rag_system import (
+    BiomedicalRAGSystem,
+    LiteratureRetriever,
+    KnowledgeGraphRetriever,
+    HybridRetriever
+)
+
 __all__ = [
     # Enhanced Literature Processing
     "LangChainLiteratureProcessor",
@@ -48,4 +59,16 @@ __all__ = [
     "BiomedicalPromptTemplates",
     "EntityExtractionChain",
     "RelationExtractionChain",
+
+    # Biomedical Agents
+    "BiomedicalQueryAgent",
+    "BiomedicalToolkit",
+    "HypothesisGenerationAgent",
+    "LiteratureValidationAgent",
+
+    # RAG System
+    "BiomedicalRAGSystem",
+    "LiteratureRetriever",
+    "KnowledgeGraphRetriever",
+    "HybridRetriever",
 ]

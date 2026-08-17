@@ -140,6 +140,90 @@ class BiomedicalLLMInterface(LoggerMixin):
             f"default model: {self.default_model})"
         )
 
+    # Generation options each provider's SDK accepts as passthrough. Anything
+    # else supplied by a caller is dropped with a warning rather than forwarded,
+    # so a stray keyword surfaces here instead of as an opaque TypeError from
+    # deep inside the provider client.
+    PROVIDER_PASSTHROUGH_OPTIONS = {
+        LLMProvider.OPENAI: {
+            "top_p", "n", "stop", "seed", "presence_penalty", "frequency_penalty",
+            "logit_bias", "response_format", "stream", "user",
+        },
+        LLMProvider.OPENAI_COMPATIBLE: {
+            "top_p", "n", "stop", "seed", "presence_penalty", "frequency_penalty",
+            "logit_bias", "response_format", "stream", "user",
+        },
+        LLMProvider.ANTHROPIC: {
+            "top_p", "top_k", "stop_sequences", "stream", "metadata",
+        },
+        # Ollama takes only these at the top level; sampling parameters belong
+        # inside `options` and are folded in by _fold_ollama_options().
+        LLMProvider.OLLAMA: {
+            "options", "keep_alive", "format", "system", "template", "raw",
+            "context", "images", "think",
+        },
+    }
+
+    # Sampling parameters Ollama expects nested under `options`
+    OLLAMA_OPTION_KEYS = {
+        "top_p", "top_k", "seed", "stop", "temperature", "num_predict",
+        "num_ctx", "repeat_penalty", "repeat_last_n", "presence_penalty",
+        "frequency_penalty", "mirostat", "mirostat_eta", "mirostat_tau",
+        "tfs_z", "num_keep", "penalize_newline",
+    }
+
+    def _fold_ollama_options(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Move Ollama sampling parameters into the nested ``options`` dict.
+
+        Callers naturally write ``top_p=0.9``, but Ollama's client only accepts
+        sampling parameters nested under ``options``. Folding them keeps the
+        caller-facing API flat without silently discarding a real request.
+        """
+        folded = dict(kwargs)
+        options = dict(folded.pop("options", {}) or {})
+
+        for key in list(folded):
+            if key in self.OLLAMA_OPTION_KEYS:
+                options[key] = folded.pop(key)
+
+        if options:
+            folded["options"] = options
+
+        return folded
+
+    def _filter_provider_kwargs(
+        self,
+        provider: LLMProvider,
+        kwargs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Keep only the generation options this provider's SDK understands.
+
+        Args:
+            provider: Provider that will receive the call.
+            kwargs: Caller-supplied extra options.
+
+        Returns:
+            The subset safe to forward. Unrecognized keys are logged and dropped.
+        """
+        # Ollama nests sampling parameters, so normalize before filtering
+        if provider == LLMProvider.OLLAMA:
+            kwargs = self._fold_ollama_options(kwargs)
+
+        allowed = self.PROVIDER_PASSTHROUGH_OPTIONS.get(provider, set())
+
+        accepted = {k: v for k, v in kwargs.items() if k in allowed}
+        dropped = sorted(set(kwargs) - set(accepted))
+
+        if dropped:
+            self.logger.warning(
+                f"Dropping option(s) {dropped} not supported by "
+                f"{provider.value}; supported: {sorted(allowed)}"
+            )
+
+        return accepted
+
     def _providers_from_config(self) -> List[LLMProvider]:
         """Resolve the configured provider_order into LLMProvider members."""
         providers = []
@@ -531,6 +615,9 @@ class BiomedicalLLMInterface(LoggerMixin):
                 f"{capabilities.provider.value!r}, not {provider.value!r}"
             )
 
+        # Only forward options this provider actually understands
+        kwargs = self._filter_provider_kwargs(capabilities.provider, kwargs)
+
         # Generate response based on provider
         try:
             if capabilities.provider == LLMProvider.OLLAMA:
@@ -633,6 +720,9 @@ class BiomedicalLLMInterface(LoggerMixin):
             **kwargs
         )
         
+        if not response.choices:
+            raise RuntimeError(f"{model} returned no choices")
+
         return response.choices[0].message.content
     
     def _generate_anthropic(
@@ -686,6 +776,9 @@ class BiomedicalLLMInterface(LoggerMixin):
             **kwargs
         )
         
+        if not response.choices:
+            raise RuntimeError(f"{model} returned no choices")
+
         return response.choices[0].message.content
     
     def _generate_with_fallback(

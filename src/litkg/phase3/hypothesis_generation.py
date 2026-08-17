@@ -272,19 +272,42 @@ class HypothesisGenerator(LoggerMixin):
         self.logger.info(f"Initialized HypothesisGenerator (LLM: {self.use_llm})")
     
     def _initialize_llm(self):
-        """Initialize LLM for hypothesis generation."""
+        """
+        Initialize the LLM for hypothesis generation.
+
+        Follows the configured provider order, so a local Ollama model is used
+        when no cloud API keys are set rather than disabling LLM generation.
+        """
+        import os
+
         try:
-            import os
             if os.getenv("OPENAI_API_KEY"):
                 self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-            elif os.getenv("ANTHROPIC_API_KEY"):
+                self.logger.info("Hypothesis generation using OpenAI")
+                return
+            if os.getenv("ANTHROPIC_API_KEY"):
                 self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.3)
-            else:
-                self.use_llm = False
-                self.logger.warning("No LLM API keys found")
+                self.logger.info("Hypothesis generation using Anthropic")
+                return
         except Exception as e:
-            self.use_llm = False
-            self.logger.warning(f"Could not initialize LLM: {e}")
+            self.logger.warning(f"Could not initialize cloud LLM: {e}")
+
+        # Local Ollama: the project's default provider
+        try:
+            from ..llm_integration.ollama_integration import OllamaLLM
+
+            local = OllamaLLM(temperature=0.3)
+            if local.llm is not None:
+                self.llm = local
+                self.logger.info(
+                    f"Hypothesis generation using local Ollama model {local.model}"
+                )
+                return
+        except Exception as e:
+            self.logger.warning(f"Could not initialize local Ollama LLM: {e}")
+
+        self.use_llm = False
+        self.logger.warning("No LLM backend available; using template generation")
     
     def generate_hypothesis(
         self,
@@ -309,7 +332,7 @@ class HypothesisGenerator(LoggerMixin):
 
         if self.llm is not None:
             try:
-                response = self.llm.generate(self._format_context_prompt(context))
+                response = self._invoke_llm(self._format_context_prompt(context))
 
                 # Accept either a structured dict or raw text
                 if isinstance(response, dict):
@@ -317,7 +340,7 @@ class HypothesisGenerator(LoggerMixin):
                     confidence = float(response.get("confidence", 0.5))
                     evidence = list(response.get("evidence", []))
                 else:
-                    statement = str(response)
+                    statement = str(response).strip()
                     confidence = 0.5
                     evidence = []
 
@@ -352,6 +375,11 @@ class HypothesisGenerator(LoggerMixin):
                 f"There may be an uncharacterized relationship among "
                 f"{', '.join(map(str, entities))}"
             )
+        elif context.get("text"):
+            # Free-form context with no structured relations: restate it as a
+            # conjecture rather than discarding what the caller supplied.
+            observation = str(context["text"]).strip().rstrip(".")
+            statement = f"{observation} may have further uncharacterized consequences"
         else:
             statement = "Insufficient context to formulate a hypothesis"
 
@@ -364,6 +392,29 @@ class HypothesisGenerator(LoggerMixin):
                 f"{r.get('head')}-{r.get('relation')}-{r.get('tail')}" for r in relations
             ],
         )
+
+    def _invoke_llm(self, prompt: str) -> Any:
+        """
+        Call whichever LLM backend is configured.
+
+        Our OllamaLLM wrapper exposes generate(); LangChain chat models expose
+        invoke() and return a message object.
+        """
+        # LangChain models are Runnables and are driven with invoke(); anything
+        # else (our OllamaLLM wrapper, or an injected stub) exposes generate().
+        # Checked by type rather than hasattr, since a mock answers to both.
+        try:
+            from langchain_core.runnables import Runnable
+            is_langchain_model = isinstance(self.llm, Runnable)
+        except ImportError:
+            is_langchain_model = False
+
+        if is_langchain_model:
+            result = self.llm.invoke(prompt)
+            # Chat models return a message; text models return a string
+            return getattr(result, "content", result)
+
+        return self.llm.generate(prompt)
 
     def _format_context_prompt(self, context: Dict[str, Any]) -> str:
         """Render a context dict into a hypothesis-generation prompt."""
@@ -642,7 +693,12 @@ class HypothesisValidationAgent(LoggerMixin):
         self.logger.info(f"Initialized HypothesisValidationAgent (LLM: {self.use_llm})")
     
     def _initialize_agent(self):
-        """Initialize the validation agent with tools."""
+        """
+        Initialize the validation agent with tools.
+
+        Prefers cloud providers when keys are set, then the local Ollama model,
+        so validation is LLM-backed on a local-only setup too.
+        """
         try:
             import os
             if os.getenv("OPENAI_API_KEY"):
@@ -650,9 +706,20 @@ class HypothesisValidationAgent(LoggerMixin):
             elif os.getenv("ANTHROPIC_API_KEY"):
                 self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.1)
             else:
-                self.use_llm = False
-                return
-            
+                from ..llm_integration.ollama_integration import OllamaLLM
+                local = OllamaLLM(temperature=0.1)
+                if local.llm is None:
+                    self.use_llm = False
+                    self.logger.warning(
+                        "No LLM backend available; using rule-based validation"
+                    )
+                    return
+                # The agent tools need a LangChain LLM, not our wrapper
+                self.llm = local.llm
+                self.logger.info(
+                    f"Hypothesis validation using local Ollama model {local.model}"
+                )
+
             # Initialize tools
             self.tools = [
                 BiologicalReasoningTool(self.llm),

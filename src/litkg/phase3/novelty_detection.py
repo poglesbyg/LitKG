@@ -717,19 +717,8 @@ class BiologicalPlausibilityChecker(LoggerMixin):
         self.biological_kb: Dict[str, Any] = biological_kb or {}
 
         if self.use_llm:
-            try:
-                # Try OpenAI first, fall back to Anthropic
-                import os
-                if os.getenv("OPENAI_API_KEY"):
-                    self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
-                elif os.getenv("ANTHROPIC_API_KEY"):
-                    self.llm = ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.1)
-                else:
-                    self.use_llm = False
-                    self.logger.warning("No LLM API keys found, using rule-based validation only")
-            except Exception as e:
-                self.use_llm = False
-                self.logger.warning(f"Could not initialize LLM: {e}")
+            self.llm = self._initialize_llm()
+            self.use_llm = self.llm is not None
         
         # Biological plausibility rules. Keys are normalized to sorted tuples
         # so a pairing matches regardless of the order it is declared or
@@ -749,6 +738,41 @@ class BiologicalPlausibilityChecker(LoggerMixin):
 
         self.logger.info(f"Initialized BiologicalPlausibilityChecker (LLM: {self.use_llm})")
     
+    def _initialize_llm(self):
+        """
+        Build an LLM backend, preferring cloud keys then the local Ollama model.
+
+        Returns:
+            The LLM, or None when no backend is reachable (callers then fall
+            back to rule-based scoring).
+        """
+        import os
+
+        try:
+            if os.getenv("OPENAI_API_KEY"):
+                self.logger.info("Plausibility checking using OpenAI")
+                return ChatOpenAI(model="gpt-3.5-turbo", temperature=0.1)
+            if os.getenv("ANTHROPIC_API_KEY"):
+                self.logger.info("Plausibility checking using Anthropic")
+                return ChatAnthropic(model="claude-3-sonnet-20240229", temperature=0.1)
+        except Exception as e:
+            self.logger.warning(f"Could not initialize cloud LLM: {e}")
+
+        try:
+            from ..llm_integration.ollama_integration import OllamaLLM
+
+            local = OllamaLLM(temperature=0.1)
+            if local.llm is not None:
+                self.logger.info(
+                    f"Plausibility checking using local Ollama model {local.model}"
+                )
+                return local
+        except Exception as e:
+            self.logger.warning(f"Could not initialize local Ollama LLM: {e}")
+
+        self.logger.warning("No LLM backend available; using rule-based validation only")
+        return None
+
     def check_plausibility(
         self,
         novel_relation: NovelRelation,

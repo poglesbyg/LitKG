@@ -760,15 +760,29 @@ class BiomedicalOllamaChain(LoggerMixin):
             self.logger.warning(f"Unknown task type: {task_type}")
     
     def run(self, **kwargs) -> str:
-        """Run the chain with provided inputs."""
+        """
+        Run the chain with provided inputs.
+
+        Returns:
+            The chain's text output.
+
+        Raises:
+            RuntimeError: if the chain was never initialized.
+            Exception: whatever the chain raised. Errors are not returned as
+                content, which would make a failure look like a successful
+                generation whose text happens to start with "Error:".
+        """
         if not self.chain:
-            return "Error: Chain not initialized"
-        
+            raise RuntimeError(
+                f"Chain not initialized for task type {self.task_type!r}; "
+                f"known types: {sorted(self.prompts)}"
+            )
+
         try:
             return self.chain.run(**kwargs)
         except Exception as e:
-            self.logger.error(f"Error running chain: {e}")
-            return f"Error: {str(e)}"
+            self.logger.error(f"Error running {self.task_type} chain: {e}")
+            raise
     
     def extract_entities(self, text: str) -> str:
         """Extract biomedical entities from text."""
