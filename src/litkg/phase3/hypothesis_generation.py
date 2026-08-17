@@ -13,8 +13,8 @@ Key components:
 5. Research Priority Ranker - Prioritizes hypotheses by potential impact
 """
 
-from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass, asdict
+from typing import List, Dict, Any, Optional, Tuple, Union
+from dataclasses import dataclass, asdict, field
 from datetime import datetime
 import json
 from pathlib import Path
@@ -42,25 +42,50 @@ from .confidence_scoring import ConfidenceScorer
 
 @dataclass
 class BiomedicalHypothesis:
-    """Represents a generated biomedical hypothesis."""
-    id: str
-    title: str
-    description: str
-    based_on_relations: List[str]  # Novel relations that inspired this hypothesis
-    biological_mechanism: str
-    testable_predictions: List[str]
-    experimental_approaches: List[str]
-    potential_impact: str
-    confidence_score: float
-    novelty_score: float
-    feasibility_score: float
-    priority_score: float
-    supporting_evidence: List[str]
-    contradicting_evidence: List[str]
-    research_questions: List[str]
-    generated_timestamp: str
+    """
+    Represents a generated biomedical hypothesis.
+
+    A hypothesis can be built either from its single-sentence statement
+    (``hypothesis_text``) or from the fuller ``title``/``description``
+    decomposition. Whichever is supplied, __post_init__ fills in the other, so
+    both readings are always available.
+    """
+    id: str = ""
+    title: str = ""
+    description: str = ""
+    hypothesis_text: str = ""
+    domain: str = ""
+    based_on_relations: List[str] = field(default_factory=list)
+    biological_mechanism: str = ""
+    testable_predictions: List[str] = field(default_factory=list)
+    experimental_approaches: List[str] = field(default_factory=list)
+    potential_impact: str = ""
+    confidence_score: float = 0.0
+    novelty_score: float = 0.0
+    feasibility_score: float = 0.0
+    priority_score: float = 0.0
+    supporting_evidence: List[str] = field(default_factory=list)
+    contradicting_evidence: List[str] = field(default_factory=list)
+    research_questions: List[str] = field(default_factory=list)
+    generated_timestamp: str = ""
     validation_status: str = "pending"  # pending, validated, rejected, in_progress
-    
+
+    def __post_init__(self):
+        """Keep hypothesis_text, title, and description mutually consistent."""
+        statement = self.hypothesis_text or self.description or self.title
+
+        if statement:
+            if not self.hypothesis_text:
+                self.hypothesis_text = statement
+            if not self.description:
+                self.description = statement
+            if not self.title:
+                # Titles are the short form of the statement
+                self.title = statement if len(statement) <= 80 else statement[:77] + "..."
+
+        if not self.generated_timestamp:
+            self.generated_timestamp = datetime.now().isoformat()
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return asdict(self)
@@ -68,17 +93,38 @@ class BiomedicalHypothesis:
 
 @dataclass
 class ExperimentalDesign:
-    """Represents a suggested experimental design."""
-    hypothesis_id: str
-    experiment_type: str  # "in_vitro", "in_vivo", "clinical", "computational"
-    methodology: str
-    required_resources: List[str]
-    expected_outcomes: List[str]
-    controls: List[str]
-    timeline: str
-    estimated_cost: str
-    success_probability: float
-    ethical_considerations: List[str]
+    """
+    Represents a suggested experimental design.
+
+    ``timeline`` and ``estimated_duration`` are two names for the same value
+    and are kept in sync by __post_init__.
+    """
+    hypothesis_id: str = ""
+    objective: str = ""
+    experiment_type: str = ""  # "in_vitro", "in_vivo", "clinical", "computational"
+    methodology: str = ""
+    experimental_groups: List[str] = field(default_factory=list)
+    measurements: List[str] = field(default_factory=list)
+    statistical_analysis: str = ""
+    required_resources: List[str] = field(default_factory=list)
+    expected_outcomes: List[str] = field(default_factory=list)
+    controls: List[str] = field(default_factory=list)
+    timeline: str = ""
+    estimated_duration: str = ""
+    estimated_cost: str = ""
+    success_probability: float = 0.0
+    ethical_considerations: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        """Keep timeline and estimated_duration consistent."""
+        if self.estimated_duration and not self.timeline:
+            self.timeline = self.estimated_duration
+        elif self.timeline and not self.estimated_duration:
+            self.estimated_duration = self.timeline
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return asdict(self)
 
 
 class BiologicalReasoningTool(BaseTool):
@@ -204,10 +250,14 @@ class HypothesisGenerator(LoggerMixin):
     
     def __init__(self, use_llm: bool = True):
         self.use_llm = use_llm and LANGCHAIN_AVAILABLE
-        
+
+        # Always defined so callers can inspect or substitute it, even when no
+        # LLM backend could be initialized.
+        self.llm = None
+
         if self.use_llm:
             self._initialize_llm()
-        
+
         # Template-based hypothesis generation for non-LLM mode
         self.hypothesis_templates = {
             "TREATS": "{entity1} may be an effective therapeutic target for {entity2} treatment",
@@ -236,6 +286,164 @@ class HypothesisGenerator(LoggerMixin):
             self.use_llm = False
             self.logger.warning(f"Could not initialize LLM: {e}")
     
+    def generate_hypothesis(
+        self,
+        context: Dict[str, Any]
+    ) -> BiomedicalHypothesis:
+        """
+        Generate a single hypothesis from a context description.
+
+        Where generate_hypotheses() works from predicted NovelRelations, this
+        takes a free-form context (entities, relations, domain) and produces
+        one hypothesis, using the LLM when available and a template otherwise.
+
+        Args:
+            context: May contain "entities", "relations", "domain", "text".
+
+        Returns:
+            The generated hypothesis.
+        """
+        entities = context.get("entities", [])
+        relations = context.get("relations", [])
+        domain = context.get("domain", "")
+
+        if self.llm is not None:
+            try:
+                response = self.llm.generate(self._format_context_prompt(context))
+
+                # Accept either a structured dict or raw text
+                if isinstance(response, dict):
+                    statement = response.get("hypothesis", "")
+                    confidence = float(response.get("confidence", 0.5))
+                    evidence = list(response.get("evidence", []))
+                else:
+                    statement = str(response)
+                    confidence = 0.5
+                    evidence = []
+
+                if statement:
+                    return BiomedicalHypothesis(
+                        id=f"hypothesis_{abs(hash(statement)) % 10**8}",
+                        hypothesis_text=statement,
+                        domain=domain,
+                        confidence_score=confidence,
+                        supporting_evidence=evidence,
+                        based_on_relations=[
+                            f"{r.get('head')}-{r.get('relation')}-{r.get('tail')}"
+                            for r in relations
+                        ],
+                    )
+            except Exception as e:
+                self.logger.warning(f"LLM hypothesis generation failed, using template: {e}")
+
+        # Template fallback built from the supplied relations
+        if relations:
+            first = relations[0]
+            template = self.hypothesis_templates.get(
+                first.get("relation", "ASSOCIATED_WITH"),
+                self.hypothesis_templates["ASSOCIATED_WITH"],
+            )
+            statement = template.format(
+                entity1=first.get("head", "entity1"),
+                entity2=first.get("tail", "entity2"),
+            )
+        elif entities:
+            statement = (
+                f"There may be an uncharacterized relationship among "
+                f"{', '.join(map(str, entities))}"
+            )
+        else:
+            statement = "Insufficient context to formulate a hypothesis"
+
+        return BiomedicalHypothesis(
+            id=f"hypothesis_{abs(hash(statement)) % 10**8}",
+            hypothesis_text=statement,
+            domain=domain,
+            confidence_score=0.5,
+            based_on_relations=[
+                f"{r.get('head')}-{r.get('relation')}-{r.get('tail')}" for r in relations
+            ],
+        )
+
+    def _format_context_prompt(self, context: Dict[str, Any]) -> str:
+        """Render a context dict into a hypothesis-generation prompt."""
+        parts = ["Generate a testable biomedical hypothesis."]
+
+        if context.get("domain"):
+            parts.append(f"Domain: {context['domain']}")
+        if context.get("entities"):
+            parts.append(f"Entities: {', '.join(map(str, context['entities']))}")
+        if context.get("relations"):
+            rendered = "; ".join(
+                f"{r.get('head')} {r.get('relation')} {r.get('tail')}"
+                for r in context["relations"]
+            )
+            parts.append(f"Known relations: {rendered}")
+        if context.get("text"):
+            parts.append(f"Context: {context['text']}")
+
+        return "\n".join(parts)
+
+    def _design_experiment(
+        self,
+        hypothesis: Union[BiomedicalHypothesis, Dict[str, Any]]
+    ) -> ExperimentalDesign:
+        """
+        Build an experimental design for a hypothesis.
+
+        Args:
+            hypothesis: The hypothesis to test, as an object or a dict.
+
+        Returns:
+            A concrete experimental design.
+        """
+        if isinstance(hypothesis, dict):
+            objective = hypothesis.get("hypothesis") or hypothesis.get("objective", "")
+            hypothesis_id = hypothesis.get("id", "")
+            approaches = hypothesis.get("experimental_approaches", [])
+            predictions = hypothesis.get("testable_predictions", [])
+        else:
+            objective = hypothesis.hypothesis_text or hypothesis.description
+            hypothesis_id = hypothesis.id
+            approaches = hypothesis.experimental_approaches
+            predictions = hypothesis.testable_predictions
+
+        experiment_type = approaches[0] if approaches else "in_vitro"
+
+        return ExperimentalDesign(
+            hypothesis_id=hypothesis_id,
+            objective=objective,
+            experiment_type=experiment_type,
+            methodology=f"{experiment_type.replace('_', ' ').title()} assay",
+            experimental_groups=["control", "treatment"],
+            measurements=predictions or ["primary outcome"],
+            statistical_analysis="Two-group comparison with multiple-testing correction",
+            required_resources=["reagents", "instrumentation", "analyst time"],
+            expected_outcomes=predictions,
+            controls=["vehicle control", "positive control"],
+            timeline="6 months",
+            estimated_cost="unknown",
+            success_probability=0.5,
+            ethical_considerations=["Institutional approval required"],
+        )
+
+    def design_experiment(
+        self,
+        hypothesis: Union[BiomedicalHypothesis, Dict[str, Any]]
+    ) -> ExperimentalDesign:
+        """
+        Public entry point for experimental design.
+
+        Args:
+            hypothesis: The hypothesis to test.
+
+        Returns:
+            A concrete experimental design.
+        """
+        design = self._design_experiment(hypothesis)
+        self.logger.info(f"Designed {design.experiment_type} experiment for {design.hypothesis_id!r}")
+        return design
+
     def generate_hypotheses(
         self,
         novel_relations: List[NovelRelation],
@@ -527,15 +735,27 @@ Predictions: {'; '.join(hypothesis.testable_predictions)}
                 "hypothesis": hypothesis_text
             })
             
+            output = result.get("output", "")
+            biological_score = self._extract_plausibility_score(output)
+            literature_score = self._extract_literature_assessment(output)
+
             validation_result = {
                 "hypothesis_id": hypothesis.id,
-                "validation_summary": result.get("output", ""),
-                "biological_plausibility": self._extract_plausibility_score(result.get("output", "")),
-                "literature_support": self._extract_literature_assessment(result.get("output", "")),
-                "experimental_feasibility": self._extract_feasibility_score(result.get("output", "")),
+                "validation_summary": output,
+                "literature_validation": {
+                    "score": literature_score,
+                    "reasoning": "Assessed by LLM agent",
+                },
+                "biological_validation": {
+                    "score": biological_score,
+                    "reasoning": "Assessed by LLM agent",
+                },
+                "biological_plausibility": biological_score,
+                "literature_support": literature_score,
+                "experimental_feasibility": self._extract_feasibility_score(output),
                 "overall_score": 0.0,  # Will be calculated
                 "validation_timestamp": datetime.now().isoformat(),
-                "recommendations": self._extract_recommendations(result.get("output", ""))
+                "recommendations": self._extract_recommendations(output)
             }
             
             # Calculate overall score
@@ -552,19 +772,104 @@ Predictions: {'; '.join(hypothesis.testable_predictions)}
             self.logger.error(f"Error validating hypothesis {hypothesis.id}: {e}")
             return self._simple_validation(hypothesis)
     
+    def _validate_against_literature(
+        self, hypothesis: BiomedicalHypothesis
+    ) -> Dict[str, Any]:
+        """
+        Assess how well existing literature supports a hypothesis.
+
+        Args:
+            hypothesis: The hypothesis to check.
+
+        Returns:
+            {"score", "supporting_papers", "contradicting_papers", "reasoning"}.
+        """
+        supporting = len(hypothesis.supporting_evidence)
+        contradicting = len(hypothesis.contradicting_evidence)
+
+        if supporting == 0 and contradicting == 0:
+            return {
+                "score": 0.5,
+                "supporting_papers": 0,
+                "contradicting_papers": 0,
+                "reasoning": "No literature evidence recorded; treated as neutral",
+            }
+
+        # Proportion of supporting evidence, damped toward neutral when the
+        # total evidence base is small
+        total = supporting + contradicting
+        proportion = supporting / total
+        weight = min(total / 5.0, 1.0)
+        score = 0.5 + (proportion - 0.5) * weight
+
+        return {
+            "score": float(max(0.0, min(1.0, score))),
+            "supporting_papers": supporting,
+            "contradicting_papers": contradicting,
+            "reasoning": (
+                f"{supporting} supporting vs {contradicting} contradicting "
+                f"item(s) of evidence"
+            ),
+        }
+
+    def _validate_biological_plausibility(
+        self, hypothesis: BiomedicalHypothesis
+    ) -> Dict[str, Any]:
+        """
+        Assess whether a hypothesis is mechanistically coherent.
+
+        Args:
+            hypothesis: The hypothesis to check.
+
+        Returns:
+            {"score", "reasoning"}.
+        """
+        # A stated mechanism and concrete predictions are what make a
+        # hypothesis biologically checkable rather than merely suggestive.
+        has_mechanism = bool(hypothesis.biological_mechanism.strip())
+        num_predictions = len(hypothesis.testable_predictions)
+
+        score = hypothesis.confidence_score * 0.6
+        if has_mechanism:
+            score += 0.25
+        score += min(num_predictions / 4.0, 1.0) * 0.15
+
+        reasons = []
+        reasons.append(
+            "mechanism described" if has_mechanism else "no mechanism described"
+        )
+        reasons.append(f"{num_predictions} testable prediction(s)")
+
+        return {
+            "score": float(max(0.0, min(1.0, score))),
+            "reasoning": "; ".join(reasons),
+        }
+
     def _simple_validation(self, hypothesis: BiomedicalHypothesis) -> Dict[str, Any]:
-        """Simple validation without LLM."""
+        """Validate without an LLM, using the component assessments."""
+        literature = self._validate_against_literature(hypothesis)
+        biological = self._validate_biological_plausibility(hypothesis)
+        feasibility = hypothesis.feasibility_score
+
+        overall = (
+            biological["score"] * 0.4
+            + literature["score"] * 0.3
+            + feasibility * 0.3
+        )
+
         return {
             "hypothesis_id": hypothesis.id,
-            "validation_summary": "Simple validation without LLM analysis",
-            "biological_plausibility": hypothesis.confidence_score,
-            "literature_support": 0.5,
-            "experimental_feasibility": hypothesis.feasibility_score,
-            "overall_score": (hypothesis.confidence_score + 0.5 + hypothesis.feasibility_score) / 3,
+            "validation_summary": "Rule-based validation without LLM analysis",
+            "literature_validation": literature,
+            "biological_validation": biological,
+            "biological_plausibility": biological["score"],
+            "literature_support": literature["score"],
+            "experimental_feasibility": feasibility,
+            "overall_score": float(overall),
             "validation_timestamp": datetime.now().isoformat(),
             "recommendations": ["Requires detailed literature review", "Design specific experiments"]
         }
-    
+
     def _extract_plausibility_score(self, text: str) -> float:
         """Extract biological plausibility score from validation text."""
         # Look for numerical scores in the text
@@ -644,6 +949,97 @@ class HypothesisGenerationSystem(LoggerMixin):
         self.validation_results = {}
         
         self.logger.info("Initialized HypothesisGenerationSystem")
+
+    def rank_hypotheses(
+        self,
+        hypotheses: List[BiomedicalHypothesis],
+        weights: Optional[Dict[str, float]] = None
+    ) -> List[BiomedicalHypothesis]:
+        """
+        Rank hypotheses by research priority, highest first.
+
+        Priority balances how likely a hypothesis is to be true (confidence),
+        how much it would add if true (novelty), how testable it is
+        (feasibility), and how much evidence already backs it.
+
+        Each hypothesis has its ``priority_score`` set as a side effect.
+
+        Args:
+            hypotheses: The hypotheses to rank.
+            weights: Optional overrides for the "confidence", "novelty",
+                "feasibility", and "evidence" components.
+
+        Returns:
+            A new list ordered by descending priority.
+        """
+        component_weights = {
+            "confidence": 0.4,
+            "novelty": 0.3,
+            "feasibility": 0.2,
+            "evidence": 0.1,
+            **(weights or {}),
+        }
+
+        for hypothesis in hypotheses:
+            # Evidence support saturates: 3+ items count as fully supported
+            evidence_score = min(len(hypothesis.supporting_evidence) / 3.0, 1.0)
+
+            hypothesis.priority_score = float(
+                component_weights["confidence"] * hypothesis.confidence_score
+                + component_weights["novelty"] * hypothesis.novelty_score
+                + component_weights["feasibility"] * hypothesis.feasibility_score
+                + component_weights["evidence"] * evidence_score
+            )
+
+        ranked = sorted(hypotheses, key=lambda h: h.priority_score, reverse=True)
+        self.logger.info(f"Ranked {len(ranked)} hypotheses by research priority")
+        return ranked
+
+    def generate_hypotheses(
+        self,
+        input_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Generate and rank hypotheses from novel relations and context.
+
+        Args:
+            input_data: {"novel_relations": [NovelRelation], "literature_context": [str]}
+
+        Returns:
+            {"hypotheses": [...], "summary": {...}}, hypotheses ranked by priority.
+        """
+        novel_relations = input_data.get("novel_relations", [])
+        literature_context = input_data.get("literature_context", [])
+
+        hypotheses = []
+        for relation in novel_relations:
+            context = {
+                "entities": [relation.entity1, relation.entity2],
+                "relations": [{
+                    "head": relation.entity1,
+                    "relation": relation.relation_type,
+                    "tail": relation.entity2,
+                }],
+                "domain": input_data.get("domain", ""),
+                "text": " ".join(map(str, literature_context)),
+            }
+
+            hypothesis = self.hypothesis_generator.generate_hypothesis(context)
+            # Carry the relation's novelty through to the hypothesis
+            if not hypothesis.novelty_score:
+                hypothesis.novelty_score = relation.novelty_score
+            hypotheses.append(hypothesis)
+
+        ranked = self.rank_hypotheses(hypotheses)
+        self.generated_hypotheses = ranked
+
+        return {
+            "hypotheses": ranked,
+            "summary": {
+                "num_hypotheses": len(ranked),
+                "num_source_relations": len(novel_relations),
+            },
+        }
     
     def generate_and_validate_hypotheses(
         self,

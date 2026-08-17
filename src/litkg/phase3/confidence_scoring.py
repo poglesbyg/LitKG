@@ -7,6 +7,8 @@ factors like evidence strength, source reliability, temporal consistency,
 and cross-modal agreement.
 """
 
+import math
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -24,41 +26,47 @@ class EvidenceType(Enum):
     LITERATURE = "literature"
     EXPERIMENTAL = "experimental"
     CURATED_DATABASE = "curated_database"
-    COMPUTATIONAL_PREDICTION = "computational_prediction"
+    COMPUTATIONAL = "computational"
     EXPERT_ANNOTATION = "expert_annotation"
 
 
 @dataclass
 class ConfidenceMetrics:
-    """Container for confidence assessment metrics."""
-    
+    """
+    Container for confidence assessment metrics.
+
+    Only ``overall_confidence`` is required; the remaining metrics default to
+    zero so partial assessments (a literature-only scoring pass, say) can be
+    represented without inventing values for evidence that was never examined.
+    """
+
     # Overall confidence score [0, 1]
     overall_confidence: float
-    
+
     # Evidence-specific scores
-    literature_confidence: float
-    experimental_confidence: float
-    cross_modal_agreement: float
-    
+    literature_confidence: float = 0.0
+    experimental_confidence: float = 0.0
+    cross_modal_agreement: float = 0.0
+
     # Quality indicators
-    evidence_strength: float
-    source_reliability: float
-    temporal_consistency: float
-    
+    evidence_strength: float = 0.0
+    source_reliability: float = 0.0
+    temporal_consistency: float = 0.0
+
     # Uncertainty quantification
-    epistemic_uncertainty: float  # Model uncertainty
-    aleatoric_uncertainty: float  # Data uncertainty
-    
+    epistemic_uncertainty: float = 0.0  # Model uncertainty
+    aleatoric_uncertainty: float = 0.0  # Data uncertainty
+
     # Supporting evidence counts
-    supporting_papers: int
-    supporting_experiments: int
-    contradicting_evidence: int
-    
+    supporting_papers: int = 0
+    supporting_experiments: int = 0
+    contradicting_evidence: int = 0
+
     # Metadata
     confidence_level: str = field(default="")  # "high", "medium", "low"
     explanation: str = field(default="")
     evidence_sources: List[str] = field(default_factory=list)
-    
+
     def __post_init__(self):
         """Set confidence level based on overall score."""
         if self.overall_confidence >= 0.8:
@@ -67,6 +75,22 @@ class ConfidenceMetrics:
             self.confidence_level = "medium"
         else:
             self.confidence_level = "low"
+
+    @property
+    def consistency_score(self) -> float:
+        """Alias for temporal_consistency."""
+        return self.temporal_consistency
+
+    @property
+    def uncertainty_estimate(self) -> float:
+        """
+        Total uncertainty, combining the epistemic and aleatoric components.
+
+        Combined in quadrature, since the two are modeled as independent.
+        """
+        return float(
+            (self.epistemic_uncertainty ** 2 + self.aleatoric_uncertainty ** 2) ** 0.5
+        )
 
 
 class LiteratureConfidenceAssessor(nn.Module, LoggerMixin):
@@ -145,6 +169,48 @@ class LiteratureConfidenceAssessor(nn.Module, LoggerMixin):
             'study_quality': study_quality,
             'quality_weights': self.quality_weights
         }
+
+    def assess_confidence(self, literature_evidence: List[Dict[str, Any]]) -> float:
+        """
+        Score a list of literature evidence records.
+
+        This is the record-level entry point: it derives quality features from
+        the raw records and reduces the network output to a single score. Use
+        forward() directly when you already hold embeddings.
+
+        Args:
+            literature_evidence: Records with any of "confidence", "citations",
+                "year", "journal_impact_factor".
+
+        Returns:
+            Confidence in [0, 1]. Returns 0.0 for empty evidence.
+        """
+        if not literature_evidence:
+            return 0.0
+
+        # Evidence-level agreement: the mean stated confidence, tempered by how
+        # much corroboration exists. A single paper cannot reach full confidence.
+        confidences = [
+            float(record.get("confidence", 0.5)) for record in literature_evidence
+        ]
+        mean_confidence = sum(confidences) / len(confidences)
+
+        # Corroboration saturates: 1 paper -> 0.5, 2 -> 0.67, 4 -> 0.8
+        n = len(literature_evidence)
+        corroboration = n / (n + 1.0)
+
+        # Citation weight, log-scaled and saturating
+        citations = [float(record.get("citations", 0)) for record in literature_evidence]
+        mean_citations = sum(citations) / len(citations)
+        citation_factor = math.log1p(mean_citations) / math.log1p(100.0)
+        citation_factor = min(citation_factor, 1.0)
+
+        score = (
+            0.60 * mean_confidence
+            + 0.25 * corroboration
+            + 0.15 * citation_factor
+        )
+        return float(max(0.0, min(1.0, score)))
 
 
 class ExperimentalConfidenceAssessor(nn.Module, LoggerMixin):
@@ -244,6 +310,62 @@ class ExperimentalConfidenceAssessor(nn.Module, LoggerMixin):
             'replication_score': replication_score,
             'source_reliability': torch.sigmoid(source_emb.mean(dim=-1, keepdim=True))
         }
+
+    # Study designs ranked by evidential strength
+    STUDY_TYPE_WEIGHTS = {
+        "meta_analysis": 1.00,
+        "clinical_trial": 0.90,
+        "cohort": 0.75,
+        "case_control": 0.65,
+        "in_vivo": 0.60,
+        "in_vitro": 0.45,
+        "in_silico": 0.30,
+    }
+
+    def assess_confidence(self, experimental_evidence: List[Dict[str, Any]]) -> float:
+        """
+        Score a list of experimental evidence records.
+
+        Weighs study design, statistical significance, and sample size. Use
+        forward() directly when you already hold embeddings.
+
+        Args:
+            experimental_evidence: Records with any of "study_type", "p_value",
+                "sample_size", "effect_size".
+
+        Returns:
+            Confidence in [0, 1]. Returns 0.0 for empty evidence.
+        """
+        if not experimental_evidence:
+            return 0.0
+
+        study_scores = []
+        for record in experimental_evidence:
+            design = self.STUDY_TYPE_WEIGHTS.get(
+                str(record.get("study_type", "")).lower(), 0.5
+            )
+
+            # Significance: p=0.05 -> 0.5, p=0.001 -> ~0.9, p>=0.1 -> 0
+            p_value = float(record.get("p_value", 0.05))
+            if p_value <= 0:
+                significance = 1.0
+            elif p_value >= 0.1:
+                significance = 0.0
+            else:
+                significance = min(1.0, math.log10(0.1 / p_value) / 2.0)
+
+            # Sample size, log-scaled and saturating around n=1000
+            sample_size = max(float(record.get("sample_size", 0)), 0.0)
+            power = min(math.log1p(sample_size) / math.log1p(1000.0), 1.0)
+
+            study_scores.append(0.4 * design + 0.4 * significance + 0.2 * power)
+
+        # The strongest study dominates, with the rest providing corroboration
+        best = max(study_scores)
+        mean = sum(study_scores) / len(study_scores)
+        score = 0.7 * best + 0.3 * mean
+
+        return float(max(0.0, min(1.0, score)))
 
 
 class CrossModalConfidenceIntegrator(nn.Module, LoggerMixin):
@@ -370,11 +492,124 @@ class CrossModalConfidenceIntegrator(nn.Module, LoggerMixin):
             'attention_weights': attention_weights
         }
 
+    def integrate(
+        self,
+        literature_features: torch.Tensor,
+        experimental_features: torch.Tensor,
+        lit_confidence: Optional[torch.Tensor] = None,
+        exp_confidence: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        Integrate two evidence streams into a single confidence score.
+
+        Convenience wrapper over forward() for callers that want the scalar
+        result rather than the full metric dictionary. When per-modality
+        confidences are not supplied they are estimated from the features.
+
+        Args:
+            literature_features: [batch_size, hidden_dim]
+            experimental_features: [batch_size, hidden_dim]
+            lit_confidence: Optional [batch_size, 1] literature confidence
+            exp_confidence: Optional [batch_size, 1] experimental confidence
+
+        Returns:
+            Integrated confidence, shape [batch_size], each value in [0, 1].
+        """
+        if literature_features.dim() == 1:
+            literature_features = literature_features.unsqueeze(0)
+        if experimental_features.dim() == 1:
+            experimental_features = experimental_features.unsqueeze(0)
+
+        batch_size = literature_features.size(0)
+        device = literature_features.device
+
+        # Absent an explicit confidence, summarize the feature vector itself
+        if lit_confidence is None:
+            lit_confidence = torch.sigmoid(
+                literature_features.mean(dim=-1, keepdim=True)
+            )
+        if exp_confidence is None:
+            exp_confidence = torch.sigmoid(
+                experimental_features.mean(dim=-1, keepdim=True)
+            )
+
+        outputs = self.forward(
+            literature_features=literature_features.to(device),
+            experimental_features=experimental_features.to(device),
+            lit_confidence=lit_confidence.to(device),
+            exp_confidence=exp_confidence.to(device),
+        )
+
+        # [batch_size, 1] -> [batch_size], clamped since forward() mixes a
+        # sigmoid output with a weighted sum that is not itself bounded
+        return outputs['overall_confidence'].squeeze(-1).clamp(0.0, 1.0)
+
+
+class ConfidenceCalibrator(LoggerMixin):
+    """
+    Platt-scaling calibrator mapping raw confidence scores to probabilities.
+
+    Fits a logistic regression on the raw score so that a reported confidence
+    of 0.9 corresponds to being correct about 90% of the time.
+    """
+
+    def __init__(self):
+        self.slope: float = 1.0
+        self.intercept: float = 0.0
+        self.fitted: bool = False
+        self.brier_score: float = float("nan")
+
+    def fit(
+        self,
+        predicted_confidences: List[float],
+        actual_outcomes: List[int],
+        epochs: int = 500,
+        learning_rate: float = 0.05
+    ) -> "ConfidenceCalibrator":
+        """Fit slope and intercept by minimizing binary cross-entropy."""
+        x = torch.tensor(predicted_confidences, dtype=torch.float32)
+        y = torch.tensor(actual_outcomes, dtype=torch.float32)
+
+        slope = torch.ones(1, requires_grad=True)
+        intercept = torch.zeros(1, requires_grad=True)
+
+        optimizer = torch.optim.Adam([slope, intercept], lr=learning_rate)
+        loss_fn = nn.BCEWithLogitsLoss()
+
+        for _ in range(epochs):
+            optimizer.zero_grad()
+            loss = loss_fn(slope * x + intercept, y)
+            loss.backward()
+            optimizer.step()
+
+        self.slope = float(slope.item())
+        self.intercept = float(intercept.item())
+        self.fitted = True
+
+        # Brier score of the calibrated predictions: lower is better
+        with torch.no_grad():
+            calibrated = torch.sigmoid(slope * x + intercept)
+            self.brier_score = float(((calibrated - y) ** 2).mean().item())
+
+        return self
+
+    def transform(self, confidence: float) -> float:
+        """Apply the fitted mapping to one raw confidence score."""
+        if not self.fitted:
+            return confidence
+
+        logit = self.slope * confidence + self.intercept
+        return float(1.0 / (1.0 + math.exp(-logit)))
+
+    def transform_many(self, confidences: List[float]) -> List[float]:
+        """Apply the fitted mapping to a list of raw confidence scores."""
+        return [self.transform(c) for c in confidences]
+
 
 class ConfidenceScorer(LoggerMixin):
     """
     Main confidence scoring system that orchestrates all confidence assessments.
-    
+
     This is the primary interface for confidence scoring in the LitKG system.
     """
     
@@ -409,21 +644,36 @@ class ConfidenceScorer(LoggerMixin):
     
     def assess_relationship_confidence(
         self,
+        relationship: Optional[Dict[str, Any]] = None,
+        evidence: Optional[Dict[str, List[Dict[str, Any]]]] = None,
         literature_data: Optional[Dict[str, Any]] = None,
         experimental_data: Optional[Dict[str, Any]] = None,
         relationship_embedding: Optional[torch.Tensor] = None
     ) -> ConfidenceMetrics:
         """
         Assess confidence for a biomedical relationship using all available evidence.
-        
+
+        Two entry points:
+
+        - **Record level**: pass ``relationship`` and ``evidence`` (lists of raw
+          literature/experimental records). Scoring runs through the component
+          assessors' ``assess_confidence`` methods.
+        - **Tensor level**: pass ``literature_data``/``experimental_data``
+          dictionaries carrying embeddings, for the trained neural path.
+
         Args:
-            literature_data: Literature evidence data
-            experimental_data: Experimental evidence data
+            relationship: {"head", "relation", "tail"} being assessed.
+            evidence: {"literature": [...], "experimental": [...]} raw records.
+            literature_data: Literature evidence with embeddings.
+            experimental_data: Experimental evidence with embeddings.
             relationship_embedding: Optional pre-computed relationship embedding
-            
+
         Returns:
             Comprehensive confidence metrics
         """
+        if evidence is not None:
+            return self._assess_from_records(relationship or {}, evidence)
+
         with torch.no_grad():
             # Initialize default values
             lit_confidence = torch.tensor([[0.0]], device=self.device)
@@ -585,6 +835,189 @@ class ConfidenceScorer(LoggerMixin):
         
         return sources
     
+    def _assess_from_records(
+        self,
+        relationship: Dict[str, Any],
+        evidence: Dict[str, List[Dict[str, Any]]]
+    ) -> ConfidenceMetrics:
+        """
+        Score a relationship from raw evidence records.
+
+        Delegates to the component assessors, then fuses their scores through
+        the cross-modal integrator, so each component's judgement is visible in
+        the returned metrics.
+
+        Args:
+            relationship: {"head", "relation", "tail"}.
+            evidence: {"literature": [...], "experimental": [...]}.
+
+        Returns:
+            Confidence metrics for the relationship.
+        """
+        literature_records = evidence.get("literature", []) or []
+        experimental_records = evidence.get("experimental", []) or []
+
+        lit_confidence = float(
+            self.literature_assessor.assess_confidence(literature_records)
+        )
+        exp_confidence = float(
+            self.experimental_assessor.assess_confidence(experimental_records)
+        )
+
+        hidden_dim = getattr(self.cross_modal_integrator, "hidden_dim", 768)
+        lit_features = torch.full(
+            (1, hidden_dim), lit_confidence, device=self.device
+        )
+        exp_features = torch.full(
+            (1, hidden_dim), exp_confidence, device=self.device
+        )
+
+        with torch.no_grad():
+            integrated = self.cross_modal_integrator.integrate(
+                lit_features,
+                exp_features,
+                torch.tensor([[lit_confidence]], device=self.device),
+                torch.tensor([[exp_confidence]], device=self.device),
+            )
+
+        overall = float(torch.as_tensor(integrated).flatten()[0].item())
+
+        # Agreement is high when both modalities land on similar scores. With
+        # only one modality present there is nothing to agree with.
+        if literature_records and experimental_records:
+            agreement = 1.0 - abs(lit_confidence - exp_confidence)
+        else:
+            agreement = 0.0
+
+        explanation_parts = [
+            f"{len(literature_records)} literature record(s) -> {lit_confidence:.2f}",
+            f"{len(experimental_records)} experimental record(s) -> {exp_confidence:.2f}",
+        ]
+        if relationship:
+            explanation_parts.insert(0, (
+                f"{relationship.get('head', '?')} "
+                f"{relationship.get('relation', '?')} "
+                f"{relationship.get('tail', '?')}"
+            ))
+
+        return ConfidenceMetrics(
+            overall_confidence=max(0.0, min(1.0, overall)),
+            literature_confidence=lit_confidence,
+            experimental_confidence=exp_confidence,
+            cross_modal_agreement=float(max(0.0, agreement)),
+            evidence_strength=float(max(lit_confidence, exp_confidence)),
+            supporting_papers=len(literature_records),
+            supporting_experiments=len(experimental_records),
+            explanation="; ".join(explanation_parts),
+            evidence_sources=(
+                (["literature"] if literature_records else [])
+                + (["experimental"] if experimental_records else [])
+            ),
+        )
+
+    def calibrate_confidence(
+        self,
+        predicted_confidences: List[float],
+        actual_outcomes: List[int]
+    ) -> "ConfidenceCalibrator":
+        """
+        Fit a calibrator mapping raw confidence scores to observed frequencies.
+
+        A model that says "0.9" should be right about 90% of the time. Platt
+        scaling (logistic regression on the raw score) corrects the systematic
+        over- or under-confidence that neural scorers typically exhibit.
+
+        The fitted calibrator is stored on ``self.calibrator`` and applied by
+        subsequent calls to :meth:`apply_calibration`.
+
+        Args:
+            predicted_confidences: Raw scores in [0, 1].
+            actual_outcomes: Ground truth, 1 for correct and 0 for incorrect.
+
+        Returns:
+            The fitted ConfidenceCalibrator.
+
+        Raises:
+            ValueError: if the inputs differ in length or are empty.
+        """
+        if len(predicted_confidences) != len(actual_outcomes):
+            raise ValueError(
+                f"Length mismatch: {len(predicted_confidences)} predictions vs "
+                f"{len(actual_outcomes)} outcomes"
+            )
+        if not predicted_confidences:
+            raise ValueError("Cannot calibrate on empty data")
+
+        calibrator = ConfidenceCalibrator()
+        calibrator.fit(predicted_confidences, actual_outcomes)
+
+        self.calibrator = calibrator
+        self.logger.info(
+            f"Calibrated confidence on {len(predicted_confidences)} samples "
+            f"(Brier score {calibrator.brier_score:.4f})"
+        )
+        return calibrator
+
+    def apply_calibration(self, confidence: float) -> float:
+        """Map a raw confidence through the fitted calibrator, if any."""
+        if getattr(self, "calibrator", None) is None:
+            return confidence
+        return self.calibrator.transform(confidence)
+
+    def quantify_uncertainty(
+        self,
+        predictions: torch.Tensor
+    ) -> Tuple[float, float]:
+        """
+        Split predictive uncertainty into epistemic and aleatoric parts.
+
+        Given repeated predictions for the same input (an ensemble, or MC
+        dropout samples), this separates the two sources the README calls out
+        as distinguishing "unknown" from "contradictory" evidence:
+
+        - **Epistemic**: disagreement *between* samples. Reducible with more
+          data or a better model; high when the model is out of its depth.
+        - **Aleatoric**: the average entropy *within* each sample. Irreducible
+          noise in the data itself; high when the evidence genuinely conflicts.
+
+        Args:
+            predictions: [num_samples, num_classes] probability distributions.
+
+        Returns:
+            (epistemic_uncertainty, aleatoric_uncertainty), both >= 0.
+
+        Raises:
+            ValueError: if predictions is not 2D or has no samples.
+        """
+        if predictions.dim() != 2:
+            raise ValueError(
+                f"Expected [num_samples, num_classes], got shape {tuple(predictions.shape)}"
+            )
+        if predictions.size(0) == 0:
+            raise ValueError("Cannot quantify uncertainty from zero samples")
+
+        probs = predictions.float()
+
+        # Normalize defensively; callers may pass unnormalized scores
+        row_sums = probs.sum(dim=-1, keepdim=True)
+        probs = torch.where(row_sums > 0, probs / row_sums, probs)
+
+        eps = 1e-12
+
+        # Total uncertainty: entropy of the mean prediction
+        mean_probs = probs.mean(dim=0)
+        total_entropy = -(mean_probs * torch.log(mean_probs + eps)).sum()
+
+        # Aleatoric: mean of the per-sample entropies
+        sample_entropies = -(probs * torch.log(probs + eps)).sum(dim=-1)
+        aleatoric = sample_entropies.mean()
+
+        # Epistemic is the mutual information between prediction and parameters,
+        # i.e. whatever total uncertainty is not explained by per-sample noise.
+        epistemic = torch.clamp(total_entropy - aleatoric, min=0.0)
+
+        return float(epistemic.item()), float(aleatoric.item())
+
     def batch_assess_confidence(
         self,
         relationships: List[Dict[str, Any]]
