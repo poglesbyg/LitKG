@@ -14,7 +14,7 @@ Key enhancements:
 
 import os
 import asyncio
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Tuple, Union, Iterator
 from pathlib import Path
 from dataclasses import dataclass
 import logging
@@ -348,49 +348,263 @@ class BiomedicalDocumentLoader(BaseLoader, LoggerMixin):
         return []
 
 
-class BiomedicalTextSplitter(TextSplitter):
+class BiomedicalTextSplitter(TextSplitter, LoggerMixin):
     """
     Intelligent text splitter for biomedical documents.
-    
+
     Features:
-    - Section-aware splitting (Abstract, Methods, Results, etc.)
-    - Sentence-boundary preservation
-    - Entity-aware chunking (keeps related entities together)
-    - Configurable overlap strategies
+    - Section-aware splitting (Abstract, Methods, Results, etc.), with the
+      section name reported so retrieval can weight a Results claim above an
+      Introduction one
+    - Sentence-boundary preservation using scispacy, which handles the
+      abbreviations ("et al.", "Fig. 1", "p < 0.05") that defeat naive splitting
+    - Overlap between adjacent chunks, carried as whole sentences, so a fact
+      spanning a boundary stays retrievable
+    - Length measured in tokens against the embedding model's window
     """
-    
+
+    # Headers marking the start of a biomedical paper section. Static, so held
+    # on the class rather than rebuilt per instance.
+    section_patterns = [
+        r"^(ABSTRACT|Abstract)",
+        r"^(INTRODUCTION|Introduction)",
+        r"^(METHODS|Methods|MATERIALS AND METHODS)",
+        r"^(RESULTS|Results)",
+        r"^(DISCUSSION|Discussion)",
+        r"^(CONCLUSION|Conclusion|CONCLUSIONS)",
+        r"^(REFERENCES|References)",
+        r"^(ACKNOWLEDGMENTS|Acknowledgments)",
+    ]
+
     def __init__(
         self,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        chunk_size: int = 400,
+        chunk_overlap: int = 80,
         section_aware: bool = True,
         preserve_sentences: bool = True,
+        length_unit: str = "tokens",
+        model_max_tokens: int = 512,
         **kwargs
     ):
+        """
+        Args:
+            chunk_size: Maximum chunk length, measured in ``length_unit``.
+            chunk_overlap: How much of the tail of one chunk repeats at the head
+                of the next, in the same unit. Prevents a fact that straddles a
+                boundary from becoming unretrievable.
+            section_aware: Split on biomedical section headers first.
+            preserve_sentences: Never split mid-sentence.
+            length_unit: "tokens" or "characters". Tokens are the unit the
+                embedding model actually constrains, so sizes stay meaningful
+                if the model changes.
+            model_max_tokens: Context window of the embedding model, used to
+                cap chunk_size when measuring in tokens.
+        """
         super().__init__(**kwargs)
+
+        if length_unit not in ("tokens", "characters"):
+            raise ValueError(
+                f"length_unit must be 'tokens' or 'characters', got {length_unit!r}"
+            )
+        if chunk_overlap >= chunk_size:
+            raise ValueError(
+                f"chunk_overlap ({chunk_overlap}) must be smaller than "
+                f"chunk_size ({chunk_size}); otherwise chunking cannot advance"
+            )
+
+        self.length_unit = length_unit
+        self.model_max_tokens = model_max_tokens
+
+        # A chunk longer than the embedding window is silently truncated at
+        # embedding time, so the window is a hard ceiling.
+        if length_unit == "tokens" and chunk_size > model_max_tokens:
+            self.logger.warning(
+                f"chunk_size {chunk_size} exceeds the model window "
+                f"{model_max_tokens}; capping to avoid silent truncation"
+            )
+            chunk_size = model_max_tokens
+
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.section_aware = section_aware
         self.preserve_sentences = preserve_sentences
-        
-        # Biomedical section patterns
-        self.section_patterns = [
-            r"^(ABSTRACT|Abstract)",
-            r"^(INTRODUCTION|Introduction)",
-            r"^(METHODS|Methods|MATERIALS AND METHODS)",
-            r"^(RESULTS|Results)",
-            r"^(DISCUSSION|Discussion)",
-            r"^(CONCLUSION|Conclusion|CONCLUSIONS)",
-            r"^(REFERENCES|References)",
-            r"^(ACKNOWLEDGMENTS|Acknowledgments)"
-        ]
-    
+
+    def _measure(self, text: str) -> int:
+        """Length of a piece of text in the configured unit."""
+        if self.length_unit == "characters":
+            return len(text)
+
+        # Whitespace tokens underestimate subword tokenization; the ~1.3
+        # multiplier approximates the wordpiece expansion typical of
+        # biomedical vocabulary without loading a tokenizer.
+        return int(len(text.split()) * 1.3) + 1
+
+    # Abbreviations that end in a period but do not end a sentence. Used only
+    # by the regex fallback; the scispacy model handles these natively.
+    _NON_TERMINAL_ABBREVIATIONS = (
+        "et al.", "e.g.", "i.e.", "vs.", "cf.", "approx.", "Fig.", "Figs.",
+        "Tab.", "Ref.", "Refs.", "No.", "Dr.", "Prof.", "St.", "Ltd.", "Inc.",
+        "min.", "max.", "sec.", "hr.", "wt.", "ca.", "spp.", "subsp.",
+    )
+
+    @property
+    def _sentence_model(self):
+        """
+        The scispacy sentence segmenter, loaded once on first use.
+
+        Cached on the class so repeated splitter instances share one model.
+        """
+        cls = type(self)
+        if hasattr(cls, "_cached_sentence_model"):
+            return cls._cached_sentence_model
+
+        model = None
+        try:
+            import spacy
+            for model_name in ("en_core_sci_sm", "en_core_sci_md", "en_core_web_sm"):
+                try:
+                    model = spacy.load(model_name, disable=["ner", "lemmatizer"])
+                    self.logger.info(f"Sentence splitting using {model_name}")
+                    break
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+
+        if model is None:
+            self.logger.warning(
+                "No spaCy model available; falling back to regex sentence "
+                "splitting, which mis-splits abbreviations like 'et al.'"
+            )
+
+        cls._cached_sentence_model = model
+        return model
+
+    def _split_sentences_regex(self, text: str) -> List[str]:
+        """
+        Regex sentence splitting that protects common abbreviations.
+
+        A plain `(?<=[.!?])\\s+` split breaks biomedical prose at "et al.",
+        "Fig. 1", and "p < 0.05.", so abbreviations are masked before splitting
+        and restored afterwards.
+        """
+        import re
+
+        masked = text
+        placeholders = {}
+        for i, abbreviation in enumerate(self._NON_TERMINAL_ABBREVIATIONS):
+            token = f"\x00{i}\x00"
+            placeholders[token] = abbreviation
+            masked = masked.replace(abbreviation, token)
+
+        # Also protect decimals such as "p < 0.05" and "1.5-fold". The
+        # replacement is a non-raw string so \x01 is the literal sentinel
+        # character rather than an escape re.sub would try to parse.
+        masked = re.sub(r"(\d)\.(\d)", "\\1\x01\\2", masked)
+
+        parts = re.split(r"(?<=[.!?])\s+", masked)
+
+        sentences = []
+        for part in parts:
+            restored = part.replace("\x01", ".")
+            for token, abbreviation in placeholders.items():
+                restored = restored.replace(token, abbreviation)
+            restored = restored.strip()
+            if restored:
+                sentences.append(restored)
+
+        return sentences
+
+    def split_sentences(self, text: str) -> List[str]:
+        """
+        Split text into sentences.
+
+        Uses the scispacy biomedical model when available, since it is trained
+        on the abbreviation and citation patterns that defeat naive splitting,
+        and falls back to an abbreviation-aware regex otherwise.
+        """
+        if not text or not text.strip():
+            return []
+
+        model = self._sentence_model
+        if model is not None:
+            try:
+                return [
+                    sentence.text.strip()
+                    for sentence in model(text).sents
+                    if sentence.text.strip()
+                ]
+            except Exception as e:
+                self.logger.warning(f"spaCy sentence splitting failed ({e}); using regex")
+
+        return self._split_sentences_regex(text)
+
     def split_text(self, text: str) -> List[str]:
         """Split text into chunks using biomedical-aware strategies."""
         if self.section_aware:
             return self._split_by_sections(text)
         else:
             return self._split_by_sentences(text)
+
+    def split_text_with_sections(self, text: str) -> List[Tuple[str, Optional[str]]]:
+        """
+        Split text, reporting which paper section each chunk came from.
+
+        Section provenance is evidential weight in biomedical text: a claim in
+        Results is a finding this paper established, while the same sentence in
+        Introduction is background attributed to someone else. Callers can
+        weight or filter retrieval on it.
+
+        Returns:
+            (chunk_text, section_name) pairs. section_name is None for text
+            appearing before any recognized header.
+        """
+        if not self.section_aware:
+            return [(chunk, None) for chunk in self._split_by_sentences(text)]
+
+        labeled: List[Tuple[str, Optional[str]]] = []
+        for section_name, section_text in self._iter_sections(text):
+            for chunk in self._split_by_sentences(section_text):
+                labeled.append((chunk, section_name))
+
+        return labeled
+
+    def _iter_sections(self, text: str) -> List[Tuple[Optional[str], str]]:
+        """
+        Break text into (section_name, section_text) pairs on header lines.
+
+        Text before the first recognized header is returned under None rather
+        than being dropped or misattributed to the first section.
+        """
+        import re
+
+        sections: List[Tuple[Optional[str], str]] = []
+        current_name: Optional[str] = None
+        current_lines: List[str] = []
+
+        for line in text.split('\n'):
+            stripped = line.strip()
+            header = next(
+                (
+                    re.match(pattern, stripped, re.IGNORECASE)
+                    for pattern in self.section_patterns
+                    if re.match(pattern, stripped, re.IGNORECASE)
+                ),
+                None,
+            )
+
+            if header:
+                if current_lines:
+                    sections.append((current_name, '\n'.join(current_lines)))
+                current_name = header.group(1).title()
+                current_lines = [line]
+            else:
+                current_lines.append(line)
+
+        if current_lines:
+            sections.append((current_name, '\n'.join(current_lines)))
+
+        return sections
     
     def _split_by_sections(self, text: str) -> List[str]:
         """Split text by biomedical paper sections."""
@@ -451,43 +665,75 @@ class BiomedicalTextSplitter(TextSplitter):
         
         return chunks
     
+    def _overlap_tail(self, sentences: List[str]) -> List[str]:
+        """
+        Take the trailing sentences that fit within chunk_overlap.
+
+        Overlap is carried as whole sentences rather than a raw character
+        slice, so a repeated fragment is still readable on its own and still
+        embeds meaningfully.
+        """
+        if self.chunk_overlap <= 0 or not sentences:
+            return []
+
+        tail: List[str] = []
+        size = 0
+        for sentence in reversed(sentences):
+            sentence_size = self._measure(sentence)
+            if size + sentence_size > self.chunk_overlap:
+                break
+            tail.insert(0, sentence)
+            size += sentence_size
+
+        # Always carry at least the final sentence when overlap is requested,
+        # since that is where a boundary-straddling fact is cut.
+        if not tail:
+            tail = [sentences[-1]]
+
+        return tail
+
     def _split_by_sentences(self, text: str) -> List[str]:
-        """Split text by sentences while respecting chunk size."""
-        import re
-        
-        # Simple sentence splitting (could be enhanced with spaCy)
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        chunks = []
-        current_chunk = []
+        """
+        Split text into chunks on sentence boundaries, with overlap.
+
+        Consecutive chunks share their boundary sentences so that a claim
+        spanning a split remains retrievable from at least one chunk.
+        """
+        sentences = self.split_sentences(text)
+
+        chunks: List[str] = []
+        current_chunk: List[str] = []
         current_size = 0
-        
+
         for sentence in sentences:
-            sentence_size = len(sentence)
-            
+            sentence_size = self._measure(sentence)
+
             if current_size + sentence_size <= self.chunk_size:
                 current_chunk.append(sentence)
                 current_size += sentence_size
+                continue
+
+            # Finalize current chunk
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+                carried = self._overlap_tail(current_chunk)
             else:
-                # Finalize current chunk
-                if current_chunk:
-                    chunks.append(' '.join(current_chunk))
-                
-                # Start new chunk
-                if sentence_size <= self.chunk_size:
-                    current_chunk = [sentence]
-                    current_size = sentence_size
-                else:
-                    # Sentence too large, split by words
-                    word_chunks = self._split_large_sentence(sentence)
-                    chunks.extend(word_chunks)
-                    current_chunk = []
-                    current_size = 0
-        
+                carried = []
+
+            if sentence_size <= self.chunk_size:
+                # Begin the next chunk with the carried overlap
+                current_chunk = [*carried, sentence]
+                current_size = sum(self._measure(s) for s in current_chunk)
+            else:
+                # Sentence alone exceeds the budget; split it by words
+                chunks.extend(self._split_large_sentence(sentence))
+                current_chunk = []
+                current_size = 0
+
         # Add final chunk
         if current_chunk:
             chunks.append(' '.join(current_chunk))
-        
+
         return chunks
     
     def _split_large_sentence(self, sentence: str) -> List[str]:
@@ -496,10 +742,10 @@ class BiomedicalTextSplitter(TextSplitter):
         chunks = []
         current_chunk = []
         current_size = 0
-        
+
         for word in words:
-            word_size = len(word) + 1  # +1 for space
-            
+            word_size = self._measure(word)
+
             if current_size + word_size <= self.chunk_size:
                 current_chunk.append(word)
                 current_size += word_size
@@ -616,14 +862,17 @@ class LangChainLiteratureProcessor(LoggerMixin):
         # Step 2: Split documents into chunks
         all_chunks = []
         for doc in documents:
-            chunks = self.text_splitter.split_text(doc.page_content)
-            for i, chunk in enumerate(chunks):
+            # Section provenance travels with the chunk so retrieval can weight
+            # a Results claim differently from an Introduction one.
+            labeled = self.text_splitter.split_text_with_sections(doc.page_content)
+            for i, (chunk, section) in enumerate(labeled):
                 chunk_doc = Document(
                     page_content=chunk,
                     metadata={
                         **doc.metadata,
                         "chunk_id": i,
-                        "total_chunks": len(chunks)
+                        "total_chunks": len(labeled),
+                        "section": section,
                     }
                 )
                 all_chunks.append(chunk_doc)

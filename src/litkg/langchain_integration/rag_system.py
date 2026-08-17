@@ -14,6 +14,7 @@ BiomedicalRAGSystem ties retrieval to an LLM and returns answers with the
 sources they were drawn from.
 """
 
+import logging
 from typing import Any, Dict, List, Optional, Sequence
 
 from langchain_core.documents import Document
@@ -21,6 +22,9 @@ from langchain_core.retrievers import BaseRetriever
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 
 from ..utils.logging import LoggerMixin
+
+# Retrievers are pydantic models and cannot hold a LoggerMixin instance attribute
+_logger = logging.getLogger(__name__)
 
 
 class LiteratureRetriever(BaseRetriever):
@@ -189,6 +193,93 @@ class HybridRetriever(BaseRetriever):
         return merged[: self.k]
 
 
+class GraphExpansionRetriever(BaseRetriever):
+    """
+    Retrieve by semantic similarity, then follow the graph from what was found.
+
+    Plain vector search can only return passages that resemble the query. Many
+    biomedical questions are multi-hop: "what connects BRCA1 to Alzheimer's?"
+    may have no single passage mentioning both. This retriever seeds with
+    similarity, resolves the seed passages to graph nodes, walks the graph, and
+    pulls the passages attached to the nodes it reaches -- surfacing evidence
+    that shares no vocabulary with the query.
+
+    Returned documents carry ``hop_distance`` (0 for seeds) and, for expanded
+    results, the ``via_entity`` that led to them.
+    """
+
+    vector_store: Any = None
+    graph: Any = None
+    chunk_index: Any = None
+    k: int = 5
+    max_hops: int = 1
+    expansion_limit: int = 5
+
+    def _seed_documents(self, query: str) -> List[Document]:
+        """Similarity-search seeds for the walk."""
+        if self.vector_store is None:
+            return []
+        return self.vector_store.similarity_search(query, k=self.k)
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: Optional[CallbackManagerForRetrieverRun] = None
+    ) -> List[Document]:
+        """Return seed documents followed by graph-expanded documents."""
+        seeds = self._seed_documents(query)
+
+        for document in seeds:
+            document.metadata.setdefault("source_type", "literature")
+            document.metadata["hop_distance"] = 0
+
+        if self.graph is None or self.chunk_index is None or not seeds:
+            return seeds
+
+        # Which graph nodes did the seed passages mention?
+        seed_nodes: List[str] = []
+        for document in seeds:
+            seed_nodes.extend(document.metadata.get("entity_ids", []))
+
+        if not seed_nodes:
+            _logger.debug("No seed passage resolved to a graph node; no expansion")
+            return seeds
+
+        reached = self.chunk_index.neighbors(
+            self.graph, seed_nodes, max_hops=self.max_hops
+        )
+        if not reached:
+            return seeds
+
+        seen = {d.metadata.get("chunk_uid") for d in seeds}
+        expanded: List[Document] = []
+
+        # Nearer hops first: they are more likely to be relevant
+        for node_id, hop in sorted(reached.items(), key=lambda kv: kv[1]):
+            for document in self.chunk_index.chunks_for_node(node_id):
+                uid = document.metadata.get("chunk_uid")
+                if uid in seen:
+                    continue
+                seen.add(uid)
+
+                document.metadata["hop_distance"] = hop
+                document.metadata["via_entity"] = node_id
+                document.metadata.setdefault("source_type", "literature")
+                expanded.append(document)
+
+                if len(expanded) >= self.expansion_limit:
+                    break
+            if len(expanded) >= self.expansion_limit:
+                break
+
+        _logger.info(
+            f"Graph expansion: {len(seeds)} seed(s) -> {len(reached)} node(s) "
+            f"within {self.max_hops} hop(s) -> {len(expanded)} additional passage(s)"
+        )
+        return seeds + expanded
+
+
 class BiomedicalRAGSystem(LoggerMixin):
     """
     Question answering grounded in retrieved biomedical evidence.
@@ -217,7 +308,9 @@ Answer:"""
         llm_manager: Optional[Any] = None,
         vector_store: Optional[Any] = None,
         knowledge_graph: Optional[Any] = None,
-        k: int = 5
+        chunk_index: Optional[Any] = None,
+        k: int = 5,
+        max_hops: int = 0
     ):
         """
         Args:
@@ -227,9 +320,15 @@ Answer:"""
                 UnifiedLLMManager, which prefers the local Ollama model.
             vector_store: Literature vector store, used to build a retriever.
             knowledge_graph: NetworkX graph, used to build a retriever.
+            chunk_index: ChunkGraphIndex linking chunks to graph nodes. Required
+                for graph expansion.
             k: Number of evidence items to retrieve.
+            max_hops: Graph hops to expand beyond the seed passages. 0 disables
+                expansion; 1-2 is the useful range for multi-hop questions.
         """
         self.k = k
+        self.max_hops = max_hops
+        self.chunk_index = chunk_index
         self.retriever = retriever or self._build_retriever(vector_store, knowledge_graph)
 
         if llm_manager is None:
@@ -247,6 +346,18 @@ Answer:"""
         knowledge_graph: Optional[Any]
     ) -> BaseRetriever:
         """Assemble the best retriever available from the given sources."""
+        # Graph expansion needs all three pieces; it subsumes plain literature
+        # retrieval by returning the same seeds plus their graph neighborhood.
+        if (self.max_hops > 0 and vector_store is not None
+                and knowledge_graph is not None and self.chunk_index is not None):
+            return GraphExpansionRetriever(
+                vector_store=vector_store,
+                graph=knowledge_graph,
+                chunk_index=self.chunk_index,
+                k=self.k,
+                max_hops=self.max_hops,
+            )
+
         literature = (
             LiteratureRetriever(vector_store=vector_store, k=self.k)
             if vector_store is not None else None

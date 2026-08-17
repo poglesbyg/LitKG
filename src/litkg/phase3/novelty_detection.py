@@ -256,22 +256,35 @@ class NovelRelationPredictor(nn.Module, LoggerMixin):
         Returns:
             Novel relations, highest scoring first.
         """
-        nodes = knowledge_graph.get("nodes", [])
-        edges = knowledge_graph.get("edges", [])
+        # Accept either a node/edge payload or an existing NetworkX graph
+        if isinstance(knowledge_graph, nx.Graph):
+            source_graph = knowledge_graph
+        else:
+            nodes = knowledge_graph.get("nodes", [])
+            edges = knowledge_graph.get("edges", [])
 
-        if len(nodes) < 2:
+            source_graph = nx.MultiDiGraph()
+            for node in nodes:
+                node_id = node.get("id") if isinstance(node, dict) else node
+                if node_id is not None:
+                    source_graph.add_node(node_id, **(node if isinstance(node, dict) else {}))
+            for edge in edges:
+                source, target = edge.get("source"), edge.get("target")
+                if source in source_graph and target in source_graph:
+                    source_graph.add_edge(source, target, **edge)
+
+        if source_graph.number_of_nodes() < 2:
             self.logger.warning("Graph has fewer than 2 nodes; no links to predict")
             return []
 
-        graph = nx.Graph()
-        for node in nodes:
-            node_id = node.get("id") if isinstance(node, dict) else node
-            if node_id is not None:
-                graph.add_node(node_id, **(node if isinstance(node, dict) else {}))
-        for edge in edges:
-            source, target = edge.get("source"), edge.get("target")
-            if source in graph and target in graph:
-                graph.add_edge(source, target, **edge)
+        # Adamic-Adar is defined over simple undirected graphs, so the graph is
+        # flattened deliberately here. This discards relation direction and
+        # collapses parallel edges: two entities joined by three different
+        # relation types count as connected once, which is the correct input
+        # for a structural link-prediction score even though it is lossy.
+        graph = nx.Graph(source_graph) if source_graph.is_multigraph() else source_graph.to_undirected()
+        if graph.is_directed():
+            graph = graph.to_undirected()
 
         candidates = [
             (u, v) for u, v in nx.non_edges(graph)

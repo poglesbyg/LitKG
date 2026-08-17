@@ -44,7 +44,13 @@ from .rag_system import (
     BiomedicalRAGSystem,
     LiteratureRetriever,
     KnowledgeGraphRetriever,
-    HybridRetriever
+    HybridRetriever,
+    GraphExpansionRetriever
+)
+
+from .graph_linking import (
+    EntityAliasIndex,
+    ChunkGraphIndex
 )
 
 __all__ = [
@@ -71,4 +77,9 @@ __all__ = [
     "LiteratureRetriever",
     "KnowledgeGraphRetriever",
     "HybridRetriever",
+    "GraphExpansionRetriever",
+
+    # Chunk <-> knowledge graph linking
+    "EntityAliasIndex",
+    "ChunkGraphIndex",
 ]
