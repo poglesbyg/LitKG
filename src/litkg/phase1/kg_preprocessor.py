@@ -79,6 +79,31 @@ class OntologyMapper(LoggerMixin):
         # Load cached mappings if available
         self._load_cached_mappings()
 
+        # Load any ontology files present so their coverage is available to
+        # map_to_umls() without the caller having to know they exist.
+        self._autoload_ontologies()
+
+    def _autoload_ontologies(self) -> int:
+        """
+        Load every ontology file in data/ontologies into ``ontology_db``.
+
+        Returns:
+            The number of ontologies loaded.
+        """
+        ontology_dir = get_data_dir() / "ontologies"
+        if not ontology_dir.is_dir():
+            return 0
+
+        loaded = 0
+        for path in sorted(ontology_dir.glob("*.json")):
+            try:
+                self.load_ontology(path.stem)
+                loaded += 1
+            except Exception as e:
+                self.logger.warning(f"Could not load ontology {path.name}: {e}")
+
+        return loaded
+
     @staticmethod
     def _normalize_term(term: str) -> str:
         """Normalize a surface form for ontology lookup."""
@@ -262,17 +287,83 @@ class OntologyMapper(LoggerMixin):
         
         return cui
     
+    def _lookup_loaded_ontology(
+        self, entity_name: str, entity_type: str
+    ) -> Optional[str]:
+        """
+        Resolve a CUI from ontology files loaded into ``ontology_db``.
+
+        This is the path that scales: shipping or generating an ontology file
+        gives coverage across a whole vocabulary, where the built-in heuristic
+        covers only a handful of entities. It is consulted before the heuristic
+        so a loaded ontology always wins.
+        """
+        record = self.ontology_db.get(self._normalize_term(entity_name))
+        if not record:
+            return None
+
+        # Only accept a record of the right kind; a disease entry must not
+        # supply a CUI for a gene of the same name.
+        record_type = str(record.get("type", "")).upper()
+        if record_type and entity_type and record_type != entity_type.upper():
+            return None
+
+        identifier = record.get("cui") or record.get("id")
+        # GO ids annotate function, not identity, and must not be used as a CUI
+        if identifier and not str(identifier).upper().startswith("GO:"):
+            return identifier
+
+        return None
+
     def _query_umls_api(self, entity_name: str, entity_type: str) -> Optional[str]:
-        """Query UMLS API for entity mapping."""
+        """
+        Resolve an entity to a UMLS CUI.
+
+        Order of preference: a loaded ontology file, then the live UMLS API
+        when a key is configured, then the small built-in heuristic table.
+        """
+        from_ontology = self._lookup_loaded_ontology(entity_name, entity_type)
+        if from_ontology:
+            return from_ontology
+
         api_key = self.ontology_config["umls"].get("api_key")
-        
-        if not api_key:
-            # Use simple heuristics for common entities
-            return self._heuristic_umls_mapping(entity_name, entity_type)
-        
-        # TODO: Implement actual UMLS API query
-        # For now, use heuristics
+        if api_key:
+            cui = self._request_umls_cui(entity_name, api_key)
+            if cui:
+                return cui
+
         return self._heuristic_umls_mapping(entity_name, entity_type)
+
+    def _request_umls_cui(self, entity_name: str, api_key: str) -> Optional[str]:
+        """
+        Look up a CUI through the UMLS REST API.
+
+        Returns None on any failure, so a network problem degrades coverage
+        rather than aborting knowledge graph construction.
+        """
+        try:
+            response = requests.get(
+                "https://uts-ws.nlm.nih.gov/rest/search/current",
+                params={
+                    "string": entity_name,
+                    "apiKey": api_key,
+                    "pageSize": 1,
+                    "searchType": "exact",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            results = response.json().get("result", {}).get("results", [])
+        except Exception as e:
+            self.logger.debug(f"UMLS lookup failed for {entity_name!r}: {e}")
+            return None
+
+        if not results:
+            return None
+
+        cui = results[0].get("ui")
+        # The API returns "NONE" as a sentinel for no match
+        return cui if cui and cui != "NONE" else None
     
     # Fallback CUIs for common entities, keyed by uppercased name so that the
     # lookup below cannot disagree with the keys. Distinct genes must have
@@ -889,6 +980,12 @@ class KnowledgeGraphBuilder(LoggerMixin):
                 **relation.attributes
             )
     
+    # Entity attributes that identify *which* entity this is, and are therefore
+    # decisive when two entities share one. Function/process annotations such as
+    # go_id are excluded on purpose: they describe what an entity does and are
+    # shared by many distinct entities by design.
+    IDENTITY_IDENTIFIERS = ("cui",)
+
     @staticmethod
     def _normalize_name(name: str) -> str:
         """Normalize a surface form for comparison."""
@@ -922,9 +1019,14 @@ class KnowledgeGraphBuilder(LoggerMixin):
 
         Resolution runs as a cascade, strongest evidence first:
 
-        1. **Shared ontology identifier** (UMLS CUI or GO ID). Decisive
-           regardless of surface form, so "BRCA1" and "breast cancer 1" merge
-           when both carry CUI C0376571.
+        1. **Shared identity identifier** (UMLS CUI). Decisive regardless of
+           surface form, so "BRCA1" and "breast cancer 1" merge when both carry
+           CUI C0376571.
+
+           Deliberately excludes GO IDs. A GO term annotates what a gene
+           *does*, not which gene it *is*: BRCA1 and BRCA2 both carry
+           GO:0006281 ("DNA repair"), correctly, and treating that as identity
+           evidence merges two distinct genes.
         2. **Identical normalized name**, after folding case, spaces, and
            hyphens, so "BRCA-1" meets "BRCA1".
         3. **Synonym overlap** between the two entities.
@@ -965,9 +1067,10 @@ class KnowledgeGraphBuilder(LoggerMixin):
 
         stats = {"ontology": 0, "exact_name": 0, "synonym": 0, "fuzzy": 0}
 
-        # Rule 1: shared ontology identifier
+        # Rule 1: shared identity identifier. Only identifiers that name the
+        # entity itself qualify; see IDENTITY_IDENTIFIERS.
         if use_ontology:
-            for attribute in ("cui", "go_id"):
+            for attribute in self.IDENTITY_IDENTIFIERS:
                 by_identifier: Dict[str, List[str]] = defaultdict(list)
                 for eid in entity_ids:
                     value = getattr(self.entities[eid], attribute, None)

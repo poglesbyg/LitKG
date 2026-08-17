@@ -1,0 +1,219 @@
+{
+  "ALK": {
+    "synonyms": [
+      "anaplastic lymphoma kinase"
+    ],
+    "type": "GENE"
+  },
+  "ATM": {
+    "synonyms": [
+      "ataxia telangiectasia mutated"
+    ],
+    "type": "GENE"
+  },
+  "BRCA1": {
+    "cui": "C0376571",
+    "id": "C0376571",
+    "synonyms": [
+      "BRCA-1",
+      "breast cancer 1",
+      "BRCAI"
+    ],
+    "type": "GENE"
+  },
+  "BRCA2": {
+    "cui": "C0376572",
+    "id": "C0376572",
+    "synonyms": [
+      "BRCA-2",
+      "breast cancer 2",
+      "FANCD1"
+    ],
+    "type": "GENE"
+  },
+  "CDKN2A": {
+    "synonyms": [
+      "p16",
+      "INK4A",
+      "MTS1"
+    ],
+    "type": "GENE"
+  },
+  "EGFR": {
+    "synonyms": [
+      "ERBB1",
+      "HER1",
+      "epidermal growth factor receptor"
+    ],
+    "type": "GENE"
+  },
+  "ERBB2": {
+    "synonyms": [
+      "HER2",
+      "HER-2/neu",
+      "neu"
+    ],
+    "type": "GENE"
+  },
+  "KRAS": {
+    "synonyms": [
+      "KRAS2",
+      "Ki-Ras",
+      "c-K-ras"
+    ],
+    "type": "GENE"
+  },
+  "MLH1": {
+    "synonyms": [
+      "MutL homolog 1"
+    ],
+    "type": "GENE"
+  },
+  "MYC": {
+    "synonyms": [
+      "c-Myc",
+      "MYCC"
+    ],
+    "type": "GENE"
+  },
+  "PALB2": {
+    "synonyms": [
+      "FANCN",
+      "partner and localizer of BRCA2"
+    ],
+    "type": "GENE"
+  },
+  "PARP inhibitors": {
+    "synonyms": [
+      "PARP inhibitor",
+      "PARPi"
+    ],
+    "type": "DRUG"
+  },
+  "PTEN": {
+    "synonyms": [
+      "MMAC1",
+      "TEP1"
+    ],
+    "type": "GENE"
+  },
+  "RB1": {
+    "synonyms": [
+      "retinoblastoma 1"
+    ],
+    "type": "GENE"
+  },
+  "TP53": {
+    "cui": "C0080055",
+    "id": "C0080055",
+    "synonyms": [
+      "p53",
+      "tumor protein p53",
+      "TRP53"
+    ],
+    "type": "GENE"
+  },
+  "VHL": {
+    "synonyms": [
+      "von Hippel-Lindau tumor suppressor"
+    ],
+    "type": "GENE"
+  },
+  "breast cancer": {
+    "cui": "C0006142",
+    "id": "C0006142",
+    "synonyms": [
+      "breast carcinoma",
+      "mammary cancer",
+      "breast neoplasm"
+    ],
+    "type": "DISEASE"
+  },
+  "cisplatin": {
+    "synonyms": [
+      "CDDP"
+    ],
+    "type": "DRUG"
+  },
+  "colorectal cancer": {
+    "synonyms": [
+      "colon cancer",
+      "bowel cancer",
+      "CRC"
+    ],
+    "type": "DISEASE"
+  },
+  "erlotinib": {
+    "synonyms": [
+      "Tarceva"
+    ],
+    "type": "DRUG"
+  },
+  "glioblastoma": {
+    "synonyms": [
+      "GBM",
+      "glioblastoma multiforme"
+    ],
+    "type": "DISEASE"
+  },
+  "leukemia": {
+    "synonyms": [
+      "leukaemia"
+    ],
+    "type": "DISEASE"
+  },
+  "lung cancer": {
+    "cui": "C0242379",
+    "id": "C0242379",
+    "synonyms": [
+      "lung carcinoma",
+      "pulmonary cancer"
+    ],
+    "type": "DISEASE"
+  },
+  "lymphoma": {
+    "synonyms": [
+      "malignant lymphoma"
+    ],
+    "type": "DISEASE"
+  },
+  "melanoma": {
+    "cui": "C0025202",
+    "id": "C0025202",
+    "synonyms": [
+      "malignant melanoma"
+    ],
+    "type": "DISEASE"
+  },
+  "olaparib": {
+    "synonyms": [
+      "Lynparza"
+    ],
+    "type": "DRUG"
+  },
+  "ovarian cancer": {
+    "synonyms": [
+      "ovarian carcinoma",
+      "ovarian neoplasm"
+    ],
+    "type": "DISEASE"
+  },
+  "pancreatic cancer": {
+    "synonyms": [
+      "pancreatic carcinoma"
+    ],
+    "type": "DISEASE"
+  },
+  "prostate cancer": {
+    "synonyms": [
+      "prostate carcinoma"
+    ],
+    "type": "DISEASE"
+  },
+  "trastuzumab": {
+    "synonyms": [
+      "Herceptin"
+    ],
+    "type": "DRUG"
+  }
+}

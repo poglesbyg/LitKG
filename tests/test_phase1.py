@@ -388,6 +388,35 @@ class TestEntityResolution:
         assert stats["fuzzy"] == 1
         assert len(builder.entities) == 1
 
+    def test_go_ids_are_not_identity_evidence(self):
+        """
+        BRCA1 and BRCA2 both carry GO:0006281 ("DNA repair") -- correctly, since
+        both are involved in it. A GO term annotates function, not identity, so
+        sharing one must not merge two distinct genes.
+        """
+        builder = self._builder()
+        a = self._entity("a", "BRCA1", cui="C0376571")
+        b = self._entity("b", "BRCA2", cui="C0376572")
+        a.go_id = b.go_id = "GO:0006281"
+        builder.add_entities([a, b])
+
+        builder.merge_duplicate_entities(similarity_threshold=0.99)
+
+        assert len(builder.entities) == 2
+
+    def test_shared_cui_still_merges(self):
+        """The identity rule must still fire on a genuine identifier match."""
+        builder = self._builder()
+        builder.add_entities([
+            self._entity("a", "BRCA1", cui="C0376571"),
+            self._entity("b", "breast cancer 1", cui="C0376571"),
+        ])
+
+        stats = builder.merge_duplicate_entities()
+
+        assert stats["ontology"] == 1
+        assert len(builder.entities) == 1
+
     def test_canonical_entity_keeps_ontology_id(self):
         """Merging never discards the best-described member of a cluster."""
         builder = self._builder()
@@ -421,6 +450,44 @@ class TestOntologyMapper:
         brca2 = mapper._heuristic_umls_mapping("BRCA2", "GENE")
 
         assert brca1 and brca2 and brca1 != brca2
+
+    def test_seed_ontology_is_autoloaded(self):
+        """Shipped ontology files must be reachable without an explicit load."""
+        mapper = OntologyMapper()
+
+        assert mapper.ontology_db, "no ontology auto-loaded from data/ontologies"
+
+    def test_synonyms_resolve_to_canonical_name(self):
+        mapper = OntologyMapper()
+
+        for surface, canonical in [
+            ("HER2", "ERBB2"), ("p16", "CDKN2A"), ("Lynparza", "olaparib"),
+        ]:
+            record = mapper.map_entity_to_ontology(surface)
+            assert record and record["canonical_name"] == canonical
+
+    def test_loaded_ontology_supplies_cuis(self):
+        """map_to_umls consults loaded ontologies, not just the tiny heuristic."""
+        mapper = OntologyMapper()
+
+        assert mapper.map_to_umls("breast cancer", "DISEASE") == "C0006142"
+
+    def test_absent_cuis_are_not_fabricated(self):
+        """A missing CUI must stay missing; a wrong one would merge entities."""
+        mapper = OntologyMapper()
+
+        assert mapper.map_to_umls("PTEN", "GENE") is None
+
+    def test_seed_ontology_has_no_duplicate_cuis(self):
+        """A shared CUI is decisive for merging, so duplicates are dangerous."""
+        mapper = OntologyMapper()
+
+        cuis = [
+            record["cui"]
+            for record in mapper.ontology_db.values()
+            if record.get("cui")
+        ]
+        assert len(set(cuis)) == len(dict.fromkeys(cuis))
 
     def test_ontology_mapper_init(self):
         """Test OntologyMapper initialization."""
