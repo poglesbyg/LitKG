@@ -551,3 +551,110 @@ class TestMetricUncertainty:
             list(rng.normal(1.0, 1.0, 50)), list(rng.normal(0.0, 1.0, 500))
         ).summary()
         assert "AUC" in text and "[" in text
+
+
+class TestRetrievalQuerySet:
+    """
+    Judgements come from CIVIC: every evidence row cites a paper and states the
+    relationship it supports, so cited papers are relevant to a question about
+    that relationship on a curator's judgement rather than ours.
+    """
+
+    @pytest.fixture
+    def evidence(self):
+        import pandas as pd
+        rows = []
+        for i in range(4):
+            rows.append({
+                "source_type": "PubMed", "citation_id": f"1000{i}",
+                "molecular_profile": "BRAF V600E", "disease": "Melanoma",
+                "evidence_type": "Predictive",
+            })
+        rows.append({
+            "source_type": "PubMed", "citation_id": "20001",
+            "molecular_profile": "KRAS G12C", "disease": "Lung Cancer",
+            "evidence_type": "Prognostic",
+        })
+        rows.append({
+            "source_type": "ASCO", "citation_id": "30001",
+            "molecular_profile": "BRAF V600E", "disease": "Melanoma",
+            "evidence_type": "Predictive",
+        })
+        return pd.DataFrame(rows)
+
+    def test_groups_below_the_threshold_are_dropped(self, evidence):
+        from litkg.evaluation import QuerySetBuilder
+        queries = QuerySetBuilder().build(evidence, min_relevant=3)
+        assert len(queries) == 1
+        assert queries[0].profile == "BRAF V600E"
+
+    def test_only_pubmed_citations_are_judged(self, evidence):
+        """An ASCO abstract has no PMID to retrieve, so it cannot be a target."""
+        from litkg.evaluation import QuerySetBuilder
+        queries = QuerySetBuilder().build(evidence, min_relevant=3)
+        assert "30001" not in queries[0].relevant_pmids
+
+    def test_query_phrasing_follows_the_evidence_type(self, evidence):
+        """
+        Asking "which therapies" of a prognostic paper would score papers as
+        misses for a question they were never cited to answer.
+        """
+        from litkg.evaluation import QuerySetBuilder
+        from litkg.evaluation.retrieval import QUERY_TEMPLATES
+        queries = QuerySetBuilder().build(evidence, min_relevant=3)
+        assert queries[0].text == QUERY_TEMPLATES["Predictive"].format(
+            profile="BRAF V600E", disease="Melanoma"
+        )
+
+    def test_sampling_is_deterministic(self, evidence):
+        from litkg.evaluation import QuerySetBuilder
+        a = QuerySetBuilder().build(evidence, min_relevant=3, max_queries=1, seed=7)
+        b = QuerySetBuilder().build(evidence, min_relevant=3, max_queries=1, seed=7)
+        assert [q.text for q in a] == [q.text for q in b]
+
+    def test_round_trips_through_disk(self, evidence, tmp_path):
+        from litkg.evaluation import QuerySetBuilder, load_queries, save_queries
+        queries = QuerySetBuilder().build(evidence, min_relevant=3)
+        save_queries(queries, tmp_path / "q.json")
+        assert [q.to_dict() for q in load_queries(tmp_path / "q.json")] == \
+               [q.to_dict() for q in queries]
+
+
+class TestRetrievalMetrics:
+    @pytest.fixture
+    def query(self):
+        from litkg.evaluation import RetrievalQuery
+        return RetrievalQuery(query_id="q0", text="q", relevant_pmids=["1", "2", "3"])
+
+    def test_perfect_ranking(self, query):
+        from litkg.evaluation import evaluate_retrieval
+        m = evaluate_retrieval(lambda q: ["1", "2", "3"], [query], k=3,
+                               bootstrap_samples=0)
+        assert m.precision_at_k == pytest.approx(1.0)
+        assert m.recall_at_k == pytest.approx(1.0)
+        assert m.mrr == pytest.approx(1.0)
+        assert m.ndcg_at_k == pytest.approx(1.0)
+
+    def test_nothing_retrieved(self, query):
+        from litkg.evaluation import evaluate_retrieval
+        m = evaluate_retrieval(lambda q: [], [query], k=3, bootstrap_samples=0)
+        assert m.precision_at_k == 0.0 and m.mrr == 0.0 and m.hit_rate == 0.0
+
+    def test_mrr_uses_the_first_relevant_rank(self, query):
+        from litkg.evaluation import evaluate_retrieval
+        m = evaluate_retrieval(lambda q: ["x", "1"], [query], k=5, bootstrap_samples=0)
+        assert m.mrr == pytest.approx(0.5)
+
+    def test_recall_is_capped_by_k(self, query):
+        """Three relevant papers cannot all be found in a top-1 list."""
+        from litkg.evaluation import evaluate_retrieval
+        m = evaluate_retrieval(lambda q: ["1", "2", "3"], [query], k=1,
+                               bootstrap_samples=0)
+        assert m.recall_at_k == pytest.approx(1 / 3)
+
+    def test_intervals_are_over_queries(self, query):
+        from litkg.evaluation import RetrievalQuery, evaluate_retrieval
+        queries = [RetrievalQuery(query_id=f"q{i}", text="q",
+                                  relevant_pmids=["1"]) for i in range(20)]
+        m = evaluate_retrieval(lambda q: ["1"], queries, k=5)
+        assert m.precision_ci is not None

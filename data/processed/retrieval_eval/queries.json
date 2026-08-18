@@ -1,0 +1,787 @@
+[
+  {
+    "query_id": "q0000",
+    "text": "Which therapies are effective for ABL1 P-Loop Mutation in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "12623848",
+      "21865346",
+      "22371878"
+    ],
+    "profile": "ABL1 P-Loop Mutation",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0001",
+    "text": "Which therapies are effective for ABL1 TKD Mutation in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "19652056",
+      "19779040",
+      "21865346",
+      "22371878"
+    ],
+    "profile": "ABL1 TKD Mutation",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0003",
+    "text": "Which therapies are effective for ALK I1171 in Lung Non-small Cell Carcinoma?",
+    "relevant_pmids": [
+      "24675041",
+      "25228534",
+      "25736571"
+    ],
+    "profile": "ALK I1171",
+    "disease": "Lung Non-small Cell Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0004",
+    "text": "Is AR AR-V7 an oncogenic driver in Prostate Cancer?",
+    "relevant_pmids": [
+      "19117982",
+      "19244107",
+      "38687617"
+    ],
+    "profile": "AR AR-V7",
+    "disease": "Prostate Cancer",
+    "evidence_type": "Oncogenic"
+  },
+  {
+    "query_id": "q0005",
+    "text": "How is ASPSCR1::TFE3 Fusion used to diagnose Alveolar Soft Part Sarcoma?",
+    "relevant_pmids": [
+      "11244503",
+      "21835426",
+      "28766250"
+    ],
+    "profile": "ASPSCR1::TFE3 Fusion",
+    "disease": "Alveolar Soft Part Sarcoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0006",
+    "text": "What is the prognostic significance of ASXL1 Mutation in Acute Myeloid Leukemia?",
+    "relevant_pmids": [
+      "22031865",
+      "25412851",
+      "27276561"
+    ],
+    "profile": "ASXL1 Mutation",
+    "disease": "Acute Myeloid Leukemia",
+    "evidence_type": "Prognostic"
+  },
+  {
+    "query_id": "q0007",
+    "text": "How is BCOR ITD used to diagnose Central Nervous System Tumor With BCOR Internal Tandem Duplication?",
+    "relevant_pmids": [
+      "26919435",
+      "29226988",
+      "31104347"
+    ],
+    "profile": "BCOR ITD",
+    "disease": "Central Nervous System Tumor With BCOR Internal Tandem Duplication",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0008",
+    "text": "Which therapies are effective for BCR::ABL1 Fusion AND ABL1 E255V in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "12623848",
+      "16772610",
+      "16775234",
+      "19652056",
+      "19779040",
+      "21865346",
+      "22371878",
+      "25686603"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 E255V",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0009",
+    "text": "Which therapies are effective for BCR::ABL1 Fusion AND ABL1 F317L in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "12623848",
+      "15705718",
+      "15930265",
+      "16772610",
+      "17264298",
+      "18818391",
+      "19779040",
+      "21865346",
+      "22371878",
+      "24236021",
+      "25686603"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 F317L",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0010",
+    "text": "Which therapies are effective for BCR::ABL1 Fusion AND ABL1 F359I in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "16775234",
+      "19779040",
+      "21865346",
+      "22371878",
+      "25686603"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 F359I",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0011",
+    "text": "Which therapies are effective for BCR::ABL1 Fusion AND ABL1 Q252H in Chronic Myeloid Leukemia?",
+    "relevant_pmids": [
+      "12623848",
+      "15705718",
+      "16772610",
+      "19779040",
+      "25686603"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 Q252H",
+    "disease": "Chronic Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0012",
+    "text": "What is the prognostic significance of BRAF Mutation in Colorectal Cancer?",
+    "relevant_pmids": [
+      "19603024",
+      "21641636",
+      "24112392"
+    ],
+    "profile": "BRAF Mutation",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Prognostic"
+  },
+  {
+    "query_id": "q0013",
+    "text": "Which therapies are effective for BRAF V600E in Colorectal Cancer?",
+    "relevant_pmids": [
+      "19001320",
+      "19603024",
+      "20619739",
+      "22180495",
+      "22281684",
+      "22608338",
+      "23549875",
+      "23845441",
+      "25589621",
+      "25666295",
+      "25989278",
+      "26460303",
+      "27325282",
+      "27729313",
+      "29320312",
+      "29431699",
+      "31566309"
+    ],
+    "profile": "BRAF V600E",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0014",
+    "text": "How is DNAJB1::PRKACA Fusion used to diagnose Fibrolamellar Carcinoma?",
+    "relevant_pmids": [
+      "24578576",
+      "25557953",
+      "25698061"
+    ],
+    "profile": "DNAJB1::PRKACA Fusion",
+    "disease": "Fibrolamellar Carcinoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0015",
+    "text": "Which therapies are effective for EGFR Exon 19 Deletion in Lung Non-small Cell Carcinoma?",
+    "relevant_pmids": [
+      "16730237",
+      "16818686",
+      "18509184",
+      "22285168",
+      "23982599",
+      "24868098",
+      "25862853",
+      "26515464",
+      "26768165",
+      "31086949"
+    ],
+    "profile": "EGFR Exon 19 Deletion",
+    "disease": "Lung Non-small Cell Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0016",
+    "text": "Which therapies are effective for EGFR Expression in Colorectal Cancer?",
+    "relevant_pmids": [
+      "14993230",
+      "17470858",
+      "18003960"
+    ],
+    "profile": "EGFR Expression",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0017",
+    "text": "Which therapies are effective for EGFR L858R in Cancer?",
+    "relevant_pmids": [
+      "19147750",
+      "20942962",
+      "21132006"
+    ],
+    "profile": "EGFR L858R",
+    "disease": "Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0018",
+    "text": "Which therapies are effective for EGFR::RAD51 Fusion in Lung Adenocarcinoma?",
+    "relevant_pmids": [
+      "27102076",
+      "29290255",
+      "31064887",
+      "35245845",
+      "35399574",
+      "38525318"
+    ],
+    "profile": "EGFR::RAD51 Fusion",
+    "disease": "Lung Adenocarcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0019",
+    "text": "How is EWSR1::CREB3L1 Fusion used to diagnose Sclerosing Epithelioid Fibrosarcoma?",
+    "relevant_pmids": [
+      "24441665",
+      "25231134",
+      "28939748"
+    ],
+    "profile": "EWSR1::CREB3L1 Fusion",
+    "disease": "Sclerosing Epithelioid Fibrosarcoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0020",
+    "text": "Which therapies are effective for FGFR1 Amplification in Breast Cancer?",
+    "relevant_pmids": [
+      "20179196",
+      "23658459",
+      "25193991",
+      "27179038",
+      "27870574",
+      "28183331",
+      "29223982",
+      "31371343",
+      "32973082",
+      "33579347",
+      "34593528",
+      "38354330",
+      "38603651",
+      "38710951"
+    ],
+    "profile": "FGFR1 Amplification",
+    "disease": "Breast Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0021",
+    "text": "What is the prognostic significance of FGFR1 Amplification in Breast Cancer?",
+    "relevant_pmids": [
+      "32852708",
+      "32940689",
+      "33579347"
+    ],
+    "profile": "FGFR1 Amplification",
+    "disease": "Breast Cancer",
+    "evidence_type": "Prognostic"
+  },
+  {
+    "query_id": "q0022",
+    "text": "Which therapies are effective for FLT3 D835 in Acute Myeloid Leukemia?",
+    "relevant_pmids": [
+      "19318574",
+      "22368270",
+      "22504184",
+      "23430109"
+    ],
+    "profile": "FLT3 D835",
+    "disease": "Acute Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0023",
+    "text": "How is FUS::DDIT3 Fusion used to diagnose Myxoid Liposarcoma?",
+    "relevant_pmids": [
+      "10828883",
+      "1568170",
+      "28637688"
+    ],
+    "profile": "FUS::DDIT3 Fusion",
+    "disease": "Myxoid Liposarcoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0024",
+    "text": "Which therapies are effective for GNA11 Mutation in Uveal Melanoma?",
+    "relevant_pmids": [
+      "22805292",
+      "24141786",
+      "26397223",
+      "28103611"
+    ],
+    "profile": "GNA11 Mutation",
+    "disease": "Uveal Melanoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0025",
+    "text": "What is the prognostic significance of IDH2 R140 in Acute Myeloid Leukemia?",
+    "relevant_pmids": [
+      "21596855",
+      "21997850",
+      "22616558"
+    ],
+    "profile": "IDH2 R140",
+    "disease": "Acute Myeloid Leukemia",
+    "evidence_type": "Prognostic"
+  },
+  {
+    "query_id": "q0026",
+    "text": "Which therapies are effective for KIT Exon 11 Mutation in Gastrointestinal Stromal Tumor?",
+    "relevant_pmids": [
+      "14645423",
+      "18955451",
+      "18955458",
+      "22614970",
+      "23177515",
+      "27371698"
+    ],
+    "profile": "KIT Exon 11 Mutation",
+    "disease": "Gastrointestinal Stromal Tumor",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0027",
+    "text": "How is KMT2A::v Fusion used to diagnose B-lymphoblastic Leukaemia/lymphoma With KMT2A Rearrangement?",
+    "relevant_pmids": [
+      "28701730",
+      "36050548",
+      "38686611"
+    ],
+    "profile": "KMT2A::v Fusion",
+    "disease": "B-lymphoblastic Leukaemia/lymphoma With KMT2A Rearrangement",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0028",
+    "text": "Which therapies are effective for KRAS G12/G13 in Colorectal Cancer?",
+    "relevant_pmids": [
+      "18202412",
+      "18316791",
+      "19223544",
+      "19603024",
+      "20619739"
+    ],
+    "profile": "KRAS G12/G13",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0029",
+    "text": "Which therapies are effective for KRAS G12A in Colorectal Cancer?",
+    "relevant_pmids": [
+      "19223544",
+      "20619739",
+      "26161928"
+    ],
+    "profile": "KRAS G12A",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0030",
+    "text": "Which therapies are effective for KRAS G12A in Multiple Myeloma?",
+    "relevant_pmids": [
+      "11050000",
+      "12483530",
+      "16497971",
+      "19284554"
+    ],
+    "profile": "KRAS G12A",
+    "disease": "Multiple Myeloma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0031",
+    "text": "Which therapies are effective for KRAS G12D in Multiple Myeloma?",
+    "relevant_pmids": [
+      "11050000",
+      "12483530",
+      "16497971"
+    ],
+    "profile": "KRAS G12D",
+    "disease": "Multiple Myeloma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0032",
+    "text": "Which therapies are effective for KRAS G12R in Colorectal Cancer?",
+    "relevant_pmids": [
+      "18316791",
+      "20619739",
+      "22722830",
+      "26161928"
+    ],
+    "profile": "KRAS G12R",
+    "disease": "Colorectal Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0033",
+    "text": "How is LMNA::NTRK1 Fusion used to diagnose Lipofibromatosis-like Neural Tumor?",
+    "relevant_pmids": [
+      "29892662",
+      "32299759",
+      "32519338",
+      "32782782"
+    ],
+    "profile": "LMNA::NTRK1 Fusion",
+    "disease": "Lipofibromatosis-like Neural Tumor",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0034",
+    "text": "How is MALAT1::GLI1 Fusion used to diagnose Gastroblastoma?",
+    "relevant_pmids": [
+      "28731043",
+      "36803776",
+      "37165307"
+    ],
+    "profile": "MALAT1::GLI1 Fusion",
+    "disease": "Gastroblastoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0035",
+    "text": "Which therapies are effective for NPM1 EXON 11 MUTATION in Acute Myeloid Leukemia?",
+    "relevant_pmids": [
+      "19059939",
+      "19965647",
+      "21719597",
+      "22417203",
+      "24797300",
+      "24927407"
+    ],
+    "profile": "NPM1 EXON 11 MUTATION",
+    "disease": "Acute Myeloid Leukemia",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0036",
+    "text": "What is the prognostic significance of NPM1 EXON 11 MUTATION in Acute Myeloid Leukemia?",
+    "relevant_pmids": [
+      "15659725",
+      "16046528",
+      "16051734",
+      "16076867",
+      "16455956",
+      "17957027",
+      "18450602",
+      "19047294",
+      "19059939",
+      "19587375",
+      "20026798",
+      "22417203",
+      "22430270",
+      "24855211",
+      "24859829",
+      "26789727"
+    ],
+    "profile": "NPM1 EXON 11 MUTATION",
+    "disease": "Acute Myeloid Leukemia",
+    "evidence_type": "Prognostic"
+  },
+  {
+    "query_id": "q0038",
+    "text": "How is PAX5::v Fusion used to diagnose B-lymphoblastic Leukemia With PAX5alt?",
+    "relevant_pmids": [
+      "19020546",
+      "30630978",
+      "30643249"
+    ],
+    "profile": "PAX5::v Fusion",
+    "disease": "B-lymphoblastic Leukemia With PAX5alt",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0039",
+    "text": "Which therapies are effective for PIK3CA E545K in HER2 Positive Breast Cancer?",
+    "relevant_pmids": [
+      "18829560",
+      "19010894",
+      "20453058",
+      "26920887"
+    ],
+    "profile": "PIK3CA E545K",
+    "disease": "HER2 Positive Breast Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0040",
+    "text": "Which therapies are effective for PIK3CA H1047R in Head And Neck Cancer?",
+    "relevant_pmids": [
+      "23619167",
+      "25550549",
+      "25855885"
+    ],
+    "profile": "PIK3CA H1047R",
+    "disease": "Head And Neck Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0041",
+    "text": "Which therapies are effective for PIK3CA Mutation in Cancer?",
+    "relevant_pmids": [
+      "22294718",
+      "24608574",
+      "25855885",
+      "28489509",
+      "35133871",
+      "35138919"
+    ],
+    "profile": "PIK3CA Mutation",
+    "disease": "Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0042",
+    "text": "Which therapies are effective for PTEN Loss in HER2 Positive Breast Cancer?",
+    "relevant_pmids": [
+      "15324695",
+      "17936563",
+      "20453058",
+      "20813970",
+      "21594665",
+      "26920887",
+      "27091708"
+    ],
+    "profile": "PTEN Loss",
+    "disease": "HER2 Positive Breast Cancer",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0043",
+    "text": "How is RBM15::MRTFA Fusion used to diagnose Acute Myeloid Leukemia With T(1;22)(p13;q13)?",
+    "relevant_pmids": [
+      "11431691",
+      "26215111",
+      "28112737"
+    ],
+    "profile": "RBM15::MRTFA Fusion",
+    "disease": "Acute Myeloid Leukemia With T(1;22)(p13;q13)",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0044",
+    "text": "Which therapies are effective for RET M918T in Medullary Thyroid Carcinoma?",
+    "relevant_pmids": [
+      "20368568",
+      "21422803",
+      "23056499",
+      "27525386",
+      "37870969"
+    ],
+    "profile": "RET M918T",
+    "disease": "Medullary Thyroid Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0045",
+    "text": "Which therapies are effective for ROS1 G2032R AND CD74::ROS1 Fusion in Lung Non-small Cell Carcinoma?",
+    "relevant_pmids": [
+      "25351743",
+      "25688157",
+      "26372962"
+    ],
+    "profile": "ROS1 G2032R AND CD74::ROS1 Fusion",
+    "disease": "Lung Non-small Cell Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0046",
+    "text": "How is SS18::SSX1 Fusion used to diagnose Synovial Sarcoma?",
+    "relevant_pmids": [
+      "11122430",
+      "11144931",
+      "11607825",
+      "17334349",
+      "9428816"
+    ],
+    "profile": "SS18::SSX1 Fusion",
+    "disease": "Synovial Sarcoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0047",
+    "text": "How does VHL C162F (c.485G>T) predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "21463266",
+      "26763786",
+      "7728151",
+      "9829911"
+    ],
+    "profile": "VHL C162F (c.485G>T)",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0048",
+    "text": "How does VHL Exon 1 Deletion predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "20151405",
+      "21972040",
+      "25867206"
+    ],
+    "profile": "VHL Exon 1 Deletion",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0049",
+    "text": "How does VHL Exon 3 Deletion predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "22357542",
+      "25867206",
+      "26584481",
+      "28256701"
+    ],
+    "profile": "VHL Exon 3 Deletion",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0050",
+    "text": "How does VHL F136S (c.407T>C) predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "17024664",
+      "21463266",
+      "24132471",
+      "26763786",
+      "7987306",
+      "9829912"
+    ],
+    "profile": "VHL F136S (c.407T>C)",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0051",
+    "text": "How does VHL I151T (c.452T>C) predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "10567493",
+      "17024664",
+      "17661816",
+      "28469506"
+    ],
+    "profile": "VHL I151T (c.452T>C)",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0052",
+    "text": "Which therapies are effective for VHL Mutation in Renal Cell Carcinoma?",
+    "relevant_pmids": [
+      "23881929",
+      "26951309",
+      "28103578"
+    ],
+    "profile": "VHL Mutation",
+    "disease": "Renal Cell Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0053",
+    "text": "How does VHL P154L (c.461C>T) predispose to Von Hippel-Lindau Disease?",
+    "relevant_pmids": [
+      "17024664",
+      "20660572",
+      "25867206",
+      "7987306"
+    ],
+    "profile": "VHL P154L (c.461C>T)",
+    "disease": "Von Hippel-Lindau Disease",
+    "evidence_type": "Predisposing"
+  },
+  {
+    "query_id": "q0054",
+    "text": "Which therapies are effective for v::ALK Fusion in Inflammatory Myofibroblastic Tumor?",
+    "relevant_pmids": [
+      "23598171",
+      "28787259",
+      "29352732"
+    ],
+    "profile": "v::ALK Fusion",
+    "disease": "Inflammatory Myofibroblastic Tumor",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0055",
+    "text": "How is v::NCOA2 Fusion used to diagnose Spindle Cell Rhabdomyosarcoma?",
+    "relevant_pmids": [
+      "23463663",
+      "26501226",
+      "35452896",
+      "41075874"
+    ],
+    "profile": "v::NCOA2 Fusion",
+    "disease": "Spindle Cell Rhabdomyosarcoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0057",
+    "text": "How is v::NUTM1 Fusion used to diagnose NUT Midline Carcinoma?",
+    "relevant_pmids": [
+      "15483023",
+      "29356724",
+      "32328562"
+    ],
+    "profile": "v::NUTM1 Fusion",
+    "disease": "NUT Midline Carcinoma",
+    "evidence_type": "Diagnostic"
+  },
+  {
+    "query_id": "q0058",
+    "text": "Which therapies are effective for v::RET Fusion in Lung Non-small Cell Carcinoma?",
+    "relevant_pmids": [
+      "27544060",
+      "27803005",
+      "27825616",
+      "32846060",
+      "34118197"
+    ],
+    "profile": "v::RET Fusion",
+    "disease": "Lung Non-small Cell Carcinoma",
+    "evidence_type": "Predictive"
+  },
+  {
+    "query_id": "q0059",
+    "text": "How is v::TFE3 Fusion used to diagnose Perivascular Epithelioid Cell Tumor?",
+    "relevant_pmids": [
+      "25517951",
+      "26975036",
+      "40462401"
+    ],
+    "profile": "v::TFE3 Fusion",
+    "disease": "Perivascular Epithelioid Cell Tumor",
+    "evidence_type": "Diagnostic"
+  }
+]

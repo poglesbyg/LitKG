@@ -38,7 +38,15 @@ class PipelineConfig:
     chunk_size: int = 512
     chunk_overlap: int = 64
     k: int = 5
-    max_hops: int = 1
+    # Measured, not assumed. Against 57 CIVIC-judged queries, vector-retrieved
+    # passages are 55.4% relevant while graph-expanded ones are 4.6% -- twelve
+    # times worse -- so expansion mostly dilutes the evidence handed to the
+    # model. It stays available (--hops) because the judgements are biased
+    # against it by construction: they mark relevant only what CIVIC cited for
+    # one relationship, which is precisely not the vocabulary-crossing evidence
+    # expansion exists to reach. Defaulting it on would ship a known dilution
+    # on the strength of that caveat.
+    max_hops: int = 0
 
     def __post_init__(self):
         processed = get_data_dir() / "processed"
