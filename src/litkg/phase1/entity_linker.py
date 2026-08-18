@@ -70,7 +70,14 @@ class FuzzyMatcher(LoggerMixin):
         self.normalization_patterns = [
             (r'\s+', ' '),  # Multiple spaces to single space
             (r'[^\w\s-]', ''),  # Remove special characters except hyphens
-            (r'\b(gene|protein|receptor|kinase|inhibitor)\b', ''),  # Remove common suffixes
+            # Strip only descriptors that leave identity intact: "BRCA1 gene"
+            # and "BRCA1 protein" are BRCA1. "inhibitor", "receptor" and
+            # "kinase" are not descriptors -- dropping them equates a drug with
+            # its target ("BRAF Inhibitor" -> "BRAF"), a ligand with its
+            # receptor ("estrogen receptor" -> "estrogen"), and mangles gene
+            # names into disease names ("anaplastic lymphoma kinase" ->
+            # "anaplastic lymphoma").
+            (r'\b(gene|protein)\b', ''),
         ]
     
     def normalize_text(self, text: str) -> str:

@@ -960,3 +960,207 @@ class TestNERPrecision:
         from litkg.phase1.literature_processor import BiomedicalNLP
         assert BiomedicalNLP.NER_MODELS, "no NER models configured"
         assert not any(m.startswith("en_core_sci") for m in BiomedicalNLP.NER_MODELS)
+
+
+class TestClinicalEntityExtraction:
+    """CIVIC evidence carries diseases, therapies and phenotypes.
+
+    The previous implementation emitted relations pointing at CIVIC:DISEASE
+    and CIVIC:DRUG nodes it never created, and read three column names the
+    evidence file does not have. 4125 of 5825 KG edges dangled.
+    """
+
+    @pytest.fixture
+    def processor(self):
+        from litkg.utils.config import load_config
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        return CivicProcessor(load_config())
+
+    def test_disease_id_prefers_doid(self, processor):
+        """DOID is a real identity: two records sharing one are the same disease."""
+        assert processor._civic_disease_id("Lung Cancer", "1324") == "CIVIC:DISEASE:DOID:1324"
+        assert processor._civic_disease_id("Lung Cancer", 1324.0) == "CIVIC:DISEASE:DOID:1324"
+
+    def test_disease_id_falls_back_to_name(self, processor):
+        """258 of 268 diseases have a DOID; the rest still need a stable id."""
+        for missing in (None, "", "nan", float("nan")):
+            assert processor._civic_disease_id("Rare Tumor", missing) == "CIVIC:DISEASE:RARE TUMOR"
+
+    def test_disease_id_is_stable_across_name_casing(self, processor):
+        assert (processor._civic_disease_id("lung cancer")
+                == processor._civic_disease_id("Lung Cancer"))
+
+    def test_therapies_are_split(self, processor):
+        """CIVIC packs multiple therapies into one comma-separated cell."""
+        assert processor._split_multi_valued("Imatinib, Dasatinib") == ["Imatinib", "Dasatinib"]
+        assert processor._split_multi_valued("nan") == []
+        assert processor._split_multi_valued(None) == []
+
+    def test_compound_profiles_resolve_to_each_component(self, processor):
+        """"BRAF V600E AND BRAF V600M" is evidence about both variants."""
+        index = {"BRAF V600E": "CIVIC:VARIANT:12", "BRAF V600M": "CIVIC:VARIANT:13"}
+        assert processor._resolve_molecular_profile("BRAF V600E", index) == ["CIVIC:VARIANT:12"]
+        resolved = processor._resolve_molecular_profile("BRAF V600E AND BRAF V600M", index)
+        assert sorted(resolved) == ["CIVIC:VARIANT:12", "CIVIC:VARIANT:13"]
+
+    def test_unresolvable_profile_yields_no_subject(self, processor):
+        """Better no edge than an edge from CIVIC:VARIANT: (the old behaviour)."""
+        assert processor._resolve_molecular_profile("NOTAGENE X1Y", {}) == []
+
+    def test_predictive_evidence_targets_a_therapy(self, processor):
+        """Sensitivity is a statement about a drug, not about a disease."""
+        predicate, kind = processor.EVIDENCE_PREDICATES[("Predictive", "Sensitivity/Response")]
+        assert (predicate, kind) == ("SENSITIZES_TO", "therapy")
+        predicate, kind = processor.EVIDENCE_PREDICATES[("Predictive", "Resistance")]
+        assert (predicate, kind) == ("RESISTANT_TO", "therapy")
+
+    def test_prognostic_evidence_targets_a_disease(self, processor):
+        for significance in ("Poor Outcome", "Better Outcome"):
+            _, kind = processor.EVIDENCE_PREDICATES[("Prognostic", significance)]
+            assert kind == "disease"
+
+    def test_confidence_tracks_evidence_level(self, processor):
+        """A flat 0.8 made confidence filtering meaningless."""
+        levels = ["A", "B", "C", "D", "E"]
+        scores = [processor._evidence_confidence({"evidence_level": lv, "rating": 3}) for lv in levels]
+        assert scores == sorted(scores, reverse=True), f"not monotonic: {dict(zip(levels, scores))}"
+        assert all(0.0 < s <= 1.0 for s in scores)
+
+    def test_unknown_evidence_level_is_not_treated_as_strong(self, processor):
+        weak = processor._evidence_confidence({"evidence_level": "", "rating": 3})
+        strong = processor._evidence_confidence({"evidence_level": "A", "rating": 3})
+        assert weak < strong
+
+    def test_doid_is_an_identity_identifier(self):
+        """Identity identifiers drive merging; descriptive ones must not."""
+        from litkg.phase1.kg_preprocessor import KnowledgeGraphBuilder
+        assert "doid" in KnowledgeGraphBuilder.IDENTITY_IDENTIFIERS
+        assert "go_id" not in KnowledgeGraphBuilder.IDENTITY_IDENTIFIERS
+
+
+class TestClinicalEntitiesFromRealData:
+    """Runs against the CIVIC files if they have been downloaded."""
+
+    @pytest.fixture(scope="class")
+    def processed(self):
+        from litkg.utils.config import load_config, get_data_dir
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        directory = get_data_dir() / "external" / "civic"
+        evidence, variants = directory / "civic_evidence.tsv", directory / "civic_variants.tsv"
+        if not (evidence.exists() and variants.exists()):
+            pytest.skip("CIVIC data not downloaded")
+        return CivicProcessor(load_config())._process_civic_evidence(evidence, variants)
+
+    def test_produces_all_three_clinical_types(self, processed):
+        entities, _ = processed
+        types = {e.type for e in entities}
+        assert {"DISEASE", "DRUG", "PHENOTYPE"} <= types
+
+    def test_every_relation_endpoint_has_a_node(self, processed):
+        """The bug this replaced left 4125 edges pointing at nothing."""
+        entities, relations = processed
+        known = {e.id for e in entities}
+        # Variant subjects come from the variants file, not this method.
+        dangling = [
+            r for r in relations
+            if not r.subject.startswith("CIVIC:VARIANT:") and r.subject not in known
+        ] + [r for r in relations if r.object not in known]
+        assert not dangling, f"{len(dangling)} dangling endpoints, e.g. {dangling[:3]}"
+
+    def test_no_subject_is_an_empty_variant_id(self, processed):
+        _, relations = processed
+        assert not [r for r in relations if r.subject == "CIVIC:VARIANT:"]
+
+    def test_therapy_relations_are_produced(self, processed):
+        """Reading the non-existent 'drugs' column meant zero of these."""
+        _, relations = processed
+        therapy_relations = [r for r in relations if ":THERAPY:" in r.object]
+        assert len(therapy_relations) > 1000
+
+    def test_contradicting_evidence_is_marked_not_asserted(self, processed):
+        """'Does Not Support' is evidence against; it must not read as a fact."""
+        _, relations = processed
+        negated = [r for r in relations if r.attributes.get("negated")]
+        assert negated, "no negated relations; CIVIC has ~498 'Does Not Support' rows"
+        assert all(r.attributes.get("evidence_direction") == "Does Not Support" for r in negated)
+
+
+class TestOverlappingNERSpans:
+    """Running two NER models over one text double-tags spans.
+
+    Introduced when extraction moved to en_ner_bionlp13cg_md +
+    en_ner_bc5cdr_md: 109 spans came back with two mentions and disagreeing
+    labels (bc5cdr calls CHEK2 a DISEASE, bionlp13cg calls it a GENE).
+    """
+
+    def test_one_span_yields_one_entity(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        nlp = BiomedicalNLP.__new__(BiomedicalNLP)
+        nlp._gene_vocabulary = None
+        nlp.entity_types = {
+            "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE",
+            "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION",
+        }
+
+        class FakeEnt:
+            def __init__(self, text, label, start, end):
+                self.text, self.label_ = text, label
+                self.start_char, self.end_char = start, end
+                self._ = type("U", (), {})()
+
+        class FakeDoc:
+            def __init__(self, ents): self.ents = ents
+
+        # Both models tag chars 0-5; preferred model runs first.
+        pipelines = [
+            lambda t: FakeDoc([FakeEnt("CHEK2", "GENE_OR_GENE_PRODUCT", 0, 5)]),
+            lambda t: FakeDoc([FakeEnt("CHEK2", "DISEASE", 0, 5)]),
+        ]
+        nlp._ner_pipelines = pipelines
+        entities = nlp._extract_entities_scispacy("CHEK2 mutations")
+
+        spans = [(e.start, e.end) for e in entities]
+        assert len(spans) == len(set(spans)), f"duplicate spans: {spans}"
+        assert entities[0].label == "GENE", "the preferred model must win the span"
+
+    def test_mention_key_distinguishes_labels(self):
+        """A position-only key routes a link onto the wrong entity."""
+        import importlib.util, pathlib
+        spec = importlib.util.spec_from_file_location(
+            "p1", pathlib.Path(__file__).parent.parent / "scripts" / "phase1_integration.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class Mention:
+            def __init__(self, label): self.start, self.end, self.label = 10, 15, label
+
+        gene_key = module._mention_key("123", Mention("GENE"))
+        chemical_key = module._mention_key("123", Mention("CHEMICAL"))
+        assert gene_key != chemical_key
+
+
+class TestEntityNormalization:
+    """Normalization stripped words that carry identity."""
+
+    @pytest.fixture(scope="class")
+    def matcher(self):
+        from litkg.phase1.entity_linker import FuzzyMatcher
+        from litkg.utils.config import load_config
+        return FuzzyMatcher(load_config())
+
+    @pytest.mark.parametrize("literature,kg", [
+        ("BRAF", "BRAF Inhibitor"),      # a drug is not its target
+        ("MTOR", "MTOR Inhibitor"),
+        ("estrogen", "estrogen receptor"),  # a ligand is not its receptor
+        ("ALK", "anaplastic lymphoma kinase"),
+    ])
+    def test_identity_changing_words_are_not_stripped(self, matcher, literature, kg):
+        assert matcher.calculate_similarity(literature, kg) < 0.9, (
+            f"{literature!r} and {kg!r} are different entities"
+        )
+
+    @pytest.mark.parametrize("descriptor", ["gene", "protein"])
+    def test_pure_descriptors_are_still_stripped(self, matcher, descriptor):
+        """"BRCA1 gene" is BRCA1; that match is the point of normalizing."""
+        assert matcher.calculate_similarity("BRCA1", f"BRCA1 {descriptor}") == 1.0

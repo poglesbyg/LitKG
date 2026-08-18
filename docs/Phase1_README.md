@@ -276,8 +276,8 @@ distance.
 
 ### Literature entity resolution
 
-NER emits one mention per occurrence, so the corpus's 3411 mentions cover only
-1028 distinct entities — BRCA1 alone appeared 62 times. Building a node per
+NER emits one mention per occurrence, so the corpus's 3310 mentions cover only
+998 distinct entities — BRCA1 alone appeared 62 times. Building a node per
 mention made the literature graph mention-level, where degree and centrality
 measured how often a paper repeated a name rather than anything about the
 entity, and every GNN node feature inherited that.
@@ -295,6 +295,50 @@ Because endpoints collapse, duplicate edges are aggregated rather than
 discarded: 504 entity-link edges become 100, each carrying a `mention_count`
 recording how many times the corpus asserted it. Repeated assertion is support,
 which is signal.
+
+### Clinical entities from CIVIC evidence
+
+CIVIC's evidence table is the clinical layer: which disease a variant is
+implicated in, which therapy it predicts response to, and how strong the
+evidence is. It was being read, but its output was unusable — the code emitted
+relations pointing at `CIVIC:DISEASE:` and `CIVIC:DRUG:` nodes it never
+created, and read three column names the file does not have (`variant_id`,
+`drugs`, `clinical_significance`). Every evidence subject was the empty string
+`CIVIC:VARIANT:`, no therapy relation was ever built, and **4125 of 5825 KG
+edges dangled**.
+
+Evidence identifies its subject by molecular profile name ("JAK2 V617F"), not
+by variant id, so resolving it needs an index built from the variants file.
+92.7% of rows match a profile directly; almost all the rest are compound
+profiles ("BRAF V600E AND BRAF V600M"), which are split so each component
+variant carries the relation, marked `compound_profile` in the attributes. One
+row of 4254 remains unresolvable.
+
+The graph gained 270 diseases, 381 therapies and 59 phenotypes:
+
+| Node type | Count |
+|---|---|
+| MUTATION | 1254 |
+| GENE | 513 |
+| DRUG | 381 |
+| DISEASE | 270 |
+| PHENOTYPE | 59 |
+
+Predicates come from `evidence_type` × `significance` and reuse the vocabulary
+the literature extractor emits, so both sides of the graph are comparable —
+`SENSITIZES_TO` and `RESISTANT_TO` mean the same thing whichever side asserted
+them. Predictive evidence targets a therapy; prognostic, diagnostic and
+predisposing evidence targets a disease.
+
+Disease nodes are keyed by Disease Ontology id where present (258 of 268),
+which is a genuine identity identifier — two records sharing a DOID are the
+same disease — so `doid` joins `cui` in `IDENTITY_IDENTIFIERS`.
+
+Confidence comes from CIVIC's own evidence level (A validated → E inferential)
+adjusted by curator rating, replacing a flat 0.8 that made confidence
+filtering meaningless. The 498 rows marked "Does Not Support" are kept but
+flagged `negated`: evidence against an association is information, but it must
+not read as an assertion of it.
 
 ### Reading these honestly
 
@@ -324,10 +368,10 @@ non-gene biomedical acronyms — rather than shape-driven. Entity types across
 
 | Type | Count |
 |---|---|
-| DISEASE | 303 |
 | GENE | 301 |
-| CHEMICAL | 175 |
+| DISEASE | 291 |
 | CELL_TYPE | 167 |
+| CHEMICAL | 157 |
 | TISSUE | 45 |
 | ORGANISM | 37 |
 
@@ -343,8 +387,8 @@ unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
 matches. Set `UMLS_API_KEY` for real coverage. The bottleneck here is input
 identifier coverage, not the algorithm.
 
-**Cross-modal linking is still the weak point,** though far less so. 92
-literature↔KG links against 2723 "novel" literature entities.
+**Cross-modal linking is still the weak point,** though far less so. 167
+literature↔KG links against 2367 "novel" literature entities.
 
 It was 12 until gene-level nodes were added. CIVIC's variant records are named
 for the alteration ("1100delC"), while literature NER extracts gene symbols
@@ -353,11 +397,13 @@ appear verbatim in abstracts. With 513 gene nodes in place they share a
 vocabulary, and linking rose 8x.
 
 The remaining entities are mostly still unlinked rather than genuinely novel.
-The count grew because typed NER extracts diseases, chemicals, cell types and
-tissues that the gene-only regex never saw; the KG side is gene- and
-variant-centric, so those have nothing to link against. Links fell 100 → 92 as
-spurious acronym matches disappeared. Extending the KG side beyond genes and
-variants is the next lever, not NER.
+The KG side was the constraint: it held only genes and variants, so the
+diseases and chemicals typed NER surfaces had nothing to link against. With
+CIVIC's clinical layer added, links are 167 and now include 51 disease↔disease
+and 35 chemical↔drug pairs that were structurally impossible before.
+
+Cell types (167), tissues (45) and organisms (37) still have no KG counterpart.
+That is the next coverage gap, and it needs a source beyond CIVIC.
 
 **No precision or recall figures are given** because there is no gold standard
 to compute them against. Earlier versions of this document quoted precision

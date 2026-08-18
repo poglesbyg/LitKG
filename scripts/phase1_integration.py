@@ -12,6 +12,7 @@ This script demonstrates the complete Phase 1 pipeline:
 
 import sys
 import json
+from typing import Any
 from pathlib import Path
 from datetime import datetime
 
@@ -22,6 +23,18 @@ sys.path.insert(0, str(project_root / "src"))
 from litkg.phase1.literature_processor import LiteratureProcessor
 from litkg.phase1.kg_preprocessor import KGPreprocessor
 from litkg.phase1.entity_linker import EntityLinker
+
+def _mention_key(document_id: Any, entity: Any) -> str:
+    """
+    Identify one entity mention.
+
+    The label is part of the key, not decoration. Two NER models can tag the
+    same span with different labels; keying on position alone makes those
+    mentions collide, so a link made against one reading silently lands on the
+    entity produced by the other.
+    """
+    return f"{document_id}_{entity.start}_{entity.end}_{entity.label}"
+
 from litkg.phase1.literature_resolution import (
     LiteratureEntityResolver,
     aggregate_edges,
@@ -483,7 +496,7 @@ class Phase1Integrator:
             for doc in self.literature_results:
                 for entity in doc.entities:
                     resolver.add_mention(
-                        mention_key=f"{doc.pmid}_{entity.start}_{entity.end}",
+                        mention_key=_mention_key(doc.pmid, entity),
                         text=entity.text,
                         label=entity.label,
                         confidence=entity.confidence,
@@ -549,8 +562,8 @@ class Phase1Integrator:
             literature_edges = []
             for doc in self.literature_results:
                 for relation in doc.relations:
-                    subj_key = f"{doc.pmid}_{relation.subject.start}_{relation.subject.end}"
-                    obj_key = f"{doc.pmid}_{relation.object.start}_{relation.object.end}"
+                    subj_key = _mention_key(doc.pmid, relation.subject)
+                    obj_key = _mention_key(doc.pmid, relation.object)
 
                     if subj_key in lit_entity_map and obj_key in lit_entity_map:
                         source, target = lit_entity_map[subj_key], lit_entity_map[obj_key]
@@ -599,7 +612,7 @@ class Phase1Integrator:
             link_edges = []
             for result in self.linking_results:
                 for match in result.matches:
-                    lit_key = f"{result.document_id}_{match.literature_entity.start}_{match.literature_entity.end}"
+                    lit_key = _mention_key(result.document_id, match.literature_entity)
 
                     if lit_key in lit_entity_map:
                         link_edges.append({
