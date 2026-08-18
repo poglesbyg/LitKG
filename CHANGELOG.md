@@ -5,6 +5,23 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **NER entity typing.** Every extracted literature entity was typed `GENE`,
+  making all 78 relations GENE→GENE. Two causes compounded: `en_core_sci_md`
+  emits a single `ENTITY` label that is not among the kept entity types, so the
+  scispacy path returned nothing; the rule-based fallback then accepted any
+  all-caps token matching `[A-Z][A-Z0-9]{2,10}` as a gene, so `ALL`, `NSCLC`,
+  `PFS`, `DNA` and `ICI` all became genes.
+
+  Extraction now runs `en_ner_bionlp13cg_md` and `en_ner_bc5cdr_md` with their
+  labels mapped onto the project's types, and gene acceptance is driven by the
+  KG's own gene symbols plus a non-gene acronym stoplist instead of token
+  shape. Entities are now 303 DISEASE / 301 GENE / 175 CHEMICAL / 167
+  CELL_TYPE / 45 TISSUE / 37 ORGANISM, and GENE→DISEASE is the most common
+  relation. Gene recall is unaffected: 66 of the 67 KG gene symbols appearing
+  verbatim in the corpus are still extracted.
+
 ### Documentation
 
 - Rewrote `README.md` for accuracy. It previously claimed Phases 1–3 complete

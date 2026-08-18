@@ -876,3 +876,62 @@ class TestCivicGeneNodes:
             assert relation.subject in gene_ids, (
                 f"{relation.subject} has no matching gene node; edge would dangle"
             )
+
+
+class TestNERPrecision:
+    """The rule-based extractor used to type every all-caps token as a GENE.
+
+    `en_core_sci_*` emits a single "ENTITY" label, so the scispacy path
+    contributed nothing and the acronym regex was the only source of types.
+    Result: 100% of extracted entities were GENE, and every literature
+    relation was GENE->GENE.
+    """
+
+    @pytest.fixture(scope="class")
+    def nlp(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        instance = BiomedicalNLP.__new__(BiomedicalNLP)
+        instance._gene_vocabulary = None
+        return instance
+
+    @pytest.mark.parametrize("symbol", [
+        "BRCA1", "BRCA2", "TP53", "KRAS", "EGFR", "ALK", "PTEN", "MYC",
+    ])
+    def test_real_gene_symbols_accepted(self, nlp, symbol):
+        assert nlp._is_likely_gene(symbol), f"{symbol} should be recognized as a gene"
+
+    @pytest.mark.parametrize("acronym", [
+        "ALL",    # acute lymphoblastic leukemia - a disease
+        "NSCLC",  # non-small cell lung cancer - a disease
+        "TNBC",   # triple-negative breast cancer - a disease
+        "PFS",    # progression-free survival - an outcome measure
+        "DNA",    # a molecule
+        "PCR",    # a method
+        "FDA",    # an organization
+        "ICI",    # immune checkpoint inhibitor - a drug class
+    ])
+    def test_non_gene_acronyms_rejected(self, nlp, acronym):
+        assert not nlp._is_likely_gene(acronym), (
+            f"{acronym} is not a gene; typing it as one is what made every "
+            f"relation GENE->GENE"
+        )
+
+    def test_gene_vocabulary_is_populated(self, nlp):
+        """Acceptance is vocabulary-driven, not regex-shaped."""
+        assert len(nlp.gene_vocabulary) > 100
+
+    def test_label_map_covers_configured_entity_types(self):
+        """Every mapped label must be a type the processor actually keeps."""
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        valid = {
+            "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE",
+            "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION",
+        }
+        unknown = set(BiomedicalNLP.NER_LABEL_MAP.values()) - valid
+        assert not unknown, f"NER_LABEL_MAP produces unusable types: {unknown}"
+
+    def test_specialized_models_are_preferred_over_generic(self):
+        """en_core_sci_* cannot type entities, so it must not lead."""
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        assert BiomedicalNLP.NER_MODELS, "no NER models configured"
+        assert not any(m.startswith("en_core_sci") for m in BiomedicalNLP.NER_MODELS)
