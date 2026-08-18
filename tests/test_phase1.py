@@ -917,8 +917,33 @@ class TestNERPrecision:
         )
 
     def test_gene_vocabulary_is_populated(self, nlp):
-        """Acceptance is vocabulary-driven, not regex-shaped."""
-        assert len(nlp.gene_vocabulary) > 100
+        """Acceptance is vocabulary-driven, not regex-shaped.
+
+        Size is environment-dependent: the CIVIC gene list lives under
+        `data/external/` and is downloaded, not committed, so a fresh checkout
+        has only the seed ontology (~47 symbols) against ~545 once CIVIC is
+        present. Assert the committed floor, not the local number.
+        """
+        vocabulary = nlp.gene_vocabulary
+        assert vocabulary, "gene vocabulary is empty; every gene would be rejected"
+        seeded = {"BRCA1", "BRCA2", "TP53", "EGFR", "ALK"}
+        assert seeded <= vocabulary, (
+            f"seed ontology genes missing from vocabulary: {seeded - vocabulary}"
+        )
+
+    def test_vocabulary_gate_applies_only_to_the_rule_based_path(self):
+        """The specialized NER models must not be gated by the vocabulary.
+
+        Otherwise a fresh checkout without the CIVIC download would cap gene
+        recall at the ~15 seed ontology genes.
+        """
+        import inspect
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        scispacy_src = inspect.getsource(BiomedicalNLP._extract_entities_scispacy)
+        assert "_is_likely_gene" not in scispacy_src
+        assert "gene_vocabulary" not in scispacy_src
+        rules_src = inspect.getsource(BiomedicalNLP._extract_entities_rules)
+        assert "_is_likely_gene" in rules_src
 
     def test_label_map_covers_configured_entity_types(self):
         """Every mapped label must be a type the processor actually keeps."""
