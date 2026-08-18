@@ -30,11 +30,11 @@ The payoff is multi-hop questions. Asked *"why are BRCA1 tumours sensitive to ol
 | Discovery (Phase 3) | Working | Novelty detection, hypothesis generation, validation |
 | RAG + agents | Working | Local-first, cited answers, multi-hop retrieval |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source for real coverage |
-| Cross-modal linking | **Limited** | 12 literature↔KG links on sample data |
+| Cross-modal linking | **Limited** | 100 literature↔KG links on sample data |
 
 **241 tests pass.** There is no CI yet — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Numbers below come from `make run-phase1` on the bundled sample data: 2766 nodes, 5990 edges, 91.5% high-confidence linking rate.
+Numbers below come from `make run-phase1` on the bundled sample data: 3279 nodes, 6329 edges, 75.2% high-confidence linking rate.
 
 ## Install
 

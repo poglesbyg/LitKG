@@ -490,17 +490,45 @@ class CivicProcessor(LoggerMixin):
         
         return entities, relations
     
+    @staticmethod
+    def _civic_gene_id(gene_name: Any, entrez_id: Any = None) -> str:
+        """
+        Canonical node id for a CIVIC gene.
+
+        The gene and variant processors must derive this identically or every
+        HAS_VARIANT edge dangles, leaving the graph with variants and no genes.
+        Prefers the stable Entrez id and falls back to the gene symbol.
+        """
+        entrez = str(entrez_id or "").strip()
+        if entrez and entrez.lower() not in ("nan", "none", "0"):
+            # Entrez ids arrive from pandas as floats ("238.0")
+            entrez = entrez[:-2] if entrez.endswith(".0") else entrez
+            return f"CIVIC:GENE:ENTREZ:{entrez}"
+        return f"CIVIC:GENE:{str(gene_name).strip().upper()}"
+
     def _process_civic_genes(self, genes_file: Path) -> List[StandardizedEntity]:
-        """Process CIVIC genes data."""
+        """
+        Process CIVIC genes into gene-level entities.
+
+        These are the nodes literature mentions resolve against: NER extracts
+        gene symbols ("BRCA1"), while CIVIC's variant records are named for the
+        alteration ("1100delC"). Without gene nodes the two vocabularies cannot
+        meet, and cross-modal linking collapses to the handful of variant
+        notations that happen to appear verbatim in abstracts.
+        """
         entities = []
-        
+
         try:
             df = pd.read_csv(genes_file, sep='\t')
-            
+
             for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing CIVIC genes"):
-                gene_name = str(row.get('gene', ''))
+                # civic_genes.tsv carries the symbol in "name"; only
+                # civic_variants.tsv has a "gene" column. Accept either so a
+                # schema change on one file cannot silently empty the vocabulary.
+                gene_name = str(row.get('name', row.get('gene', ''))).strip()
                 gene_id = str(row.get('gene_id', ''))
-                
+                entrez_id = row.get('entrez_id', '')
+
                 if not gene_name or gene_name == 'nan':
                     continue
                 
@@ -509,7 +537,7 @@ class CivicProcessor(LoggerMixin):
                 go_id = self.ontology_mapper.map_to_gene_ontology(gene_name)
                 
                 entity = StandardizedEntity(
-                    id=f"CIVIC:GENE:{gene_id}",
+                    id=self._civic_gene_id(gene_name, entrez_id),
                     name=gene_name,
                     type="GENE",
                     source="CIVIC",
@@ -569,7 +597,7 @@ class CivicProcessor(LoggerMixin):
                 if gene_name and gene_name != 'nan':
                     relation = StandardizedRelation(
                         id=f"CIVIC:REL:GENE_VARIANT:{variant_id}",
-                        subject=f"CIVIC:GENE:{gene_name}",
+                        subject=self._civic_gene_id(gene_name, row.get('entrez_id', '')),
                         predicate="HAS_VARIANT",
                         object=f"CIVIC:VARIANT:{variant_id}",
                         source="CIVIC",

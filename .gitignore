@@ -201,6 +201,7 @@ data/processed/*.json
 data/processed/*.pkl
 data/processed/*.csv
 data/processed/*.tsv
+data/processed/*.gpickle
 !data/processed/.gitkeep
 
 # Vector stores are rebuilt from source documents at runtime
