@@ -138,9 +138,13 @@ class RAGPipeline(LoggerMixin):
                 splitter.split_text_with_sections(document.page_content)
             ):
                 metadata = dict(document.metadata)
-                # chunk_id is what ChunkGraphIndex keys on; without a stable one
-                # the chunk-to-node mapping cannot be joined back to retrieval.
-                metadata["chunk_id"] = f"{metadata.get('pmid') or index}:{position}"
+                # ChunkGraphIndex derives its key as "{pmid}:{chunk_id}", so
+                # chunk_id is the position alone -- including the pmid here too
+                # produced keys like "123:123:0", which still worked but made
+                # the index unjoinable by anything reconstructing the id.
+                # Consumers should read metadata["chunk_uid"], which the index
+                # writes back.
+                metadata["chunk_id"] = str(position)
                 metadata["section"] = section or ""
                 chunks.append(Document(page_content=text, metadata=metadata))
         return chunks

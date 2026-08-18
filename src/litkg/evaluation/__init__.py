@@ -34,6 +34,8 @@ from litkg.evaluation.metrics import (
 )
 from litkg.evaluation.retrieval import (
     RetrievalQuery,
+    MultiHopQuery,
+    MultiHopQuerySetBuilder,
     RetrievalMetrics,
     QuerySetBuilder,
     evaluate_retrieval,
@@ -48,6 +50,8 @@ from litkg.evaluation.harness import (
 
 __all__ = [
     "RetrievalQuery",
+    "MultiHopQuery",
+    "MultiHopQuerySetBuilder",
     "RetrievalMetrics",
     "QuerySetBuilder",
     "evaluate_retrieval",

@@ -26,7 +26,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pandas as pd
 
-from litkg.evaluation import QuerySetBuilder, save_queries
+from litkg.evaluation import (
+    MultiHopQuerySetBuilder,
+    QuerySetBuilder,
+    save_queries,
+)
 from litkg.utils.config import get_data_dir
 from litkg.utils.logging import setup_logging
 
@@ -81,6 +85,9 @@ def main() -> int:
                         help="Minimum cited papers per query")
     parser.add_argument("--email", default="litkg@example.org")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--multihop", action="store_true",
+                        help="Build bridge queries whose relevant papers share no "
+                             "vocabulary with the query")
     parser.add_argument("--out-dir", type=Path, default=None)
     args = parser.parse_args()
 
@@ -94,16 +101,28 @@ def main() -> int:
         return 1
 
     evidence = pd.read_csv(evidence_path, sep="\t", low_memory=False)
-    queries = QuerySetBuilder().build(
-        evidence, min_relevant=args.min_relevant,
-        max_queries=args.queries, seed=args.seed,
-    )
+
+    if args.multihop:
+        builder = MultiHopQuerySetBuilder()
+        queries = builder.build(
+            evidence, min_relevant=args.min_relevant,
+            max_queries=args.queries, seed=args.seed,
+        )
+    else:
+        builder = None
+        queries = QuerySetBuilder().build(
+            evidence, min_relevant=args.min_relevant,
+            max_queries=args.queries, seed=args.seed,
+        )
     if not queries:
         print("No query groups met the threshold", file=sys.stderr)
         return 1
 
-    pmids = sorted({p for q in queries for p in q.relevant_pmids})
-    print(f"Fetching {len(pmids)} cited papers for {len(queries)} queries")
+    # Seed papers are fetched too: they are what vector search should find, and
+    # a corpus without them would hand expansion an easier problem than reality.
+    pmids = sorted({p for q in queries for p in q.relevant_pmids} |
+                   {p for q in queries for p in getattr(q, "seed_pmids", [])})
+    print(f"Fetching {len(pmids)} papers for {len(queries)} queries")
     documents = fetch_abstracts(pmids, email=args.email)
 
     retrieved = {d["pmid"] for d in documents}
@@ -118,8 +137,18 @@ def main() -> int:
             query.relevant_pmids = [p for p in query.relevant_pmids if p in retrieved]
         queries = [q for q in queries if len(q.relevant_pmids) >= args.min_relevant]
 
-    corpus_path = out_dir / "corpus.json"
-    queries_path = out_dir / "queries.json"
+    if args.multihop and builder is not None:
+        texts = {d["pmid"]: f"{d['title']} {d['abstract']}" for d in documents}
+        queries = builder.filter_lexically_disjoint(
+            queries, texts, min_relevant=args.min_relevant
+        )
+        if not queries:
+            print("No queries survived the lexical filter", file=sys.stderr)
+            return 1
+
+    prefix = "multihop_" if args.multihop else ""
+    corpus_path = out_dir / f"{prefix}corpus.json"
+    queries_path = out_dir / f"{prefix}queries.json"
     corpus_path.write_text(json.dumps({"documents": documents}, indent=2))
     save_queries(queries, queries_path)
 

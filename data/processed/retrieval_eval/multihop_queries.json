@@ -1,0 +1,1413 @@
+[
+  {
+    "query_id": "m0000",
+    "text": "A patient's tumour carries BCR::ABL1 Fusion AND ABL1 E255K. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "20445578",
+      "23341344",
+      "23377281",
+      "27019113",
+      "30592434"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 E255K",
+    "disease": "Acute Lymphoblastic Leukemia",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Acute Lymphoblastic Leukemia",
+    "seed_pmids": [
+      "16775234"
+    ]
+  },
+  {
+    "query_id": "m0001",
+    "text": "A patient's tumour carries BCR::ABL1 Fusion AND ABL1 Y253H. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "20445578",
+      "23341344",
+      "23377281",
+      "27019113",
+      "30592434"
+    ],
+    "profile": "BCR::ABL1 Fusion AND ABL1 Y253H",
+    "disease": "Acute Lymphoblastic Leukemia",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Acute Lymphoblastic Leukemia",
+    "seed_pmids": [
+      "16775234"
+    ]
+  },
+  {
+    "query_id": "m0002",
+    "text": "A patient's tumour carries DUX4::v Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "16775234",
+      "17264298",
+      "19770381",
+      "20445578",
+      "23341344",
+      "23377281",
+      "25686603",
+      "30592434"
+    ],
+    "profile": "DUX4::v Fusion",
+    "disease": "Acute Lymphoblastic Leukemia",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Acute Lymphoblastic Leukemia",
+    "seed_pmids": [
+      "27019113"
+    ]
+  },
+  {
+    "query_id": "m0003",
+    "text": "A patient's tumour carries MTOR F2108L. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "26287849",
+      "29072975",
+      "29320312"
+    ],
+    "profile": "MTOR F2108L",
+    "disease": "Anaplastic Thyroid Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Anaplastic Thyroid Carcinoma",
+    "seed_pmids": [
+      "25295501"
+    ]
+  },
+  {
+    "query_id": "m0004",
+    "text": "A patient's tumour carries ETV6::NTRK3 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "18205209",
+      "21391972",
+      "21747090",
+      "21863287",
+      "24215620",
+      "24366361",
+      "24367893",
+      "24740809",
+      "25335741",
+      "25962120",
+      "26600955",
+      "27815723",
+      "30044693",
+      "32306475",
+      "33357483",
+      "36172171",
+      "39702796"
+    ],
+    "profile": "ETV6::NTRK3 Fusion",
+    "disease": "B-lymphoblastic Leukemia/lymphoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "B-lymphoblastic Leukemia/lymphoma",
+    "seed_pmids": [
+      "29880614",
+      "31725893",
+      "31905241"
+    ]
+  },
+  {
+    "query_id": "m0005",
+    "text": "A patient's tumour carries PRPS1 A190T. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "18205209",
+      "21391972",
+      "21747090",
+      "21863287",
+      "22699455",
+      "24215620",
+      "24366361",
+      "24367893",
+      "24740809",
+      "25207766",
+      "25335741",
+      "26600955",
+      "27815723",
+      "29507076",
+      "29880614",
+      "30028819",
+      "30044693",
+      "31725893",
+      "31905241",
+      "32306475",
+      "33357483",
+      "36172171",
+      "39702796"
+    ],
+    "profile": "PRPS1 A190T",
+    "disease": "B-lymphoblastic Leukemia/lymphoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "B-lymphoblastic Leukemia/lymphoma",
+    "seed_pmids": [
+      "25962120"
+    ]
+  },
+  {
+    "query_id": "m0006",
+    "text": "A patient's tumour carries PRPS1 I72V. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "18205209",
+      "21391972",
+      "21747090",
+      "21863287",
+      "22699455",
+      "24215620",
+      "24366361",
+      "24367893",
+      "24740809",
+      "25207766",
+      "25335741",
+      "26600955",
+      "27815723",
+      "29507076",
+      "29880614",
+      "30028819",
+      "30044693",
+      "31725893",
+      "31905241",
+      "32306475",
+      "33357483",
+      "36172171",
+      "39702796"
+    ],
+    "profile": "PRPS1 I72V",
+    "disease": "B-lymphoblastic Leukemia/lymphoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "B-lymphoblastic Leukemia/lymphoma",
+    "seed_pmids": [
+      "25962120"
+    ]
+  },
+  {
+    "query_id": "m0007",
+    "text": "A patient's tumour carries TSC1 Loss-of-function. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "20542753",
+      "21119661",
+      "23558953",
+      "23989949",
+      "24625776",
+      "25636205",
+      "26162296",
+      "26838030",
+      "27870574",
+      "29320312"
+    ],
+    "profile": "TSC1 Loss-of-function",
+    "disease": "Bladder Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Bladder Carcinoma",
+    "seed_pmids": [
+      "22923433"
+    ]
+  },
+  {
+    "query_id": "m0008",
+    "text": "A patient's tumour carries IDH2 Mutation. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "24327581",
+      "26765760",
+      "26778701"
+    ],
+    "profile": "IDH2 Mutation",
+    "disease": "Brain Glioma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Brain Glioma",
+    "seed_pmids": [
+      "26061751"
+    ]
+  },
+  {
+    "query_id": "m0009",
+    "text": "A patient's tumour carries FGFR2 Mutation. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "26287849",
+      "28480077",
+      "28950338",
+      "31300360",
+      "31453370",
+      "32416072"
+    ],
+    "profile": "FGFR2 Mutation",
+    "disease": "Cholangiocarcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Cholangiocarcinoma",
+    "seed_pmids": [
+      "27870574",
+      "29182496"
+    ]
+  },
+  {
+    "query_id": "m0010",
+    "text": "A patient's tumour carries POT1 MUTATION. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "14726385",
+      "17020971",
+      "18689542",
+      "20697090",
+      "21483000",
+      "21670202",
+      "21993670",
+      "22077063",
+      "23086750",
+      "23568491",
+      "23585524",
+      "24869598",
+      "24943832",
+      "26182309",
+      "26837699",
+      "27626698",
+      "28418267",
+      "30602617",
+      "31160589",
+      "8241511",
+      "9788599"
+    ],
+    "profile": "POT1 MUTATION",
+    "disease": "Chronic Lymphocytic Leukemia",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Chronic Lymphocytic Leukemia",
+    "seed_pmids": [
+      "27226433"
+    ]
+  },
+  {
+    "query_id": "m0011",
+    "text": "A patient's tumour carries BAP1 Mutation. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11505222",
+      "11793370",
+      "15932632",
+      "16467086",
+      "18464292",
+      "25628030",
+      "7915601",
+      "8187067"
+    ],
+    "profile": "BAP1 Mutation",
+    "disease": "Clear Cell Renal Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Clear Cell Renal Cell Carcinoma",
+    "seed_pmids": [
+      "23792563",
+      "23797736",
+      "27751729"
+    ]
+  },
+  {
+    "query_id": "m0012",
+    "text": "A patient's tumour carries ERBB2 Amplification. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "16487996",
+      "18607592",
+      "18757403",
+      "19470935",
+      "23099803",
+      "23674493",
+      "24166148",
+      "24927325",
+      "25111426",
+      "26324363",
+      "26574622",
+      "26617739",
+      "27159395"
+    ],
+    "profile": "ERBB2 Amplification",
+    "disease": "Endometrial Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Endometrial Cancer",
+    "seed_pmids": [
+      "19840887"
+    ]
+  },
+  {
+    "query_id": "m0013",
+    "text": "A patient's tumour carries FGFR2 N550K. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "16487996",
+      "18607592",
+      "19470935",
+      "19840887",
+      "23099803",
+      "23674493",
+      "24166148",
+      "24927325",
+      "25111426",
+      "26617739",
+      "27159395"
+    ],
+    "profile": "FGFR2 N550K",
+    "disease": "Endometrial Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Endometrial Cancer",
+    "seed_pmids": [
+      "18757403"
+    ]
+  },
+  {
+    "query_id": "m0014",
+    "text": "A patient's tumour carries MRE11 Loss. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "16487996",
+      "18607592",
+      "18757403",
+      "19470935",
+      "19840887",
+      "23099803",
+      "23674493",
+      "24166148",
+      "25111426",
+      "26324363",
+      "26574622",
+      "26617739",
+      "27159395"
+    ],
+    "profile": "MRE11 Loss",
+    "disease": "Endometrial Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Endometrial Cancer",
+    "seed_pmids": [
+      "24927325"
+    ]
+  },
+  {
+    "query_id": "m0015",
+    "text": "A patient's tumour carries MDM2 RS34886328. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "19941080",
+      "25924824",
+      "26459251",
+      "27172793"
+    ],
+    "profile": "MDM2 RS34886328",
+    "disease": "Esophagus Squamous Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Esophagus Squamous Cell Carcinoma",
+    "seed_pmids": [
+      "27414035"
+    ]
+  },
+  {
+    "query_id": "m0016",
+    "text": "A patient's tumour carries CCNE1 Amplification. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "15138475",
+      "17575221",
+      "22238366",
+      "24185512",
+      "25002028",
+      "27252418",
+      "30914635",
+      "40287412"
+    ],
+    "profile": "CCNE1 Amplification",
+    "disease": "Estrogen-receptor Positive Breast Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Estrogen-receptor Positive Breast Cancer",
+    "seed_pmids": [
+      "27020857"
+    ]
+  },
+  {
+    "query_id": "m0017",
+    "text": "A patient's tumour carries BRCA1 Mutation. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "26715889",
+      "28578601",
+      "37256976"
+    ],
+    "profile": "BRCA1 Mutation",
+    "disease": "HER2 Negative Breast Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "HER2 Negative Breast Cancer",
+    "seed_pmids": [
+      "28792849"
+    ]
+  },
+  {
+    "query_id": "m0018",
+    "text": "A patient's tumour carries PIK3CA E542K. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11248153",
+      "15324695",
+      "15911866",
+      "16236737",
+      "17192538",
+      "18829560",
+      "19289619",
+      "19874578",
+      "20124187",
+      "20142587",
+      "21172893",
+      "22149875",
+      "22257673",
+      "22418700",
+      "22493419",
+      "22802530",
+      "23020162",
+      "23204226",
+      "23382472",
+      "24793816",
+      "24989892",
+      "25153719",
+      "25370464",
+      "25537159",
+      "25693012",
+      "26255196",
+      "26596672",
+      "26822398",
+      "26874901",
+      "28526536"
+    ],
+    "profile": "PIK3CA E542K",
+    "disease": "HER2 Positive Breast Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "HER2 Positive Breast Cancer",
+    "seed_pmids": [
+      "20453058"
+    ]
+  },
+  {
+    "query_id": "m0019",
+    "text": "A patient's tumour carries AREG Expression. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11325447",
+      "16309541",
+      "16454808",
+      "16943533",
+      "17538160",
+      "21048039",
+      "21467160",
+      "21840482",
+      "22090360",
+      "23265711",
+      "23635773",
+      "23746666",
+      "23786770",
+      "24239278",
+      "24277854",
+      "24577089",
+      "24577117",
+      "24799460",
+      "25081901",
+      "25267748",
+      "25677871",
+      "25892145",
+      "25982282",
+      "26015511",
+      "26046389",
+      "26115874",
+      "26181029",
+      "26589432",
+      "26634247",
+      "26787751",
+      "28061634",
+      "28476872",
+      "30683736",
+      "31871216",
+      "33750196",
+      "36806911",
+      "8901856",
+      "9625170"
+    ],
+    "profile": "AREG Expression",
+    "disease": "Head And Neck Squamous Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Head And Neck Squamous Cell Carcinoma",
+    "seed_pmids": [
+      "21653686"
+    ]
+  },
+  {
+    "query_id": "m0020",
+    "text": "A patient's tumour carries EGFR A289V. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "21365007",
+      "23558169",
+      "35395680"
+    ],
+    "profile": "EGFR A289V",
+    "disease": "High Grade Glioma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "High Grade Glioma",
+    "seed_pmids": [
+      "17177598"
+    ]
+  },
+  {
+    "query_id": "m0021",
+    "text": "A patient's tumour carries TPR::NTRK1 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "17177598",
+      "21365007",
+      "22199315",
+      "23558169"
+    ],
+    "profile": "TPR::NTRK1 Fusion",
+    "disease": "High Grade Glioma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "High Grade Glioma",
+    "seed_pmids": [
+      "35395680"
+    ]
+  },
+  {
+    "query_id": "m0022",
+    "text": "A patient's tumour carries v::ALK Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "20979472",
+      "21030459",
+      "24875859",
+      "35395680"
+    ],
+    "profile": "v::ALK Fusion",
+    "disease": "Inflammatory Myofibroblastic Tumor",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Inflammatory Myofibroblastic Tumor",
+    "seed_pmids": [
+      "10383129",
+      "23598171",
+      "28787259",
+      "29352732"
+    ]
+  },
+  {
+    "query_id": "m0023",
+    "text": "A patient's tumour carries BRAF V600E. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "17356712",
+      "27231123",
+      "30420614"
+    ],
+    "profile": "BRAF V600E",
+    "disease": "Intrahepatic Cholangiocarcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Intrahepatic Cholangiocarcinoma",
+    "seed_pmids": [
+      "25435907",
+      "28078132"
+    ]
+  },
+  {
+    "query_id": "m0024",
+    "text": "A patient's tumour carries TP53 P72R. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "19122144",
+      "35085007",
+      "41100773"
+    ],
+    "profile": "TP53 P72R",
+    "disease": "Lung Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Lung Carcinoma",
+    "seed_pmids": [
+      "12840112"
+    ]
+  },
+  {
+    "query_id": "m0025",
+    "text": "A patient's tumour carries TPM3::NTRK1 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "12840112",
+      "19122144",
+      "41100773"
+    ],
+    "profile": "TPM3::NTRK1 Fusion",
+    "disease": "Lung Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Lung Carcinoma",
+    "seed_pmids": [
+      "35085007"
+    ]
+  },
+  {
+    "query_id": "m0026",
+    "text": "A patient's tumour carries FGFR1 Amplification. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "23786770",
+      "24192513",
+      "26313362",
+      "34980131"
+    ],
+    "profile": "FGFR1 Amplification",
+    "disease": "Lung Squamous Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Lung Squamous Cell Carcinoma",
+    "seed_pmids": [
+      "21160078",
+      "23182986",
+      "25086725",
+      "25433983",
+      "27870574"
+    ]
+  },
+  {
+    "query_id": "m0027",
+    "text": "A patient's tumour carries TMB Low on-treatment bTMB. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "21160078",
+      "23182986",
+      "23786770",
+      "24192513",
+      "24302556",
+      "25086725",
+      "25433983",
+      "26313362",
+      "27870574"
+    ],
+    "profile": "TMB Low on-treatment bTMB",
+    "disease": "Lung Squamous Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Lung Squamous Cell Carcinoma",
+    "seed_pmids": [
+      "34980131"
+    ]
+  },
+  {
+    "query_id": "m0028",
+    "text": "A patient's tumour carries KRAS G12S. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "19284554",
+      "21889194",
+      "23612012",
+      "26193344",
+      "27276402"
+    ],
+    "profile": "KRAS G12S",
+    "disease": "Multiple Myeloma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Multiple Myeloma",
+    "seed_pmids": [
+      "11050000",
+      "12483530",
+      "16497971"
+    ]
+  },
+  {
+    "query_id": "m0029",
+    "text": "A patient's tumour carries U2AF1 S34Y/F. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "14737077",
+      "19666869",
+      "20494930",
+      "20601954",
+      "21415852",
+      "21995386",
+      "21997850",
+      "22033490",
+      "24836762",
+      "33449813"
+    ],
+    "profile": "U2AF1 S34Y/F",
+    "disease": "Myelodysplastic Syndrome",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Myelodysplastic Syndrome",
+    "seed_pmids": [
+      "23861105"
+    ]
+  },
+  {
+    "query_id": "m0030",
+    "text": "A patient's tumour carries v::PDGFRA Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "12660384",
+      "14504092",
+      "24407160"
+    ],
+    "profile": "v::PDGFRA Fusion",
+    "disease": "Myeloid And Lymphoid Neoplasms With Eosinophilia And Abnormalities Of PDGFRA, PDGFRB, And FGFR1",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Myeloid And Lymphoid Neoplasms With Eosinophilia And Abnormalities Of PDGFRA, PDGFRB, And FGFR1",
+    "seed_pmids": [
+      "27069254"
+    ]
+  },
+  {
+    "query_id": "m0031",
+    "text": "A patient's tumour carries ALK F1174L. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "25502557",
+      "26537256",
+      "26733615",
+      "26821351",
+      "8441429"
+    ],
+    "profile": "ALK F1174L",
+    "disease": "Neuroblastoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Neuroblastoma",
+    "seed_pmids": [
+      "18923525",
+      "21575866",
+      "21948233",
+      "22072639",
+      "23598171",
+      "26554404",
+      "26786851"
+    ]
+  },
+  {
+    "query_id": "m0032",
+    "text": "A patient's tumour carries ALK I1171T. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "25502557",
+      "26537256",
+      "26733615",
+      "26821351",
+      "8441429"
+    ],
+    "profile": "ALK I1171T",
+    "disease": "Neuroblastoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Neuroblastoma",
+    "seed_pmids": [
+      "29907598"
+    ]
+  },
+  {
+    "query_id": "m0033",
+    "text": "A patient's tumour carries BRCA2 V211I. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11595686",
+      "15790433",
+      "16467099",
+      "17088436",
+      "19533750",
+      "19648970",
+      "20227043",
+      "21278246",
+      "21920589",
+      "22016507",
+      "22112610",
+      "22246397",
+      "22896685",
+      "23346317",
+      "25218906",
+      "25968887",
+      "26033044",
+      "26096845",
+      "26204491",
+      "26250934",
+      "26422378",
+      "28242752",
+      "29320312"
+    ],
+    "profile": "BRCA2 V211I",
+    "disease": "Ovarian Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Ovarian Cancer",
+    "seed_pmids": [
+      "27908594"
+    ]
+  },
+  {
+    "query_id": "m0034",
+    "text": "A patient's tumour carries CCNE1 Overexpression. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11595686",
+      "15790433",
+      "16467099",
+      "17088436",
+      "19533750",
+      "19648970",
+      "20227043",
+      "21862407",
+      "21920589",
+      "22016507",
+      "22112610",
+      "22246397",
+      "22896685",
+      "23346317",
+      "24137399",
+      "25218906",
+      "25968887",
+      "26033044",
+      "26096845",
+      "26250934",
+      "26422378",
+      "26740259",
+      "27908594",
+      "28242752",
+      "28882436",
+      "29320312",
+      "30345884"
+    ],
+    "profile": "CCNE1 Overexpression",
+    "disease": "Ovarian Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Ovarian Cancer",
+    "seed_pmids": [
+      "26204491"
+    ]
+  },
+  {
+    "query_id": "m0035",
+    "text": "A patient's tumour carries KRAS Mutation. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11595686",
+      "15790433",
+      "16467099",
+      "17088436",
+      "19533750",
+      "19648970",
+      "20227043",
+      "21278246",
+      "21862407",
+      "21920589",
+      "22016507",
+      "22112610",
+      "22896685",
+      "23346317",
+      "24137399",
+      "25218906",
+      "26033044",
+      "26096845",
+      "26204491",
+      "26250934",
+      "26422378",
+      "26740259",
+      "27908594",
+      "28242752",
+      "28882436",
+      "29320312",
+      "30345884"
+    ],
+    "profile": "KRAS Mutation",
+    "disease": "Ovarian Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Ovarian Cancer",
+    "seed_pmids": [
+      "25968887"
+    ]
+  },
+  {
+    "query_id": "m0036",
+    "text": "A patient's tumour carries TP53 Overexpression. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "15790433",
+      "16467099",
+      "17088436",
+      "19533750",
+      "19648970",
+      "20227043",
+      "21278246",
+      "21862407",
+      "21920589",
+      "22016507",
+      "22112610",
+      "22246397",
+      "22896685",
+      "23346317",
+      "24137399",
+      "25218906",
+      "25968887",
+      "26033044",
+      "26096845",
+      "26204491",
+      "26250934",
+      "26422378",
+      "26740259",
+      "27908594",
+      "28242752",
+      "28882436",
+      "29320312",
+      "30345884"
+    ],
+    "profile": "TP53 Overexpression",
+    "disease": "Ovarian Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Ovarian Cancer",
+    "seed_pmids": [
+      "11595686"
+    ]
+  },
+  {
+    "query_id": "m0037",
+    "text": "A patient's tumour carries EGFR L747_P753delinsS. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11792751",
+      "19584151",
+      "22705007",
+      "24915778",
+      "26725216",
+      "26872370",
+      "29802158",
+      "31157963",
+      "39908431"
+    ],
+    "profile": "EGFR L747_P753delinsS",
+    "disease": "Pancreatic Adenocarcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Pancreatic Adenocarcinoma",
+    "seed_pmids": [
+      "28874593"
+    ]
+  },
+  {
+    "query_id": "m0038",
+    "text": "A patient's tumour carries RB1 Overexpression. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "19584151",
+      "22705007",
+      "24915778",
+      "26668065",
+      "26725216",
+      "26872370",
+      "28874593",
+      "29802158",
+      "31157963",
+      "39908431"
+    ],
+    "profile": "RB1 Overexpression",
+    "disease": "Pancreatic Adenocarcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Pancreatic Adenocarcinoma",
+    "seed_pmids": [
+      "11792751"
+    ]
+  },
+  {
+    "query_id": "m0039",
+    "text": "A patient's tumour carries ERBB2 Amplification. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "15581051",
+      "16243825",
+      "17131328",
+      "17224927",
+      "19273710",
+      "19543324",
+      "21135251",
+      "21508395",
+      "21862683",
+      "22374460",
+      "22983505",
+      "24088390",
+      "25072261",
+      "25366685",
+      "25423555",
+      "26662432",
+      "27010960",
+      "29223478",
+      "29338080",
+      "29903880",
+      "35100714"
+    ],
+    "profile": "ERBB2 Amplification",
+    "disease": "Pancreatic Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Pancreatic Cancer",
+    "seed_pmids": [
+      "29320312"
+    ]
+  },
+  {
+    "query_id": "m0040",
+    "text": "A patient's tumour carries EML4::NTRK3 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "15630448",
+      "16174717",
+      "18682506",
+      "21594703",
+      "21882184",
+      "24354346",
+      "24396464",
+      "24570209",
+      "24987354",
+      "25024077",
+      "26784937",
+      "27086918",
+      "27460442",
+      "29610391",
+      "35118995"
+    ],
+    "profile": "EML4::NTRK3 Fusion",
+    "disease": "Papillary Thyroid Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Papillary Thyroid Carcinoma",
+    "seed_pmids": [
+      "32457407"
+    ]
+  },
+  {
+    "query_id": "m0041",
+    "text": "A patient's tumour carries BRCA1 Loss-of-function. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11504908",
+      "19117982",
+      "19244107",
+      "22623731",
+      "23329234",
+      "23582881",
+      "23779130",
+      "24782778",
+      "25184630",
+      "25544710",
+      "25670080",
+      "26108461",
+      "26261420",
+      "26391455",
+      "26629066",
+      "26891277",
+      "26892177",
+      "27153245",
+      "27262168",
+      "27470558",
+      "27626483",
+      "29955787",
+      "30865549",
+      "38687617"
+    ],
+    "profile": "BRCA1 Loss-of-function",
+    "disease": "Prostate Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Prostate Cancer",
+    "seed_pmids": [
+      "23569316",
+      "26510020"
+    ]
+  },
+  {
+    "query_id": "m0042",
+    "text": "A patient's tumour carries DEFA1 EXPRESSION. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11504908",
+      "19117982",
+      "19244107",
+      "22623731",
+      "23329234",
+      "23569316",
+      "23582881",
+      "23779130",
+      "24782778",
+      "25184630",
+      "25544710",
+      "25670080",
+      "26000489",
+      "26108461",
+      "26391455",
+      "26510020",
+      "26629066",
+      "26891277",
+      "26892177",
+      "27153245",
+      "27262168",
+      "27470558",
+      "27626483",
+      "29955787",
+      "30865549",
+      "36753688",
+      "38687617"
+    ],
+    "profile": "DEFA1 EXPRESSION",
+    "disease": "Prostate Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Prostate Cancer",
+    "seed_pmids": [
+      "26261420"
+    ]
+  },
+  {
+    "query_id": "m0043",
+    "text": "A patient's tumour carries STK11 Underexpression. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "11504908",
+      "19117982",
+      "19244107",
+      "22623731",
+      "23329234",
+      "23569316",
+      "23582881",
+      "23779130",
+      "24782778",
+      "25184630",
+      "25544710",
+      "25670080",
+      "26000489",
+      "26108461",
+      "26261420",
+      "26510020",
+      "26629066",
+      "26891277",
+      "26892177",
+      "27153245",
+      "27262168",
+      "27470558",
+      "27626483",
+      "29955787",
+      "30865549",
+      "36753688",
+      "38687617"
+    ],
+    "profile": "STK11 Underexpression",
+    "disease": "Prostate Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Prostate Cancer",
+    "seed_pmids": [
+      "26391455"
+    ]
+  },
+  {
+    "query_id": "m0044",
+    "text": "A patient's tumour carries FLCN c.1285dupC. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "10408776",
+      "11536052",
+      "17024664",
+      "19667267",
+      "21177507",
+      "22252991",
+      "23333114",
+      "23797736",
+      "23881929",
+      "23898052",
+      "24253377",
+      "26309414",
+      "26951309",
+      "27092876",
+      "28103578",
+      "7591282",
+      "7977367",
+      "8707293"
+    ],
+    "profile": "FLCN c.1285dupC",
+    "disease": "Renal Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Renal Cell Carcinoma",
+    "seed_pmids": [
+      "23995526"
+    ]
+  },
+  {
+    "query_id": "m0045",
+    "text": "A patient's tumour carries VHL L184P (c.551T>C). What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "19667267",
+      "21177507",
+      "22252991",
+      "23333114",
+      "23898052",
+      "23995526",
+      "24253377",
+      "26309414",
+      "27092876"
+    ],
+    "profile": "VHL L184P (c.551T>C)",
+    "disease": "Renal Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Renal Cell Carcinoma",
+    "seed_pmids": [
+      "7591282"
+    ]
+  },
+  {
+    "query_id": "m0046",
+    "text": "A patient's tumour carries CDK4 EXPRESSION. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "17103226",
+      "22682017",
+      "25669829",
+      "26216294",
+      "26646755",
+      "27428733",
+      "27499916",
+      "27535980",
+      "27735949",
+      "29606586",
+      "30204247",
+      "31372595",
+      "34464935"
+    ],
+    "profile": "CDK4 EXPRESSION",
+    "disease": "Sarcoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Sarcoma",
+    "seed_pmids": [
+      "26528855"
+    ]
+  },
+  {
+    "query_id": "m0047",
+    "text": "A patient's tumour carries TP53 R175H OR TP53 H193R. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "17103226",
+      "22682017",
+      "26216294",
+      "26528855",
+      "27428733",
+      "27499916",
+      "27535980",
+      "27735949",
+      "29606586",
+      "30204247",
+      "31372595",
+      "34464935"
+    ],
+    "profile": "TP53 R175H OR TP53 H193R",
+    "disease": "Sarcoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Sarcoma",
+    "seed_pmids": [
+      "25669829"
+    ]
+  },
+  {
+    "query_id": "m0048",
+    "text": "A patient's tumour carries CDK4 R24C. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "12777976",
+      "18390968",
+      "18794803",
+      "20141835",
+      "21639808",
+      "22194965",
+      "22798288",
+      "22805292",
+      "23171796",
+      "23288408",
+      "23414587",
+      "23802768",
+      "24345920",
+      "24504448",
+      "24933606",
+      "24950457",
+      "25217772",
+      "25399551",
+      "25542057",
+      "26304929",
+      "26307133",
+      "26359985",
+      "26444240",
+      "26822383",
+      "26987942",
+      "27433843",
+      "28284557"
+    ],
+    "profile": "CDK4 R24C",
+    "disease": "Skin Melanoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Skin Melanoma",
+    "seed_pmids": [
+      "24495407"
+    ]
+  },
+  {
+    "query_id": "m0049",
+    "text": "A patient's tumour carries LRP1B Loss-of-function. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "28183697",
+      "28281183",
+      "28783719",
+      "29466156",
+      "30309915",
+      "30624546",
+      "31838007",
+      "31924734",
+      "32105622",
+      "33637626",
+      "35395680",
+      "37059834",
+      "37870536",
+      "38126764",
+      "39293516",
+      "41100773"
+    ],
+    "profile": "LRP1B Loss-of-function",
+    "disease": "Solid Tumor",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Solid Tumor",
+    "seed_pmids": [
+      "33653800"
+    ]
+  },
+  {
+    "query_id": "m0050",
+    "text": "A patient's tumour carries TPM3::NTRK1 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "24422672",
+      "26314551",
+      "32050835"
+    ],
+    "profile": "TPM3::NTRK1 Fusion",
+    "disease": "Spindle Cell Sarcoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Spindle Cell Sarcoma",
+    "seed_pmids": [
+      "30204247"
+    ]
+  },
+  {
+    "query_id": "m0051",
+    "text": "A patient's tumour carries Methylation signature ST-EPN-ZFTA. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "24553141",
+      "27157931",
+      "29949764"
+    ],
+    "profile": "Methylation signature ST-EPN-ZFTA",
+    "disease": "Supratentorial Ependymoma, ZFTA Fusion\u2013positive",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Supratentorial Ependymoma, ZFTA Fusion\u2013positive",
+    "seed_pmids": [
+      "30976811",
+      "37287693"
+    ]
+  },
+  {
+    "query_id": "m0052",
+    "text": "A patient's tumour carries PIK3CA E542K. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "21594703",
+      "23766237",
+      "25121551",
+      "32846061",
+      "34118198",
+      "34237031"
+    ],
+    "profile": "PIK3CA E542K",
+    "disease": "Thyroid Cancer",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Thyroid Cancer",
+    "seed_pmids": [
+      "19706758"
+    ]
+  },
+  {
+    "query_id": "m0053",
+    "text": "A patient's tumour carries FGFR3::TACC3 Fusion. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "24625776",
+      "26674132",
+      "27044931",
+      "31010895",
+      "31340094"
+    ],
+    "profile": "FGFR3::TACC3 Fusion",
+    "disease": "Transitional Cell Carcinoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Transitional Cell Carcinoma",
+    "seed_pmids": [
+      "29848605"
+    ]
+  },
+  {
+    "query_id": "m0054",
+    "text": "A patient's tumour carries BAP1 EXPRESSION. What other actionable molecular alterations should be considered?",
+    "relevant_pmids": [
+      "22805292",
+      "23434733",
+      "23793026",
+      "24140933",
+      "24141786",
+      "24899684",
+      "24938562",
+      "25952648",
+      "26397223",
+      "28103611"
+    ],
+    "profile": "BAP1 EXPRESSION",
+    "disease": "Uveal Melanoma",
+    "evidence_type": "MultiHop",
+    "bridge_entity": "Uveal Melanoma",
+    "seed_pmids": [
+      "25147369"
+    ]
+  }
+]

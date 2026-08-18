@@ -5,6 +5,48 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **A multi-hop query set, and two fixes that make graph expansion contribute.**
+  The single-relationship set could not judge multi-hop: it marks relevant only
+  what CIVIC cited for the relationship the query names, which is what dense
+  retrieval already finds. `--multihop` builds bridge queries instead -- each
+  names one molecular profile, and the relevant papers are those cited for
+  *different* profiles in the same disease, reachable only along
+  profile -> disease -> other profile. Any candidate naming the query's own gene
+  is dropped, because dense retrieval could find it directly; 81 papers were
+  removed that way, leaving 55 queries over 506 documents.
+
+  Tracing the chain showed the graph holds a path to the answer for **54 of 55**
+  queries while only 9 were retrieved. Two causes:
+
+  - Expansion seeded only from retrieved passages, so it was a hostage to dense
+    retrieval, which surfaced a usable seed for just 16 of 55. Entities named in
+    the question now seed the walk directly.
+  - Candidates were truncated in walk order, which is close to random sampling
+    when a hop reaches hundreds of passages. A pool of 200 contains the answer
+    for 85.5% of queries against 21.8% at 5.
+
+  **Ranking by similarity to the query is self-defeating and was measured as
+  such** -- it nullified expansion entirely, because a passage reachable only
+  through the graph is by definition one that does not resemble the question.
+  Inverse node degree is also wrong here: the bridge between two variants is the
+  disease both are evidenced in, exactly the high-degree node that weighting
+  penalises. Ranking by shared graph context works: 52.7% at top 5 standalone
+  against 21.8% for walk order.
+
+  Net effect on the bridge set: hit-rate 0.200 -> 0.236, P@10 0.025 -> 0.031.
+  **An improvement, not a solution** -- a quarter of these queries surface a
+  relevant bridge paper against 98% for single-relationship questions, and the
+  gap between 85% pool recall and 24% top-10 is budget spent on seeds that are
+  usually wrong. Single-hop retrieval is unchanged (P@5 0.547, MRR 0.803).
+
+### Fixed
+
+- Chunk ids were composed as `{pmid}:{pmid}:{position}`, because the pipeline
+  included the pmid that `ChunkGraphIndex` already prefixes. Harmless to the
+  index, but it made the key unjoinable by anything reconstructing it.
+
 ### Removed
 
 - **Two encoders `BiomedicalNLP` downloaded on every run and never read.**

@@ -179,7 +179,21 @@ def save_queries(queries: Sequence[RetrievalQuery], path: Path) -> None:
 
 
 def load_queries(path: Path) -> List[RetrievalQuery]:
-    return [RetrievalQuery.from_dict(p) for p in json.loads(Path(path).read_text())]
+    """
+    Load queries, restoring the subclass they were saved as.
+
+    Multi-hop queries carry extra fields; constructing the base class from them
+    raises rather than silently dropping the bridge information, so the class is
+    chosen by which fields are present.
+    """
+    payloads = json.loads(Path(path).read_text())
+    queries: List[RetrievalQuery] = []
+    for payload in payloads:
+        multihop = "bridge_entity" in payload or "seed_pmids" in payload
+        # Late lookup: MultiHopQuery is defined further down the module.
+        cls = globals()["MultiHopQuery"] if multihop else RetrievalQuery
+        queries.append(cls(**payload))
+    return queries
 
 
 # ----------------------------------------------------------------------
@@ -254,3 +268,160 @@ def evaluate_retrieval(
         metrics.recall_ci = tuple(np.percentile(r_samples, [2.5, 97.5]))
 
     return metrics
+
+
+# ----------------------------------------------------------------------
+# Multi-hop queries
+
+MULTIHOP_TEMPLATE = (
+    "A patient's tumour carries {profile}. "
+    "What other actionable molecular alterations should be considered?"
+)
+
+
+@dataclass
+class MultiHopQuery(RetrievalQuery):
+    """
+    A query whose relevant papers share no vocabulary with it.
+
+    The single-relationship query set cannot say whether graph expansion works,
+    because it marks relevant only what CIVIC cited for the relationship the
+    query names -- exactly the papers vector search already finds. Expansion
+    exists to reach evidence that shares no terms with the query, so measuring
+    it needs judgements built for that.
+
+    Construction: the query names one molecular profile. The relevant papers are
+    those cited for *different* profiles evidenced in the same disease, reachable
+    only along profile -> disease -> other profile. Any such paper that mentions
+    the query's profile or gene is dropped, because vector search could retrieve
+    it directly and it would not be testing the hop.
+    """
+
+    bridge_entity: str = ""
+    seed_pmids: List[str] = field(default_factory=list)
+
+
+def _gene_of(profile: str) -> str:
+    """Leading gene symbol of a molecular profile name."""
+    token = re.split(r"[\s:]+", str(profile).strip())
+    return token[0].upper() if token and token[0] else ""
+
+
+def _mentions(text: str, *terms: str) -> bool:
+    """Whether any term appears in the text, word-bounded and case-insensitive."""
+    for term in terms:
+        term = str(term or "").strip()
+        if len(term) < 3:
+            continue
+        if re.search(rf"\b{re.escape(term)}\b", text, re.IGNORECASE):
+            return True
+    return False
+
+
+class MultiHopQuerySetBuilder(LoggerMixin):
+    """Builds bridge queries whose answers require traversing the graph."""
+
+    def build(
+        self,
+        evidence: Any,
+        min_relevant: int = 3,
+        max_profiles_per_disease: int = 40,
+        max_queries: Optional[int] = None,
+        seed: int = 0,
+    ) -> List[MultiHopQuery]:
+        """
+        Candidate bridge queries, before the lexical filter.
+
+        Diseases linking a very large number of profiles are excluded: "Cancer"
+        bridges 181 profiles and would make almost every paper a neighbour of
+        every other, which is the hub problem in query form rather than a real
+        multi-hop question.
+        """
+        frame = evidence[
+            evidence["source_type"].astype(str).str.upper() == "PUBMED"
+        ].copy()
+        frame["pmid"] = (
+            frame["citation_id"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+        )
+        frame = frame.dropna(subset=["molecular_profile", "disease"])
+
+        papers: Dict[tuple, Set[str]] = {}
+        by_disease: Dict[str, Set[str]] = {}
+        for row in frame.itertuples():
+            profile, disease = _clean(row.molecular_profile), _clean(row.disease)
+            pmid = str(row.pmid)
+            if not profile or not disease or not pmid.isdigit():
+                continue
+            papers.setdefault((disease, profile), set()).add(pmid)
+            by_disease.setdefault(disease, set()).add(profile)
+
+        queries: List[MultiHopQuery] = []
+        for disease, profiles in sorted(by_disease.items()):
+            if not 2 <= len(profiles) <= max_profiles_per_disease:
+                continue
+            for profile in sorted(profiles):
+                seeds = papers.get((disease, profile), set())
+                bridge: Set[str] = set()
+                for other in profiles:
+                    if other == profile:
+                        continue
+                    bridge |= papers.get((disease, other), set())
+                # A paper cited for both profiles is reachable directly.
+                bridge -= seeds
+                if len(bridge) < min_relevant or not seeds:
+                    continue
+                queries.append(MultiHopQuery(
+                    query_id=f"m{len(queries):04d}",
+                    text=MULTIHOP_TEMPLATE.format(profile=profile),
+                    relevant_pmids=sorted(bridge),
+                    profile=profile,
+                    disease=disease,
+                    evidence_type="MultiHop",
+                    bridge_entity=disease,
+                    seed_pmids=sorted(seeds),
+                ))
+
+        queries.sort(key=lambda q: (q.disease, q.profile))
+        if max_queries and len(queries) > max_queries:
+            rng = np.random.default_rng(seed)
+            picks = sorted(rng.choice(len(queries), max_queries, replace=False))
+            queries = [queries[i] for i in picks]
+        for index, query in enumerate(queries):
+            query.query_id = f"m{index:04d}"
+
+        self.logger.info(f"Built {len(queries)} candidate bridge queries")
+        return queries
+
+    def filter_lexically_disjoint(
+        self,
+        queries: Sequence[MultiHopQuery],
+        texts: Dict[str, str],
+        min_relevant: int = 3,
+    ) -> List[MultiHopQuery]:
+        """
+        Drop relevant papers that name the query's profile or gene.
+
+        Without this the set does not test multi-hop at all: a paper mentioning
+        the queried gene is exactly what vector search returns, so keeping it
+        would credit expansion for a hit dense retrieval already had.
+        """
+        kept: List[MultiHopQuery] = []
+        removed = 0
+        for query in queries:
+            gene = _gene_of(query.profile)
+            disjoint = [
+                pmid for pmid in query.relevant_pmids
+                if pmid in texts and not _mentions(texts[pmid], query.profile, gene)
+            ]
+            removed += len(query.relevant_pmids) - len(disjoint)
+            if len(disjoint) >= min_relevant:
+                query.relevant_pmids = disjoint
+                kept.append(query)
+
+        for index, query in enumerate(kept):
+            query.query_id = f"m{index:04d}"
+        self.logger.info(
+            f"{len(kept)} queries survive the lexical filter "
+            f"({removed} papers dropped for naming the query's own gene)"
+        )
+        return kept
