@@ -249,6 +249,13 @@ class BiomedicalNLP(LoggerMixin):
     # alone leaves the rule-based path as the only source of entity types.
     NER_MODELS = ("en_ner_bionlp13cg_md", "en_ner_bc5cdr_md")
 
+    # Input budget for the BERT NER pipeline. 512 is the BERT-family default
+    # and the last resort when neither the tokenizer nor the model config
+    # reports a usable one; anything above MAX_PLAUSIBLE_TOKENS is the
+    # `model_max_length` sentinel transformers reports for "unset", not a limit.
+    DEFAULT_MAX_TOKENS = 512
+    MAX_PLAUSIBLE_TOKENS = 100_000
+
     # Model labels mapped onto this project's entity vocabulary
     NER_LABEL_MAP = {
         "GENE_OR_GENE_PRODUCT": "GENE",
@@ -482,18 +489,94 @@ class BiomedicalNLP(LoggerMixin):
 
         return entities
     
+    def _bert_max_tokens(self) -> int:
+        """
+        Number of tokens one call to the BERT NER pipeline may carry.
+
+        `model_max_length` cannot be trusted on its own: a tokenizer whose
+        config omits a length -- biobert-base-cased-v1.1 among them -- reports a
+        sentinel near 1e30, and that sentinel is exactly why the pipeline's own
+        truncation flag never fired here. The model's position embedding table
+        is the constraint that actually raises, so read both and believe
+        whichever limit is smaller and plausible.
+        """
+        model_config = getattr(getattr(self.ner_pipeline, "model", None), "config", None)
+        candidates = [
+            getattr(self.ner_pipeline.tokenizer, "model_max_length", None),
+            getattr(model_config, "max_position_embeddings", None),
+        ]
+        usable = [
+            candidate for candidate in candidates
+            if isinstance(candidate, int) and 0 < candidate <= self.MAX_PLAUSIBLE_TOKENS
+        ]
+        return min(usable) if usable else self.DEFAULT_MAX_TOKENS
+
+    def _truncate_to_token_limit(self, text: str) -> str:
+        """
+        Cut `text` at the last whole word that fits the NER model's window.
+
+        The result is always a prefix of `text`, so the character offsets the
+        pipeline reports still index the caller's string.
+        """
+        tokenizer = self.ner_pipeline.tokenizer
+        limit = self._bert_max_tokens()
+
+        if getattr(tokenizer, "is_fast", False):
+            encoded = tokenizer(
+                text,
+                truncation=True,
+                max_length=limit,
+                return_offsets_mapping=True,
+            )
+            if len(encoded["input_ids"]) < limit:
+                return text
+
+            # Special tokens ([CLS]/[SEP]) carry an empty span; the last real
+            # span ends where the model stops reading.
+            spans = [span for span in encoded["offset_mapping"] if span[1] > span[0]]
+            if not spans:
+                return text
+            cut = spans[-1][1]
+        else:
+            # Slow tokenizers cannot report character offsets. Grow a prefix a
+            # word at a time instead: wordpiece never merges across whitespace,
+            # so per-word counts sum to the count for the whole prefix.
+            budget = limit - tokenizer.num_special_tokens_to_add()
+            cut = 0
+            for word in re.finditer(r"\S+", text):
+                budget -= len(tokenizer.tokenize(word.group()))
+                if budget < 0:
+                    break
+                cut = word.end()
+            else:
+                return text
+
+        # A kept token can end mid-word, and re-tokenizing half a word is not
+        # guaranteed to yield the same number of pieces -- greedy longest-match
+        # can split a prefix more finely than the whole word -- so cut back to
+        # the preceding whitespace. Whole words tokenize identically in a
+        # prefix, which is what keeps the truncated text inside the limit.
+        if cut < len(text) and not text[cut].isspace():
+            boundary = re.search(r"\s\S*$", text[:cut])
+            if boundary is not None:
+                cut = boundary.start()
+        return text[:cut]
+
     def _extract_entities_bert(self, text: str) -> List[Entity]:
-        """Extract entities using BERT-based NER."""
+        """
+        Extract entities using BERT-based NER.
+
+        Long abstracts used to be trimmed to 2000 characters on the assumption
+        that ~5 characters make a token. Dense biomedical prose runs nearer 3,
+        so ~600-token inputs still reached a model with 512 position
+        embeddings. The pipeline raised, the error was logged and swallowed,
+        and this extractor silently contributed nothing on exactly the
+        documents richest in entities.
+        """
         entities = []
         
         try:
-            # Truncate text to avoid BERT max length issues (512 tokens ≈ 400 words)
-            max_chars = 2000  # Conservative estimate for ~400 words
-            if len(text) > max_chars:
-                text = text[:max_chars] + "..."
-            
-            # Use the NER pipeline
-            results = self.ner_pipeline(text)
+            results = self.ner_pipeline(self._truncate_to_token_limit(text))
             
             for result in results:
                 # Map BERT labels to our entity types

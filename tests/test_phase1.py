@@ -2,12 +2,15 @@
 Tests for Phase 1 components (literature processing, KG preprocessing, entity linking).
 """
 
-import pytest
+import logging
 import re
+
+import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
+from types import SimpleNamespace
 import networkx as nx
 
 from litkg.phase1.literature_processor import LiteratureProcessor, DocumentProcessor, EntityExtractor
@@ -1233,3 +1236,185 @@ class TestCivicRelease:
         """Older releases have no feature_type column at all."""
         from litkg.phase1.kg_preprocessor import CivicProcessor
         assert CivicProcessor.FEATURE_TYPES.get("", "GENE") == "GENE"
+
+
+# What transformers reports for `model_max_length` when the tokenizer config
+# carries no length of its own -- dmis-lab/biobert-base-cased-v1.1 included.
+UNSET_MODEL_MAX_LENGTH = int(1e30)
+
+
+class StubTokenizer:
+    """Stands in for the biobert tokenizer; CI has no model downloads.
+
+    Four characters per piece is roughly wordpiece's density on dense
+    biomedical prose, and `model_max_length` reports the same sentinel the real
+    tokenizer does, so the usable limit has to come from the model config.
+    """
+
+    model_max_length = UNSET_MODEL_MAX_LENGTH
+
+    def __init__(self, is_fast=True):
+        self.is_fast = is_fast
+
+    def _spans(self, text):
+        for word in re.finditer(r"\S+", text):
+            for start in range(word.start(), word.end(), 4):
+                yield (start, min(start + 4, word.end()))
+
+    def tokenize(self, text):
+        return [text[start:end] for start, end in self._spans(text)]
+
+    def num_special_tokens_to_add(self):
+        return 2
+
+    def __call__(self, text, truncation=False, max_length=None,
+                 return_offsets_mapping=False, **kwargs):
+        # [CLS] and [SEP] both carry an empty span, as in transformers
+        offsets = [(0, 0)] + list(self._spans(text)) + [(0, 0)]
+        if truncation and max_length is not None and len(offsets) > max_length:
+            offsets = offsets[:max_length - 1] + [(0, 0)]
+        encoded = {"input_ids": list(range(len(offsets)))}
+        if return_offsets_mapping:
+            encoded["offset_mapping"] = offsets
+        return encoded
+
+
+class StubNERPipeline:
+    """Fails the way the real pipeline fails.
+
+    BERT's position embedding table is fixed width, so an over-long input
+    raises RuntimeError rather than degrading.
+    """
+
+    def __init__(self, tokenizer, limit=512):
+        self.tokenizer = tokenizer
+        self.limit = limit
+        self.model = SimpleNamespace(
+            config=SimpleNamespace(max_position_embeddings=limit)
+        )
+        self.calls = []
+
+    def __call__(self, text):
+        length = len(self.tokenizer(text)["input_ids"])
+        if length > self.limit:
+            raise RuntimeError(
+                f"The size of tensor a ({length}) must match the size of "
+                f"tensor b ({self.limit}) at non-singleton dimension 1"
+            )
+        self.calls.append(text)
+        return [{
+            "entity_group": "GENE", "word": "BRCA1",
+            "start": 0, "end": 5, "score": 0.99,
+        }]
+
+
+class TestBertNERTruncation:
+    """A 2000-character cap is not a 512-token cap.
+
+    `_extract_entities_bert` trimmed text to 2000 characters as a stand-in for
+    "~400 words". Wordpiece runs nearer 3 characters per token on dense
+    biomedical prose, so those inputs still reached the model as ~600 tokens
+    and overflowed its 512 position embeddings. The pipeline raised, the
+    exception was caught and logged, and the BERT path contributed nothing on
+    long documents while appearing to be active -- which is why nobody
+    noticed. These tests assert on the absence of that error path.
+    """
+
+    @pytest.fixture
+    def abstract(self):
+        """~800 tokens of the prose density that broke the character heuristic."""
+        sentence = (
+            "BRCA1-deficient triple-negative breast carcinoma demonstrated PARP1 "
+            "hyperactivation, olaparib sensitivity, and a concomitant TP53 R175H "
+            "missense substitution; immunohistochemical quantification of "
+            "phosphorylated ERK1/2 showed progression-free survival of 12.4 "
+            "months (95% CI 9.8-15.1). "
+        )
+        return sentence * 12
+
+    def nlp(self, is_fast=True):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        instance = BiomedicalNLP.__new__(BiomedicalNLP)
+        instance.entity_types = {
+            "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE",
+            "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION",
+        }
+        instance.ner_pipeline = StubNERPipeline(StubTokenizer(is_fast=is_fast))
+        return instance
+
+    def test_the_character_heuristic_really_did_overflow(self, abstract):
+        """Guards the premise: without this the tests below prove nothing."""
+        tokenizer = StubTokenizer()
+        assert len(tokenizer(abstract[:2000])["input_ids"]) > 512, (
+            "the stub is too sparse to reproduce the failure"
+        )
+
+    @pytest.mark.parametrize("is_fast", [True, False])
+    def test_long_abstract_does_not_reach_the_error_path(self, abstract, caplog, is_fast):
+        nlp = self.nlp(is_fast=is_fast)
+        with caplog.at_level(logging.ERROR, logger="litkg.BiomedicalNLP"):
+            entities = nlp._extract_entities_bert(abstract)
+
+        assert not caplog.records, (
+            f"BERT NER logged and swallowed: {[r.message for r in caplog.records]}"
+        )
+        assert nlp.ner_pipeline.calls, "the pipeline never ran"
+        assert entities, "the extractor returned nothing despite reaching the model"
+
+    @pytest.mark.parametrize("is_fast", [True, False])
+    def test_truncation_respects_the_token_budget(self, abstract, is_fast):
+        nlp = self.nlp(is_fast=is_fast)
+        truncated = nlp._truncate_to_token_limit(abstract)
+        tokenizer = nlp.ner_pipeline.tokenizer
+
+        assert len(tokenizer(truncated)["input_ids"]) <= 512
+        assert abstract.startswith(truncated), (
+            "truncation must return a prefix, or reported offsets stop lining "
+            "up with the caller's text"
+        )
+
+    @pytest.mark.parametrize("is_fast", [True, False])
+    def test_truncation_stops_at_a_word_boundary(self, abstract, is_fast):
+        """Half a word can re-tokenize into more pieces than were kept."""
+        nlp = self.nlp(is_fast=is_fast)
+        truncated = nlp._truncate_to_token_limit(abstract)
+        assert len(truncated) < len(abstract), "this abstract should have been cut"
+        assert abstract[len(truncated)].isspace()
+
+    def test_offsets_index_the_original_text(self, abstract):
+        """Entity spans are stored against the document, not the trimmed copy."""
+        nlp = self.nlp()
+        entity = nlp._extract_entities_bert(abstract)[0]
+        assert abstract[entity.start:entity.end] == entity.text
+
+    @pytest.mark.parametrize("is_fast", [True, False])
+    def test_short_abstract_is_passed_through_whole(self, is_fast):
+        nlp = self.nlp(is_fast=is_fast)
+        short = "BRCA1 mutations predict olaparib sensitivity."
+        assert nlp._truncate_to_token_limit(short) == short
+
+    def test_limit_comes_from_the_model_when_the_tokenizer_reports_no_length(self):
+        """The sentinel is what disabled the pipeline's own truncation."""
+        nlp = self.nlp()
+        assert nlp.ner_pipeline.tokenizer.model_max_length == UNSET_MODEL_MAX_LENGTH
+        assert nlp._bert_max_tokens() == 512
+
+    def test_a_real_tokenizer_length_is_honoured_when_it_is_smaller(self):
+        nlp = self.nlp()
+        nlp.ner_pipeline.tokenizer.model_max_length = 128
+        assert nlp._bert_max_tokens() == 128
+
+    def test_falls_back_to_the_bert_default_without_any_stated_limit(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        nlp = self.nlp()
+        nlp.ner_pipeline.tokenizer.model_max_length = None
+        nlp.ner_pipeline.model = None
+        assert nlp._bert_max_tokens() == BiomedicalNLP.DEFAULT_MAX_TOKENS == 512
+
+    def test_no_character_based_truncation_remains(self):
+        """Tuning the character count would leave the same bug, further out."""
+        import inspect
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        source = inspect.getsource(BiomedicalNLP._extract_entities_bert)
+        assert "max_chars" not in source
+        assert "_truncate_to_token_limit" in source
