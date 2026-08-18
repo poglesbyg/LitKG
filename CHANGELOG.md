@@ -7,6 +7,31 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Evaluation harness for link prediction** (`litkg.evaluation`, `make
+  evaluate`). Splits knowledge graph edges on the publication year of the
+  supporting paper, scores structural baselines, and reports AUC, average
+  precision, Hits@K and MRR. Documented in `docs/Evaluation.md`.
+
+  The split guards three sources of leakage, each counted in the report: pairs
+  re-asserted after the cutoff but first published before it (495 at cutoff
+  2016) stay in training; undated gene-variant edges form a backbone that
+  disqualifies duplicate test pairs; cold-start pairs with an endpoint missing
+  from training are excluded rather than counted as failures.
+
+  Negatives match the endpoint types of the positives they stand against, with
+  `--degree-matched` additionally controlling for node popularity.
+
+  **First measured result, and it is negative:** at cutoff 2016 with degree
+  matching, Adamic-Adar reaches AUC 0.543 against a random floor of 0.498, and
+  Hits@1 is 0.000 for every predictor. Preferential attachment scores 0.725
+  without degree matching and 0.512 with it, showing the apparent signal was
+  node popularity. The cause is structural: 84.6% of test pairs share no
+  neighbour in the training graph, so shared-neighbour predictors are
+  undefined for them rather than wrong. The harness reports this as
+  `structural_coverage` and warns below 50%.
+
+### Added
+
 - **Clinical entities from CIVIC evidence.** The knowledge graph held only
   genes and variants, so the diseases and chemicals typed NER extracts had
   nothing to link against. CIVIC evidence now contributes 270 diseases (keyed
