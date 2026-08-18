@@ -183,21 +183,42 @@ In rough order of expected return per unit of effort:
 Two learned predictors live in `litkg.phase2.link_prediction`, scored through
 this same harness so the comparison is like for like.
 
-| predictor | AUC | AP | H@10 | MRR |
-|---|---|---|---|---|
-| **hybrid** (GNN + weighted L3) | **0.743 ± 0.010** | **0.270** | **0.021** | 0.0144 |
-| hybrid with R-GCN | 0.735 ± 0.011 | 0.266 | 0.020 | **0.0170** |
-| weighted_l3 | 0.698 | 0.238 | 0.022 | 0.0170 |
-| l3_paths | 0.692 | 0.205 | 0.017 | 0.0050 |
-| gnn alone | 0.670 ± 0.089 | 0.172 | 0.003 | 0.0024 |
+| predictor | AUC | AUC 95% CI | AP | H@100 | MRR | MRR 95% CI |
+|---|---|---|---|---|---|---|
+| **hybrid** (GNN + weighted L3) | **0.743** | [0.729, 0.755] | **0.262** | **0.069** | 0.0114 | [0.0075, 0.0163] |
+| weighted_l3 | 0.698 | [0.682, 0.713] | 0.231 | 0.053 | 0.0097 | [0.0065, 0.0133] |
+| gnn alone | 0.697 | [0.685, 0.709] | 0.170 | 0.040 | 0.0031 | [0.0016, 0.0056] |
+| l3_paths | 0.692 | [0.677, 0.707] | 0.204 | 0.042 | 0.0044 | [0.0031, 0.0061] |
+| adamic_adar | 0.540 | [0.531, 0.551] | 0.105 | 0.019 | 0.0010 | [0.0007, 0.0014] |
+| random | 0.498 | [0.482, 0.514] | 0.092 | 0.004 | 0.0008 | [0.0004, 0.0012] |
 
-Averages over 5 seeds. The hybrid beats the L3 bar in **5 of 5 seeds**; the GNN
-alone does not, and one seed collapsed to 0.512.
+Intervals are 95% bootstrap over positives. **Read them before comparing
+anything**: on this data the MRR interval is wider than the gap between most
+configurations.
 
-Recovering the discarded edge evidence moved every metric, and moved the
-ranking metrics most: against the previous best (AUC 0.729, AP 0.244, H@10
-0.014, MRR 0.0072), average precision is up 11%, Hits@10 50%, and **MRR has
-doubled**. Seed variance also halved, from ±0.018 to ±0.010.
+What this table supports:
+
+- **The hybrid beats every structural baseline on AUC.** Its interval
+  [0.729, 0.755] is disjoint from L3's [0.677, 0.707]. This holds across 5
+  seeds (0.743 ± 0.010) and is the one large, solid result.
+- **It also leads on AP and Hits@100**, which are the discriminating metrics
+  here.
+- **The GNN alone does not beat L3** — the intervals sit on top of each other,
+  and across seeds it is unstable (0.670 ± 0.089, one seed collapsed to 0.512).
+
+What it does **not** support:
+
+- Fine-grained MRR comparisons among the leading predictors. Hybrid
+  [0.0075, 0.0163] and weighted_l3 [0.0065, 0.0133] overlap heavily.
+- `weighted_l3` beating `l3_paths` on AUC: 0.698 vs 0.692 with overlapping
+  intervals. Its **MRR** gain over plain L3 is real (intervals nearly
+  disjoint), and its AP gain is clear, but the AUC difference is not
+  established.
+
+An earlier version of this document reported MRR differences among the top
+configurations as findings — "MRR has doubled", R-GCN's 0.0170 versus SAGE's
+0.0144. Those gaps are inside the noise band of a single measurement and should
+not have been stated as results. They are removed rather than restated.
 
 ### What made the GNN work at all
 
@@ -253,10 +274,11 @@ evidence published after the cutoff would feed the model the very knowledge the
 holdout exists to withhold; there is a test pinning this.
 
 `--relational` switches the encoder to R-GCN, learning one transform per
-predicate. It trades a little AUC (0.735 vs 0.743) for the best MRR of any
-configuration (0.0170 vs 0.0144), which fits the pattern seen throughout: on
-this graph, global discrimination and ranking quality pull against each other.
-Use it when the top of the list matters more than the overall ordering.
+predicate. Its AUC is indistinguishable from the untyped encoder's, and the
+MRR difference between them falls inside the bootstrap interval, so there is
+currently **no measured reason to prefer either**. It is kept because modelling
+opposite predicates as the same edge is wrong in principle, and because a
+denser graph may make the difference measurable.
 
 ### Read the per-type-pair table, not just the aggregate
 
@@ -279,11 +301,37 @@ common neighbour can exist and the predictor has literally no information.
 Every run prints this table. Judge changes on it, not on the aggregate, which
 can move because one subproblem improved while another regressed.
 
+### Why ranking metrics here are unreliable
+
+Each positive is ranked against the **entire** negative pool — ~1200 positives
+against ~12000 negatives. That makes MRR and Hits@10 extremely top-heavy:
+
+- The top 20 positives contribute **78%** of MRR; the top 10 contribute 42%.
+- Only ~26 positives out of 1204 land in the top 10 at all.
+- The bootstrap CI for MRR spans [0.0066, 0.0135] — a width comparable to the
+  value itself.
+
+So MRR is effectively determined by a couple of dozen rows. Two configurations
+whose MRR differs by a factor of two may be indistinguishable, and an apparent
+trade-off between AUC and MRR across configurations is largely a stable
+statistic being compared against a noisy one, not a property of the task.
+
+Three consequences, all now implemented:
+
+1. Every metric ships with a 95% bootstrap interval. Compare intervals, not
+   point estimates.
+2. `hits_at_100` is reported alongside Hits@10, which has no resolution at this
+   pool size.
+3. `indistinguishable_fraction` records how many positives the predictor cannot
+   separate from the bulk — tied with more than half the negative pool. For
+   shared-neighbour methods this is most of them, so their ranking metrics
+   describe an undefined score rather than a wrong one.
+
 ### Reading this honestly
 
-AUC 0.743 against an 0.692 baseline is a real but modest gain, bought with a
-large increase in complexity. **Hits@10 of 0.021 means the top of the ranking
-is still nearly empty** — this is a measurable improvement in a research
+AUC 0.743 against an 0.692 baseline is a real gain with disjoint confidence
+intervals, bought with a large increase in complexity. **Hits@100 of 0.069
+means fewer than 7% of held-out associations reach the top 100 of ~12000** — this is a measurable improvement in a research
 setting, not a system that surfaces useful hypotheses yet. The MRR gain
 (0.0050 → 0.0072) is the more meaningful movement, and it is still small in
 absolute terms.

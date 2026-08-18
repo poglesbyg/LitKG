@@ -5,6 +5,27 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ranking metrics were reported without uncertainty, and some differences
+  claimed from them were noise.** Each positive is ranked against the whole
+  negative pool (~1200 against ~12000), which makes MRR extremely top-heavy:
+  the top 20 positives supply 78% of it, only ~26 of 1204 reach the top 10, and
+  its bootstrap CI spans [0.0066, 0.0135] -- about as wide as the value. Every
+  metric now carries a 95% bootstrap interval, `hits_at_100` is reported
+  because Hits@10 has no resolution at this pool size, and
+  `indistinguishable_fraction` records how many positives a predictor cannot
+  separate from the bulk.
+
+  Two previously stated results do not survive this and have been withdrawn
+  from the docs: that recovering edge evidence "doubled MRR", and that the
+  R-GCN ranked better than the untyped encoder. Both gaps sit inside the
+  interval. The AUC and AP results do survive -- the hybrid's AUC interval is
+  disjoint from every structural baseline's.
+
+  The apparent AUC/MRR trade-off across configurations was also an artefact of
+  comparing a stable statistic against a noisy one, not a property of the task.
+
 ### Added
 
 - **Evidence-weighted edges.** Flattening the graph discarded 11 predicates,
@@ -12,15 +33,19 @@ Notable changes to LitKG-Integrate. Format loosely follows
   into 6645 pairs. `RelationRecord` and `EdgeEvidence` carry those through the
   temporal split, and `WeightedL3PathPredictor` weights each path hop by mean
   confidence x log support, penalised by the negated fraction. On its own that
-  lifts average precision 0.205 -> 0.238 and MRR 0.0050 -> 0.0170.
+  lifts average precision 0.204 -> 0.231 and MRR 0.0044 -> 0.0097. The AUC
+  difference over plain L3 (0.698 vs 0.692) is inside the confidence interval
+  and is not claimed.
 
   Weights are aggregated from **pre-cutoff evidence only**; weighting an edge
   with later evidence would leak the knowledge the holdout withholds.
 
 - **Relation-aware encoder** (`--relational`). An R-GCN learning one transform
   per predicate, since the untyped graph treats SENSITIZES_TO and RESISTANT_TO
-  -- opposite claims about the same pair -- as identical edges. Trades a little
-  AUC (0.735 vs 0.743) for the best MRR of any configuration (0.0170).
+  -- opposite claims about the same pair -- as identical edges. Its metrics are
+  currently indistinguishable from the untyped encoder's once confidence
+  intervals are accounted for; it is kept because collapsing opposite
+  predicates is wrong in principle, not because it measures better.
 
 - **Per-entity-type-pair reporting.** Every evaluation now breaks results down
   by type pair, because the aggregate averages four problems whose AUC spans
@@ -29,9 +54,9 @@ Notable changes to LitKG-Integrate. Format loosely follows
 ### Changed
 
 - The hybrid now ensembles the GNN with *weighted* L3 and passes relation types
-  through. Against the previous best: AUC 0.729 -> 0.743, AP 0.244 -> 0.270,
-  Hits@10 0.014 -> 0.021, **MRR 0.0072 -> 0.0144**. Seed variance halved, from
-  +/-0.018 to +/-0.010.
+  through. AUC 0.743 [95% CI 0.729-0.755] against L3's 0.692 [0.677-0.707] --
+  disjoint intervals -- with AP 0.262 and Hits@100 0.069, and 5/5 seeds over
+  the bar. Seed variance halved, from +/-0.018 to +/-0.010.
 
 ### Added
 

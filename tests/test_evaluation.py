@@ -9,6 +9,7 @@ leakage and degenerate cases rather than happy paths.
 import math
 
 import networkx as nx
+import numpy as np
 import pytest
 
 from litkg.evaluation import (
@@ -460,3 +461,93 @@ class TestPerTypePairBreakdown:
             [(f"a{i}", f"b{i % 4}", 2000 + i % 10) for i in range(40)], 2005
         )
         assert not evaluate_baselines(split, negatives_per_positive=3).per_type_pair
+
+
+class TestMetricUncertainty:
+    """
+    Ranking metrics here are set by a couple dozen rows out of ~1200, so a
+    point estimate invites reading noise as a result.
+    """
+
+    def test_auc_matches_sklearn(self):
+        """The Mann-Whitney decomposition must be exact, not approximate."""
+        from sklearn.metrics import roc_auc_score
+        rng = np.random.default_rng(0)
+        positives = list(rng.normal(1.0, 1.0, 200))
+        negatives = list(rng.normal(0.0, 1.0, 2000))
+        labels = np.concatenate([np.ones(200), np.zeros(2000)])
+        scores = np.concatenate([positives, negatives])
+        mine = evaluate_scores(positives, negatives, bootstrap_samples=0).auc
+        assert mine == pytest.approx(float(roc_auc_score(labels, scores)))
+
+    def test_auc_decomposition_counts_ties_as_half(self):
+        """Half credit for ties is what makes it agree with sklearn."""
+        m = evaluate_scores([1.0], [1.0], bootstrap_samples=0)
+        assert m.auc == pytest.approx(0.5)
+
+    def test_intervals_are_produced_and_bracket_the_estimate(self):
+        rng = np.random.default_rng(1)
+        m = evaluate_scores(
+            list(rng.normal(1.0, 1.0, 300)), list(rng.normal(0.0, 1.0, 3000))
+        )
+        for value, interval in (
+            (m.auc, m.auc_ci), (m.mrr, m.mrr_ci),
+            (m.average_precision, m.average_precision_ci),
+            (m.hits_at_10, m.hits_at_10_ci),
+        ):
+            assert interval is not None
+            assert interval[0] <= value <= interval[1]
+
+    def test_intervals_narrow_with_more_positives(self):
+        """A wide interval must be a statement about sample size."""
+        rng = np.random.default_rng(2)
+        negatives = list(rng.normal(0.0, 1.0, 3000))
+        small = evaluate_scores(list(rng.normal(1.0, 1.0, 30)), negatives)
+        large = evaluate_scores(list(rng.normal(1.0, 1.0, 3000)), negatives)
+        assert (large.auc_ci[1] - large.auc_ci[0]) < (small.auc_ci[1] - small.auc_ci[0])
+
+    def test_bootstrap_can_be_disabled(self):
+        m = evaluate_scores([1.0, 2.0], [0.0, 0.5], bootstrap_samples=0)
+        assert m.auc_ci is None and m.mrr_ci is None
+
+    def test_bootstrap_is_reproducible(self):
+        rng = np.random.default_rng(3)
+        positives = list(rng.normal(1.0, 1.0, 100))
+        negatives = list(rng.normal(0.0, 1.0, 1000))
+        assert (evaluate_scores(positives, negatives, seed=7).auc_ci
+                == evaluate_scores(positives, negatives, seed=7).auc_ci)
+
+    def test_hits_at_100_has_resolution_where_hits_at_10_does_not(self):
+        """
+        Only ~26 of 1204 real positives reach the top 10 of ~12000, so Hits@10
+        barely moves. A coarser cutoff has to be strictly more inclusive.
+        """
+        rng = np.random.default_rng(4)
+        m = evaluate_scores(
+            list(rng.normal(0.5, 1.0, 400)), list(rng.normal(0.0, 1.0, 4000))
+        )
+        assert m.hits_at_100 >= m.hits_at_10
+
+    def test_indistinguishable_fraction_flags_mass_ties(self):
+        """
+        Shared-neighbour predictors score exactly 0 for most pairs. Their
+        ranking metrics describe an undefined score, and the report must say
+        so rather than presenting it as a weak result.
+        """
+        m = evaluate_scores([0.0] * 10, [0.0] * 100, bootstrap_samples=0)
+        assert m.indistinguishable_fraction == pytest.approx(1.0)
+
+        clear = evaluate_scores([5.0] * 10, [0.0] * 100, bootstrap_samples=0)
+        assert clear.indistinguishable_fraction == 0.0
+
+    def test_all_ties_still_do_not_count_as_perfect(self):
+        m = evaluate_scores([0.0] * 5, [0.0] * 50, bootstrap_samples=0)
+        assert m.hits_at_1 == 0.0
+        assert m.mrr < 0.1
+
+    def test_summary_line_shows_intervals(self):
+        rng = np.random.default_rng(5)
+        text = evaluate_scores(
+            list(rng.normal(1.0, 1.0, 50)), list(rng.normal(0.0, 1.0, 500))
+        ).summary()
+        assert "AUC" in text and "[" in text
