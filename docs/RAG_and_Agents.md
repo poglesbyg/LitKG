@@ -297,6 +297,19 @@ make build-queryset      # derive judged queries from CIVIC citations
 make eval-retrieval SWEEP=1
 ```
 
+The judged query sets are tracked in the repository; the corpora and vector
+stores they refer to are not, because they are rebuilt from the queries. On a
+fresh clone, refetch the papers a query set names:
+
+```bash
+python scripts/build_retrieval_queryset.py --rebuild-corpus            # single-hop
+python scripts/build_retrieval_queryset.py --rebuild-corpus --multihop
+```
+
+Regenerating the *queries* instead would silently change what a reported number
+means, since PubMed content and CIVIC releases drift — the same reason the CIVIC
+release is pinned rather than taken from nightly.
+
 ### Where the judgements come from
 
 There are no human relevance labels for this corpus, and using an LLM to judge
