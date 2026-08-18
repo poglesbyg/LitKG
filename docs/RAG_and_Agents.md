@@ -362,3 +362,96 @@ Judgements are also **incomplete** in the ordinary IR sense: an uncited paper
 about the same gene may be relevant and is scored as a miss, so every number
 here is a lower bound. And the queries are **templated**, so they are more
 uniform than real user questions.
+
+## Does multi-hop retrieval work?
+
+The single-relationship query set could not answer this: it marks relevant only
+what CIVIC cited for the relationship the query names, which is exactly what
+dense retrieval already finds. Multi-hop exists to reach evidence sharing *no*
+vocabulary with the question, so measuring it needs judgements built for that.
+
+### A query set where vector search cannot win
+
+`build_retrieval_queryset.py --multihop` constructs bridge queries. Each names
+one molecular profile; the relevant papers are those cited for **different**
+profiles evidenced in the same disease, reachable only along
+`profile → disease → other profile`.
+
+The filter that makes this honest: any candidate paper that mentions the
+query's profile or gene is **dropped**, because dense retrieval could find it
+directly and it would not be testing the hop. 81 papers were removed that way,
+leaving **55 queries over 506 documents**.
+
+### The paths exist; the ranking was the problem
+
+Tracing the chain for all 55 queries:
+
+| step | result |
+|---|---|
+| seed paper retrieved by vector search | **16/55** |
+| seed paper links to graph nodes | 54/55 |
+| bridge paper links to graph nodes | 55/55 |
+| bridge reachable within 1–2 hops | **51–54/55** |
+| bridge paper actually retrieved | 9/55 |
+
+The graph holds a path to the answer for 54 of 55 queries. Almost none of them
+were being retrieved. Two causes, both fixed:
+
+**Expansion seeded only from retrieved passages**, making it a hostage to dense
+retrieval — which surfaced a usable seed for just 16 of 55. Entities named in
+the *question* are now resolved against the same alias index and seed the walk
+directly.
+
+**Candidates were truncated in walk order.** A one-hop walk reaches hundreds of
+passages and only `expansion_limit` survive, so the cutoff was close to random
+sampling. Widening the pool shows the recall was always there:
+
+| candidate pool | bridge found |
+|---|---|
+| 5 | 21.8% |
+| 50 | 61.8% |
+| 200 | **85.5%** |
+
+### The ranking signal that works, and the one that does not
+
+Ranking graph candidates by **similarity to the query is self-defeating**, and
+measurably so: it nullified expansion completely (hit-rate 0.200, identical to
+no expansion). A passage reachable only through the graph is by definition one
+that does not resemble the question, so similarity sorts exactly the wanted
+passages to the bottom.
+
+Inverse node degree — the Adamic-Adar intuition that fixed link prediction — is
+also wrong here. The meaningful bridge between two variants is the disease both
+are evidenced in, and disease nodes are precisely the high-degree ones that
+weighting would penalise.
+
+What survives is **shared graph context**: how many nodes a candidate shares
+with the query's own entities, divided by the square root of its own node count
+so that passages mentioning many entities do not win on breadth alone. Standalone
+at top 5 that reaches **52.7%** against 21.8% for walk order.
+
+### Where it actually lands
+
+| configuration | hit-rate | P@10 | MRR |
+|---|---|---|---|
+| no expansion | 0.200 | 0.025 | 0.043 |
+| expansion, similarity-ranked | 0.200 | 0.025 | 0.043 |
+| expansion, context-ranked | **0.236** | 0.031 | 0.047 |
+| context-ranked, 1 seed + 9 expanded | 0.236 | **0.060** | **0.060** |
+
+**This is an improvement, not a solution.** A relevant bridge paper reaches the
+top 10 for about a quarter of these queries, against 98% for single-relationship
+questions. The gap between 85% recall in the candidate pool and 24% in the top
+10 is budget: seeds occupy half the returned passages and, for these queries,
+are usually wrong.
+
+Single-hop retrieval is unaffected by all of this — identical numbers before and
+after (P@5 0.547, MRR 0.803).
+
+### What would be needed next
+
+The remaining problem is allocation, not reachability. A retriever that knew
+when a question is entity-anchored could spend its budget on graph candidates
+instead of dense-retrieval guesses. Doing that properly means predicting query
+type, which is a larger change than tuning a constant, and it should be measured
+on this set rather than argued.

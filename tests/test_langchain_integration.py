@@ -553,9 +553,18 @@ class TestRAGPipelineWiring:
             Document(page_content="BRCA1 repairs DNA. " * 40, metadata={"pmid": "99"})
         ])
         assert chunks
+        # chunk_id is the position; ChunkGraphIndex composes the stable
+        # identifier as "{pmid}:{chunk_id}" and writes it back as chunk_uid.
+        # Including the pmid here as well produced keys like "99:99:0".
         ids = [c.metadata["chunk_id"] for c in chunks]
         assert len(ids) == len(set(ids))
-        assert all(i.startswith("99:") for i in ids)
+        assert all(i.isdigit() for i in ids)
+
+        from litkg.langchain_integration import ChunkGraphIndex, EntityAliasIndex
+        ChunkGraphIndex(EntityAliasIndex()).index_chunks(chunks)
+        uids = [c.metadata["chunk_uid"] for c in chunks]
+        assert len(uids) == len(set(uids))
+        assert all(u.startswith("99:") and u.count(":") == 1 for u in uids)
 
 
 class TestHubTraversalCap:
@@ -627,3 +636,76 @@ class TestAnswerSourceShape:
         assert source["pmid"] == "123"
         assert source["hop_distance"] == 1
         assert "metadata" not in source
+
+
+class TestMultiHopExpansionRanking:
+    """
+    Bridge evidence is by definition what the query does not resemble, so the
+    obvious ranking signal is the wrong one. Measured on 55 bridge queries:
+    ranking graph candidates by similarity to the query nullified expansion
+    entirely (hit-rate 0.200, identical to no expansion), while ranking by
+    shared graph context reached 0.236 and, standalone at top-5, 52.7% against
+    21.8% for walk order.
+    """
+
+    def _document(self, uid, nodes, text="passage text here"):
+        from langchain_core.documents import Document
+        return Document(page_content=text,
+                        metadata={"chunk_uid": uid, "entity_ids": list(nodes),
+                                  "pmid": uid})
+
+    def test_shared_graph_context_outranks_breadth(self):
+        """
+        A passage mentioning a great many entities must not win on breadth
+        alone -- the same popularity control degree-matched negatives apply in
+        link prediction.
+        """
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        focused = self._document("focused", ["A", "B"])
+        broad = self._document("broad", ["A"] + [f"x{i}" for i in range(40)])
+        order = retriever._rank_candidates(
+            {"focused": focused, "broad": broad}, anchor={"A", "B"}
+        )
+        assert order[0] == "focused"
+
+    def test_candidates_without_graph_context_rank_last(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        linked = self._document("linked", ["A"])
+        unlinked = self._document("unlinked", [])
+        order = retriever._rank_candidates(
+            {"unlinked": unlinked, "linked": linked}, anchor={"A"}
+        )
+        assert order[0] == "linked"
+
+    def test_ranking_does_not_consult_the_query_text(self):
+        """
+        Pinned deliberately: a passage reachable only through the graph does not
+        resemble the question, so any query-similarity term would push exactly
+        the wanted passages down.
+        """
+        import inspect
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        source = inspect.getsource(GraphExpansionRetriever._rank_candidates)
+        assert "similarity_search" not in source
+
+    def test_query_entities_seed_the_walk(self):
+        """
+        Seeding only from retrieved passages made expansion a hostage to dense
+        retrieval: the graph held a path for 54 of 55 bridge queries but vector
+        search surfaced a usable seed for only 16.
+        """
+        from litkg.langchain_integration import EntityAliasIndex, ChunkGraphIndex
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        import networkx as nx
+
+        graph = nx.Graph()
+        graph.add_node("BRAF", name="BRAF")
+        alias = EntityAliasIndex().add_from_graph(graph)
+        retriever = GraphExpansionRetriever(chunk_index=ChunkGraphIndex(alias))
+        assert "BRAF" in retriever._query_nodes("A tumour carrying BRAF was seen")
+
+    def test_query_seeding_is_optional(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        assert GraphExpansionRetriever().seed_from_query is True

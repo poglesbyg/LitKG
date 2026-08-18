@@ -49,12 +49,16 @@ def main() -> int:
     parser.add_argument("--hops", type=int, default=1)
     parser.add_argument("--cap", type=int, default=None)
     parser.add_argument("--sweep", action="store_true")
+    parser.add_argument("--multihop", action="store_true",
+                        help="Score against the bridge query set instead")
     parser.add_argument("--eval-dir", type=Path, default=None)
     args = parser.parse_args()
 
     setup_logging()
     eval_dir = args.eval_dir or (get_data_dir() / "processed" / "retrieval_eval")
-    queries_path, corpus_path = eval_dir / "queries.json", eval_dir / "corpus.json"
+    prefix = "multihop_" if args.multihop else ""
+    queries_path = eval_dir / f"{prefix}queries.json"
+    corpus_path = eval_dir / f"{prefix}corpus.json"
     if not queries_path.exists():
         print(f"No query set at {queries_path}. Run "
               f"scripts/build_retrieval_queryset.py first.", file=sys.stderr)
@@ -63,7 +67,7 @@ def main() -> int:
     queries = load_queries(queries_path)
     pipeline = RAGPipeline(PipelineConfig(
         documents_path=corpus_path,
-        vector_store_path=eval_dir / "vector_store",
+        vector_store_path=eval_dir / f"{prefix}vector_store",
     )).build()
     print(f"{len(queries)} judged queries over {len(pipeline.documents)} documents\n")
 
