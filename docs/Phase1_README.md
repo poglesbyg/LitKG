@@ -246,11 +246,34 @@ for this corpus yet.
 | Metric | Value |
 |---|---|
 | Documents processed | 100 |
-| Graph size | 3279 nodes, 6329 edges |
+| Graph size | 2084 nodes, 5925 edges |
 | Entities merged by resolution | 447 |
 | High-confidence linking rate | 75.2% |
 | Cross-modal entities (literature ↔ KG) | 100 |
 | Novel literature entities | 1000 |
+| Literature entities (resolved from 1504 mentions) | 309 |
+
+### Literature entity resolution
+
+NER emits one mention per occurrence, so the corpus's 1504 mentions cover only
+309 distinct entities — BRCA1 alone appeared 62 times. Building a node per
+mention made the literature graph mention-level, where degree and centrality
+measured how often a paper repeated a name rather than anything about the
+entity, and every GNN node feature inherited that.
+
+`LiteratureEntityResolver` groups mentions by normalized surface form within an
+entity type, mirroring the knowledge graph cascade so both sides group
+consistently. Mention detail is kept on the node as evidence:
+
+```python
+{"text": "BRCA1", "label": "GENE", "mention_count": 62,
+ "document_count": 17, "surface_forms": ["BRCA-1", "BRCA1"]}
+```
+
+Because endpoints collapse, duplicate edges are aggregated rather than
+discarded: 504 entity-link edges become 100, each carrying a `mention_count`
+recording how many times the corpus asserted it. Repeated assertion is support,
+which is signal.
 
 ### Reading these honestly
 
@@ -263,6 +286,12 @@ is punctuation folding and fuzzy matching, not the headline total.
 healthier: previously the linker only attempted the handful of trivially exact
 variant strings. It now attempts real gene matches, which are more numerous and
 less certain.
+
+**Literature relation extraction yields nothing.** All 100 documents produce
+zero relations, so the resolved literature entities have no edges among
+themselves and connect only to the knowledge graph. This predates resolution —
+the edge count fell purely from entity-link aggregation — but it means the
+literature encoder currently sees an edgeless node set.
 
 **The ontology rule fires zero times on this data.** It is correct and
 unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
@@ -278,10 +307,9 @@ for the alteration ("1100delC"), while literature NER extracts gene symbols
 appear verbatim in abstracts. With 513 gene nodes in place they share a
 vocabulary, and linking rose 8x.
 
-The remaining 1000 are mostly still unlinked rather than genuinely novel. Two
-known causes: literature entities are not deduplicated (1504 mention-level
-nodes for 309 distinct surface forms), and NER precision is poor — "CAR",
-"ALL", "DNA" and "ICI" are all tagged as genes.
+The remaining 1000 are mostly still unlinked rather than genuinely novel. The
+dominant cause now is NER precision: "CAR", "ALL", "DNA" and "ICI" are all
+tagged as genes.
 
 **No precision or recall figures are given** because there is no gold standard
 to compute them against. Earlier versions of this document quoted precision
