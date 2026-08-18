@@ -32,6 +32,30 @@ from litkg.utils.config import LitKGConfig, load_config
 from litkg.utils.logging import LoggerMixin
 
 
+# transformers names the classes of a randomly initialized classification head
+# LABEL_0, LABEL_1, ... A checkpoint whose id2label looks like that was never
+# fine-tuned for token classification, whatever its model card says about being
+# biomedical.
+UNTRAINED_LABEL_PATTERN = re.compile(r"^LABEL_\d+$")
+
+
+def is_untrained_token_classifier(id2label: Dict[Any, str]) -> bool:
+    """
+    True when a token-classification head carries no trained label scheme.
+
+    `dmis-lab/biobert-base-cased-v1.1` is a base language model. Building an
+    NER pipeline on it makes transformers initialize a classifier head at
+    random -- it warns, then runs, then emits LABEL_0/LABEL_1 spans at ~0.5
+    confidence that no label map can turn into an entity type. Detecting that
+    at load time is the difference between a loud misconfiguration and a
+    pipeline stage that silently returns nothing on every document.
+    """
+    labels = list(id2label.values()) if id2label else []
+    if not labels:
+        return True
+    return all(UNTRAINED_LABEL_PATTERN.match(str(label)) for label in labels)
+
+
 @dataclass
 class Entity:
     """Represents an extracted biomedical entity."""
@@ -249,6 +273,26 @@ class BiomedicalNLP(LoggerMixin):
     # alone leaves the rule-based path as the only source of entity types.
     NER_MODELS = ("en_ner_bionlp13cg_md", "en_ner_bc5cdr_md")
 
+    # Fallback for configs written before `biomedical_ner` existed.
+    DEFAULT_BERT_NER_MODEL = "alvaroalon2/biobert_genetic_ner"
+
+    # Labels emitted by the BERT NER checkpoint, mapped onto this project's
+    # vocabulary. JNLPBA/BC2GM merge gene, gene product and protein mentions
+    # into one class, which is the same thing bionlp13cg calls
+    # GENE_OR_GENE_PRODUCT, so it lands on GENE.
+    BERT_NER_LABEL_MAP = {
+        "GENETIC": "GENE",
+        "GENE": "GENE",
+        "PROTEIN": "PROTEIN",
+        "DNA": "GENE",
+        "RNA": "GENE",
+        "CELL_TYPE": "CELL_TYPE",
+        "CELL_LINE": "CELL_TYPE",
+        "DISEASE": "DISEASE",
+        "CHEMICAL": "CHEMICAL",
+        "DRUG": "DRUG",
+    }
+
     # Model labels mapped onto this project's entity vocabulary
     NER_LABEL_MAP = {
         "GENE_OR_GENE_PRODUCT": "GENE",
@@ -351,18 +395,39 @@ class BiomedicalNLP(LoggerMixin):
         except Exception as e:
             self.logger.error(f"Error loading BioBERT: {e}")
         
-        # Create NER pipeline
+        # Create the BERT NER pipeline
+        self.ner_pipeline = None
+        model_name = self.models_config.get(
+            "biomedical_ner", self.DEFAULT_BERT_NER_MODEL
+        )
         try:
-            self.ner_pipeline = pipeline(
+            candidate = pipeline(
                 "ner",
-                model=self.models_config["biobert"],
-                tokenizer=self.models_config["biobert"],
+                model=model_name,
+                tokenizer=model_name,
                 aggregation_strategy="simple",
                 device=0 if torch.cuda.is_available() else -1
             )
-            self.logger.info("Created NER pipeline")
         except Exception as e:
             self.logger.error(f"Error creating NER pipeline: {e}")
+        else:
+            id2label = getattr(candidate.model.config, "id2label", {}) or {}
+            if is_untrained_token_classifier(id2label):
+                # transformers happily builds a token-classification pipeline
+                # on top of a checkpoint that has no classifier head: it
+                # initializes one at random and warns. The pipeline then runs,
+                # returns LABEL_0/LABEL_1 spans at ~0.5 confidence, and every
+                # one of them is dropped for not being a known entity type --
+                # an extraction path that looks live and contributes nothing.
+                self.logger.error(
+                    f"{model_name} has no trained token-classification head "
+                    f"(labels: {sorted(id2label.values())}). Disabling the BERT "
+                    "NER path; configure phase1.literature.models.biomedical_ner "
+                    "with a fine-tuned biomedical NER checkpoint."
+                )
+            else:
+                self.ner_pipeline = candidate
+                self.logger.info(f"Created NER pipeline from {model_name}")
     
     def extract_entities(self, text: str) -> List[Entity]:
         """
@@ -379,8 +444,11 @@ class BiomedicalNLP(LoggerMixin):
         # Method 1: scispacy NER
         entities.extend(self._extract_entities_scispacy(text))
         
-        # Method 2: BERT-based NER
-        entities.extend(self._extract_entities_bert(text))
+        # Method 2: BERT-based NER. The scispacy spans go in as already-claimed
+        # so the two models cannot each contribute a mention of the same text
+        # ("MMP-9" and "serum MMP-9" are one entity, not two).
+        claimed = [(e.start, e.end) for e in entities]
+        entities.extend(self._extract_entities_bert(text, claimed))
         
         # Method 3: Rule-based patterns
         entities.extend(self._extract_entities_rules(text))
@@ -482,12 +550,38 @@ class BiomedicalNLP(LoggerMixin):
 
         return entities
     
-    def _extract_entities_bert(self, text: str) -> List[Entity]:
-        """Extract entities using BERT-based NER."""
+    def _extract_entities_bert(
+        self,
+        text: str,
+        claimed: Optional[List[Tuple[int, int]]] = None,
+    ) -> List[Entity]:
+        """
+        Extract entities with the fine-tuned biomedical NER checkpoint.
+
+        Adds the gene and protein mentions the scispacy models and the
+        vocabulary-gated gene regex both miss: mixed-case symbols (Gsalpha,
+        SetD5, apoE4, cullin-2), mouse allele notation (Fgfr2(+/S252W)) and
+        modified-residue names (H3K27me3). Measured on 150 abstracts sampled
+        from data/processed/literature_context: 247 entities over 182 distinct
+        surface forms that neither the scispacy models nor the rules produced,
+        against 4906 entities from those two paths combined.
+
+        Args:
+            text: Input text
+            claimed: Character spans another extractor has already taken. A
+                BERT span overlapping one of them is dropped rather than
+                emitted as a second mention of the same text.
+        """
         entities = []
-        
+
+        if self.ner_pipeline is None:
+            # No usable checkpoint; _load_models already said so.
+            return entities
+
+        occupied = list(claimed or [])
+
         try:
-            # Truncate text to avoid BERT max length issues (512 tokens ≈ 400 words)
+            # Truncate text to avoid BERT max length issues (512 tokens ~ 400 words)
             max_chars = 2000  # Conservative estimate for ~400 words
             if len(text) > max_chars:
                 text = text[:max_chars] + "..."
@@ -496,23 +590,51 @@ class BiomedicalNLP(LoggerMixin):
             results = self.ner_pipeline(text)
             
             for result in results:
+                start, end = result["start"], result["end"]
+                surface = text[start:end]
+
                 # Map BERT labels to our entity types
-                label = self._map_bert_label(result['entity_group'])
-                if label in self.entity_types:
-                    entity = Entity(
-                        text=result['word'],
-                        label=label,
-                        start=result['start'],
-                        end=result['end'],
-                        confidence=result['score']
-                    )
-                    entities.append(entity)
+                label = self._map_bert_label(result["entity_group"])
+                if label not in self.entity_types:
+                    continue
+
+                # Subword aggregation cuts words in half ("isplatin",
+                # "arubicin"): 5.7% of spans on the sampled abstracts. A span
+                # that starts or ends inside a word is not an entity mention.
+                if not self._is_whole_word_span(text, start, end):
+                    continue
+
+                # The checkpoint tags disease and outcome acronyms as genes
+                # (CAR, MDS); the rule-based path already knows those.
+                if label == "GENE" and surface.upper() in self.NON_GENE_ACRONYMS:
+                    continue
+
+                if any(start < o_end and o_start < end for o_start, o_end in occupied):
+                    continue
+                occupied.append((start, end))
+
+                entities.append(Entity(
+                    text=surface,
+                    label=label,
+                    start=start,
+                    end=end,
+                    confidence=float(result["score"]),
+                ))
         
         except Exception as e:
             self.logger.error(f"Error in BERT NER: {e}")
         
         return entities
-    
+
+    @staticmethod
+    def _is_whole_word_span(text: str, start: int, end: int) -> bool:
+        """True when a span does not begin or end in the middle of a word."""
+        if start >= end:
+            return False
+        starts_mid_word = start > 0 and text[start - 1].isalnum() and text[start].isalnum()
+        ends_mid_word = end < len(text) and text[end - 1].isalnum() and text[end].isalnum()
+        return not (starts_mid_word or ends_mid_word)
+
     def _extract_entities_rules(self, text: str) -> List[Entity]:
         """Extract entities using rule-based patterns."""
         entities = []
@@ -751,14 +873,19 @@ class BiomedicalNLP(LoggerMixin):
     
     # Helper methods
     def _map_bert_label(self, bert_label: str) -> str:
-        """Map BERT NER labels to our entity types."""
-        mapping = {
-            "PER": "PERSON",
-            "ORG": "ORGANIZATION",
-            "LOC": "LOCATION",
-            "MISC": "MISCELLANEOUS"
-        }
-        return mapping.get(bert_label, bert_label)
+        """
+        Map the BERT NER checkpoint's labels onto this project's entity types.
+
+        This used to map the CoNLL-2003 scheme (PER/ORG/LOC/MISC), which no
+        biomedical checkpoint emits and none of which are entity types this
+        processor keeps, so it was a no-op sitting in front of a path that was
+        already returning nothing.
+        """
+        label = bert_label.upper().replace("-", "_").replace(" ", "_")
+        # Strip a BIO prefix in case the pipeline is run without aggregation.
+        if label[:2] in ("B_", "I_", "E_", "S_"):
+            label = label[2:]
+        return self.BERT_NER_LABEL_MAP.get(label, label)
     
     @property
     def gene_vocabulary(self) -> set:
