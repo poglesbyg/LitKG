@@ -5,6 +5,45 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **A unit test overwrote the real literature-context cache.**
+  `ContextConfig(cache_dir=None)` meant "the default real location" rather than
+  "no cache", so a test that set fixture data and called `save()` destroyed a
+  2911-entity cache. `use_cache` is now a separate flag, `save()` is a no-op
+  when caching is off, and a test asserts a full suite run leaves the cache
+  directory untouched.
+
+  This is the same overloading fixed in `FeatureConfig` earlier the same day.
+  Fixing one and not checking its sibling is how it happened twice.
+
+- `LiteratureContextFetcher.gather` returned a renamed attribute, so a completed
+  fetch saved all its work and then raised `AttributeError` on the way out.
+
+### Documentation
+
+- **README status table now distinguishes "run on real data" from "synthetic
+  demo".** Several `make run-*` targets build `torch.randn` tensors and
+  hardcoded documents; they exercise a code path without saying anything about
+  whether it works on data. Verified by running every phase:
+
+  - Phase 1, chunking, KG preprocessing, entity linking, link prediction: real.
+  - `HybridGNNModel` (Phase 2, 1.8M params, cross-modal attention): synthetic
+    only. It has never been trained on `phase2_graph_data.json`; the measured
+    AUC 0.748 comes from the simpler model in `phase2/link_prediction.py`.
+  - Phase 3 discovery: synthetic only, 6 hardcoded relationships.
+  - RAG and agents: the library imports, constructs, links chunks to graph
+    nodes and answers -- verified directly -- but no script or CLI command runs
+    it, and `make run-langchain` uses hardcoded documents with raw FAISS.
+
+- Stale figures corrected: 276 -> 452 tests, and node/edge/link counts updated
+  to the CIVIC 01-Aug-2026 release.
+
+- Known limits now record that BERT NER fails on abstracts over ~512 tokens
+  (caught and logged, so the pipeline succeeds while that extractor
+  contributes nothing), and that ranking metrics are dominated by a few dozen
+  rows.
+
 ### Changed
 
 - **CIVIC data updated from the 01-Feb-2024 release to 01-Aug-2026**, and the

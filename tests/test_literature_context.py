@@ -74,7 +74,7 @@ class TestLeakageGuards:
             def read(handle):
                 return handle.payload
 
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._entrez = lambda: StubEntrez
         fetcher._throttle = lambda: None
         fetcher._search("BRAF")
@@ -104,7 +104,7 @@ class TestLeakageGuards:
             def read(handle):
                 return handle.payload
 
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._entrez = lambda: StubEntrez
         fetcher._throttle = lambda: None
         articles = fetcher._fetch_abstracts(["1", "2", "3"])
@@ -146,13 +146,13 @@ class TestCacheStoresRawAbstracts:
 
     def test_matcher_changes_need_no_refetch(self):
         """Sentences are derived on read, so the same cache serves both forms."""
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._loaded = True
         fetcher._abstracts = {"flt3 itd": ["FLT3-ITD confers poor prognosis in AML."]}
         assert fetcher.contexts_for_cached("FLT3 ITD")
 
     def test_cached_lookup_never_fetches(self):
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._loaded = True
         fetcher._abstracts = {}
         fetcher._search = lambda *a, **k: pytest.fail("must not fetch")
@@ -193,7 +193,7 @@ class TestContextText:
         A node with no retrieved sentences must degrade to the name-only
         feature, not to an empty string.
         """
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._loaded = True
         fetcher._abstracts = {"braf": ["BRAF drives melanoma in many patients."]}
         text = fetcher.context_text({"g1": "BRAF", "g2": "OBSCURE1"})
@@ -201,13 +201,13 @@ class TestContextText:
         assert text["g2"] == "OBSCURE1"
 
     def test_name_is_retained_alongside_context(self):
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._loaded = True
         fetcher._abstracts = {"braf": ["BRAF is a kinase implicated in melanoma."]}
         assert text_starts_with(fetcher.context_text({"g1": "BRAF"})["g1"], "BRAF")
 
     def test_coverage_counts_only_entities_with_sentences(self):
-        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
         fetcher._loaded = True
         fetcher._abstracts = {
             "braf": ["BRAF drives melanoma in many patients."],
@@ -235,3 +235,50 @@ def _article(text: str, year: int):
         "Abstract": {"AbstractText": [text]},
         "Journal": {"JournalIssue": {"PubDate": {"Year": str(year)}}},
     }}}
+
+
+class TestCacheIsolation:
+    """
+    A unit test overwrote the real 2911-entity cache by calling save() on a
+    fetcher configured with cache_dir=None, which meant "the default real
+    location" rather than "no cache". Tests must not be able to reach it.
+    """
+
+    def test_disabled_cache_has_no_path(self):
+        fetcher = LiteratureContextFetcher(
+            ContextConfig(cutoff_year=2016, use_cache=False)
+        )
+        assert fetcher._cache_path() is None
+
+    def test_save_is_a_noop_when_caching_is_disabled(self):
+        fetcher = LiteratureContextFetcher(
+            ContextConfig(cutoff_year=2016, use_cache=False)
+        )
+        fetcher._abstracts = {"braf": ["fixture"]}
+        fetcher.save()   # must not raise and must not write anywhere
+
+    def test_default_config_still_points_at_the_real_cache(self):
+        """The production path must keep working."""
+        path = LiteratureContextFetcher(ContextConfig(cutoff_year=2016))._cache_path()
+        assert path is not None and path.name == "abstracts_pre2016.json"
+
+
+class TestGatherReturnValue:
+    def test_gather_returns_the_abstract_cache(self):
+        """
+        Renaming the internal store left `gather` returning the old attribute,
+        so a completed fetch saved its work and then raised on the way out.
+        """
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
+        fetcher._loaded = True
+        fetcher._abstracts = {"braf": ["BRAF drives melanoma in many patients."]}
+        result = fetcher.gather([])
+        assert result is fetcher._abstracts
+
+    def test_gather_skips_names_already_cached(self):
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, use_cache=False))
+        fetcher._loaded = True
+        fetcher._abstracts = {"braf": ["A cached abstract about BRAF here."]}
+        fetcher._search = lambda *a, **k: pytest.fail("should not refetch BRAF")
+        fetcher.save = lambda: None
+        fetcher.gather(["BRAF"])

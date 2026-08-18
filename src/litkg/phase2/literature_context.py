@@ -46,12 +46,18 @@ class ContextConfig:
     max_articles: int = MAX_ARTICLES_PER_ENTITY
     max_contexts: int = MAX_CONTEXTS_PER_ENTITY
     min_year: int = 1990
+    # None means "the default location". use_cache=False disables persistence
+    # entirely. These are separate flags on purpose: overloading cache_dir=None
+    # to mean both "default" and "off" let a unit test's fixture data overwrite
+    # a real 2911-entity cache via save(). The same mistake was made in
+    # FeatureConfig; fixing one and not its sibling is how it happened twice.
     cache_dir: Optional[Path] = None
+    use_cache: bool = True
     email: str = "litkg@example.org"
     api_key: Optional[str] = None
 
     def __post_init__(self):
-        if self.cache_dir is None:
+        if self.use_cache and self.cache_dir is None:
             from litkg.utils.config import get_data_dir
             self.cache_dir = get_data_dir() / "processed" / "literature_context"
 
@@ -74,10 +80,12 @@ class LiteratureContextFetcher(LoggerMixin):
 
     # ------------------------------------------------------------------
 
-    def _cache_path(self) -> Path:
+    def _cache_path(self) -> Optional[Path]:
         # v2 stores retrieved abstracts rather than extracted sentences, so a
         # change to the matcher costs nothing instead of forcing a refetch of
         # every entity. Caching derived data was a mistake worth not repeating.
+        if not self.config.use_cache or self.config.cache_dir is None:
+            return None
         return (
             Path(self.config.cache_dir)
             / f"abstracts_pre{self.config.cutoff_year}.json"
@@ -87,7 +95,7 @@ class LiteratureContextFetcher(LoggerMixin):
         if self._loaded:
             return
         path = self._cache_path()
-        if path.exists():
+        if path and path.exists():
             try:
                 payload = json.loads(path.read_text())
                 if payload.get("cutoff_year") != self.config.cutoff_year:
@@ -104,6 +112,8 @@ class LiteratureContextFetcher(LoggerMixin):
 
     def save(self) -> None:
         path = self._cache_path()
+        if path is None:
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({
             "cutoff_year": self.config.cutoff_year,
@@ -223,8 +233,14 @@ class LiteratureContextFetcher(LoggerMixin):
                 break
         return sentences[: self.config.max_contexts]
 
-    def gather(self, names: Iterable[str], save_every: int = 25) -> Dict[str, List[str]]:
-        """Fetch contexts for many names, saving periodically so runs resume."""
+    def gather(
+        self, names: Iterable[str], save_every: int = 25
+    ) -> Dict[str, List[str]]:
+        """
+        Fetch abstracts for many names, saving periodically so runs resume.
+
+        Returns the abstract cache, keyed by lowercased entity name.
+        """
         self.load()
         pending = [n for n in dict.fromkeys(names) if n.strip().lower() not in self._abstracts]
         if pending:
@@ -238,7 +254,7 @@ class LiteratureContextFetcher(LoggerMixin):
                 self.save()
                 self.logger.info(f"  {index}/{len(pending)}")
         self.save()
-        return self._contexts
+        return self._abstracts
 
     def context_text(self, node_names: Dict[str, str]) -> Dict[str, str]:
         """
