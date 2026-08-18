@@ -1018,8 +1018,6 @@ class TestBertNERHead:
 
         # A base LM has no NER head no matter how biomedical it is.
         assert configured not in {
-            models.get("biobert"),
-            models.get("pubmedbert"),
             "dmis-lab/biobert-base-cased-v1.1",
             "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
         }, (
@@ -1055,17 +1053,11 @@ class TestBertNERHead:
         nlp.models_config = {
             "biomedical_ner": "some/base-lm",
             "scispacy_model": "en_core_sci_md",
-            "pubmedbert": "stub/pubmedbert",
-            "biobert": "stub/biobert",
         }
         nlp.nlp = object()
 
         with patch("litkg.phase1.literature_processor.pipeline", return_value=stub), \
-             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()), \
-             patch("litkg.phase1.literature_processor.AutoTokenizer"), \
-             patch("litkg.phase1.literature_processor.AutoModel"), \
-             patch("litkg.phase1.literature_processor.BertTokenizer"), \
-             patch("litkg.phase1.literature_processor.BertModel"):
+             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()):
             BiomedicalNLP._load_models(nlp)
 
         assert nlp.ner_pipeline is None, (
@@ -1102,16 +1094,10 @@ class TestBertNERHead:
         nlp.models_config = {
             "biomedical_ner": "alvaroalon2/biobert_genetic_ner",
             "scispacy_model": "en_core_sci_md",
-            "pubmedbert": "stub/pubmedbert",
-            "biobert": "stub/biobert",
         }
 
         with patch("litkg.phase1.literature_processor.pipeline", return_value=StubPipeline()), \
-             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()), \
-             patch("litkg.phase1.literature_processor.AutoTokenizer"), \
-             patch("litkg.phase1.literature_processor.AutoModel"), \
-             patch("litkg.phase1.literature_processor.BertTokenizer"), \
-             patch("litkg.phase1.literature_processor.BertModel"):
+             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()):
             BiomedicalNLP._load_models(nlp)
 
         assert nlp.ner_pipeline is not None
@@ -1200,6 +1186,109 @@ class TestBertNERHead:
         # scispacy already claimed "MMP-9" at 15-20
         assert nlp._extract_entities_bert(text, [(15, 20)]) == []
         assert len(nlp._extract_entities_bert(text, [(0, 8)])) == 1
+
+
+class TestEagerModelLoading:
+    """`_load_models` downloaded two encoders nothing ever read.
+
+    `self.pubmedbert_model` / `self.pubmedbert_tokenizer` (config key
+    `pubmedbert`) and `self.biobert_model` / `self.biobert_tokenizer` (config
+    key `biobert`) were assigned and referenced nowhere else in src/, scripts/
+    or tests/. Every run paid ~800MB of downloads and two model loads to
+    populate attributes no code path touched, and two config keys advertised
+    settings that changed nothing.
+    """
+
+    @pytest.fixture
+    def nlp(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        instance = BiomedicalNLP.__new__(BiomedicalNLP)
+        instance._gene_vocabulary = None
+        instance.ner_pipeline = None
+        return instance
+
+    def test_no_encoder_is_loaded_that_nothing_reads(self, nlp):
+        """_load_models used to download two encoders and never read them.
+
+        `self.pubmedbert_model` and `self.biobert_model` were assigned from
+        config and referenced nowhere else in src/, scripts/ or tests/ -- about
+        800MB fetched and two model loads paid on every run, for attributes no
+        code path touched. The encoders that are used pick their own
+        checkpoints in litkg.phase2.node_features and
+        litkg.models.huggingface_models.
+        """
+        import transformers
+        from litkg.phase1.literature_processor import BiomedicalNLP
+
+        class StubConfig:
+            id2label = {0: "B-GENETIC", 1: "I-GENETIC", 2: "O"}
+
+        class StubPipeline:
+            model = SimpleNamespace(config=StubConfig())
+            tokenizer = StubTokenizer()
+
+        nlp.models_config = {
+            "biomedical_ner": "alvaroalon2/biobert_genetic_ner",
+            "scispacy_model": "en_core_sci_md",
+        }
+
+        loaded = []
+
+        def record(name):
+            def from_pretrained(*args, **kwargs):
+                loaded.append(name)
+                return MagicMock()
+            return from_pretrained
+
+        with patch("litkg.phase1.literature_processor.pipeline", return_value=StubPipeline()), \
+             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()), \
+             patch.object(transformers.AutoModel, "from_pretrained", record("AutoModel")), \
+             patch.object(transformers.BertModel, "from_pretrained", record("BertModel")), \
+             patch.object(transformers.AutoTokenizer, "from_pretrained", record("AutoTokenizer")), \
+             patch.object(transformers.BertTokenizer, "from_pretrained", record("BertTokenizer")):
+            BiomedicalNLP._load_models(nlp)
+
+        assert not loaded, (
+            f"_load_models fetched {sorted(set(loaded))} outside the NER "
+            "pipeline; nothing reads those attributes"
+        )
+        for attribute in (
+            "pubmedbert_model", "pubmedbert_tokenizer",
+            "biobert_model", "biobert_tokenizer",
+        ):
+            assert not hasattr(nlp, attribute), (
+                f"{attribute} is set but never read"
+            )
+
+    def test_config_carries_no_model_key_nothing_reads(self):
+        """A config key that changes nothing is a trap for whoever edits it.
+
+        Matching on the bare key name is not enough: "biobert" also names an
+        unrelated entry in `litkg.models.huggingface_models.ModelRegistry`, so
+        a dead `biobert:` under `phase1.literature.models` would look read.
+        Only a lookup against `models_config` counts.
+        """
+        import yaml
+
+        root = Path(__file__).resolve().parents[1]
+        models = yaml.safe_load(
+            (root / "config" / "config.yaml").read_text()
+        )["phase1"]["literature"]["models"]
+
+        sources = "\n".join(
+            path.read_text() for path in (root / "src" / "litkg").rglob("*.py")
+        )
+        unread = [
+            key for key in models
+            if not re.search(
+                r"models_config\s*(?:\[|\.get\(\s*)['\"]" + re.escape(key) + r"['\"]",
+                sources,
+            )
+        ]
+        assert not unread, (
+            f"config keys under phase1.literature.models that nothing looks "
+            f"up: {sorted(unread)}"
+        )
 
 
 class TestClinicalEntityExtraction:

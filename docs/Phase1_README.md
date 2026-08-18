@@ -43,9 +43,9 @@ Phase 1 establishes the foundation for LitKG-Integrate by implementing three cor
 - Relation extraction using pattern-based and contextual methods
 - Confidence scoring for extracted information
 
-**Models Used**:
-- **PubMedBERT**: `microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext`
-- **BioBERT**: `dmis-lab/biobert-base-cased-v1.1`
+**Models Used** (phase 1 loads these and nothing else; the PubMedBERT and
+BioBERT *encoders* are loaded by `litkg.phase2.node_features` and
+`litkg.models.huggingface_models`, which choose their own checkpoints):
 - **Biomedical NER**: `alvaroalon2/biobert_genetic_ner` (BioBERT fine-tuned on
   JNLPBA/BC2GM). It must be a checkpoint with a trained token-classification
   head -- a base LM gets a randomly initialized one and emits `LABEL_0`/`LABEL_1`
