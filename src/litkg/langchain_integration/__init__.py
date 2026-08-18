@@ -48,12 +48,19 @@ from .rag_system import (
     GraphExpansionRetriever
 )
 
+from .pipeline import (
+    RAGPipeline,
+    PipelineConfig,
+)
+
 from .graph_linking import (
     EntityAliasIndex,
     ChunkGraphIndex
 )
 
 __all__ = [
+    "RAGPipeline",
+    "PipelineConfig",
     # Enhanced Literature Processing
     "LangChainLiteratureProcessor",
     "BiomedicalDocumentLoader",

@@ -239,3 +239,56 @@ Being explicit about what the package does *not* do:
 - Chunks are linked to graph nodes by **alias matching**, not by running the LLM extractor over every chunk. Alias matching is fast and deterministic; it will miss entities absent from the graph's vocabulary.
 - `KnowledgeGraphRetriever` matches query terms against node names by substring, without entity linking. A query saying "BRCA-1" will not match a node named `BRCA1` unless that surface form is a node alias.
 - Agent routing is keyword-based, not LLM-based. It is predictable and free, but will mis-route unusual phrasings.
+
+## Running it on real data
+
+`RAGPipeline` is the wiring between Phase 1 output and the retrieval stack.
+Before it existed the retrievers, chunk-to-graph index and agents were unit
+tested but unreachable from real data: `make run-langchain` built its own
+hardcoded documents and a bare FAISS index, so the graph-aware path was never
+exercised outside tests.
+
+```bash
+make run-phase1                 # produces the documents and graph
+make rag-coverage               # index stats, no LLM call
+make rag Q="Why are BRCA1 tumours sensitive to olaparib?"
+```
+
+On the bundled corpus: 80 documents, 81 chunks, **78 of 81 chunks (96%) link to
+the graph**, reaching 158 of 2971 nodes. Only linked chunks can seed graph
+expansion, so that link rate is what decides whether multi-hop does anything.
+
+### The hub problem
+
+Expansion is only useful if it follows meaningful edges. It does not by
+default, because the graph has generic hubs:
+
+| node | degree | linked from |
+|---|---|---|
+| `CIVIC:DISEASE:DOID:162` ("cancer") | 429 | 29 of 81 chunks |
+
+Walking through that node reaches 207 nodes in one hop and **824 in two** —
+28% of the graph. Every oncology passage becomes a neighbour of every other,
+and expansion returns unrelated cancer papers instead of following
+`BRCA1 → homologous recombination → PARP inhibitors`.
+
+`ChunkGraphIndex.neighbors` therefore caps traversal at
+`DEFAULT_MAX_TRAVERSAL_DEGREE` (50). This is a traversal rule, not a filter: a
+hub can still be *reached* and reported as evidence, it just cannot be walked
+*through*. Ordinary low-degree paths are unaffected.
+
+This is the same failure that `preferential_attachment` exposed in link
+prediction — on this graph, anything that can route through popularity will.
+
+### What it does and does not do
+
+The generated answers are grounded and cited. Asked why BRCA1 tumours are
+sensitive to olaparib, the system explains synthetic lethality and quotes the
+TBCRC 048 response rates and the OlympiA disease-free survival result, citing
+the passages it drew them from.
+
+Retrieval quality is **unmeasured**. On that question all five seed passages
+are on-target, but only about one in five graph-expanded passages is relevant
+even with the cap. There is no relevance-judged query set for this corpus, so
+that is an observation on a single question rather than a metric, and building
+one is the obvious prerequisite to tuning `k`, `max_hops` or the degree cap.

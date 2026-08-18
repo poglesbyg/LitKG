@@ -226,11 +226,23 @@ class ChunkGraphIndex(LoggerMixin):
             if uid in self.chunks
         ]
 
+    # Nodes above this degree are generic connectors rather than evidence
+    # links. On the CIVIC graph the worst offender is DOID:162 -- "cancer" --
+    # with degree 429, reached from 29 of 81 chunks: expanding through it walks
+    # to 207 nodes in one hop and 824 in two, so any oncology passage becomes a
+    # neighbour of any other and expansion returns unrelated cancer papers
+    # instead of following BRCA1 -> homologous recombination -> PARP.
+    #
+    # The cap is a traversal rule, not a filter: a hub can still be *reached*
+    # and reported as evidence, it just cannot be walked *through*.
+    DEFAULT_MAX_TRAVERSAL_DEGREE = 50
+
     def neighbors(
         self,
         graph: Any,
         node_ids: Iterable[str],
-        max_hops: int = 1
+        max_hops: int = 1,
+        max_traversal_degree: Optional[int] = None,
     ) -> Dict[str, int]:
         """
         Breadth-first walk from seed nodes.
@@ -239,17 +251,29 @@ class ChunkGraphIndex(LoggerMixin):
             graph: NetworkX graph to traverse.
             node_ids: Seed nodes.
             max_hops: How far to walk.
+            max_traversal_degree: Do not expand through nodes above this degree.
+                None uses DEFAULT_MAX_TRAVERSAL_DEGREE; 0 disables the cap.
 
         Returns:
             Reached node id -> hop distance, excluding the seeds themselves.
         """
+        if max_traversal_degree is None:
+            max_traversal_degree = self.DEFAULT_MAX_TRAVERSAL_DEGREE
+
         seeds = {n for n in node_ids if n in graph}
         distances: Dict[str, int] = {}
         frontier = set(seeds)
 
+        def degree(node: Any) -> int:
+            value = graph.degree(node)
+            return value if isinstance(value, int) else 0
+
         for hop in range(1, max_hops + 1):
             next_frontier: Set[str] = set()
             for node in frontier:
+                if max_traversal_degree and degree(node) > max_traversal_degree:
+                    # Reached, reportable, but not walked through.
+                    continue
                 # Works for directed graphs too: both directions are relevant
                 # when asking "what is this entity connected to?"
                 adjacent = set(graph.neighbors(node))
