@@ -44,6 +44,9 @@ def main() -> int:
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--loss", default="bpr", choices=["bpr", "bce"])
+    parser.add_argument("--literature-context", action="store_true",
+                        help="Use pre-cutoff PubMed context sentences as node text "
+                             "instead of names (run fetch_literature_context.py first)")
     parser.add_argument("--text-model", default=None,
                         help="Override the node-text encoder")
     parser.add_argument("--no-text-features", action="store_true",
@@ -68,6 +71,22 @@ def main() -> int:
 
     dated, backbone, node_types, node_text = load_dated_edges(civic_dir)
     split = build_temporal_split(dated, args.cutoff, backbone)
+
+    if args.literature_context:
+        from litkg.phase2.literature_context import (
+            ContextConfig,
+            LiteratureContextFetcher,
+        )
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=args.cutoff))
+        coverage = fetcher.coverage(node_text)
+        if coverage == 0.0:
+            print("No cached pre-cutoff contexts. Run:", file=sys.stderr)
+            print(f"  python scripts/fetch_literature_context.py "
+                  f"--cutoff {args.cutoff}", file=sys.stderr)
+            return 1
+        node_text = fetcher.context_text(node_text)
+        print(f"Literature context: {coverage:.1%} of nodes have pre-{args.cutoff} "
+              f"sentences; the rest fall back to their name")
 
     text_encoder = None
     if not args.no_text_features:

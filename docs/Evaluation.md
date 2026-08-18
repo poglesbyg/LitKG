@@ -1,5 +1,13 @@
 # Evaluation
 
+> **Data provenance.** All figures below are from the CIVIC **01-Aug-2026**
+> release (4878 evidence rows, 1992 variants, 973 features). Numbers reported
+> before this release came from 01-Feb-2024 and differ; the release is recorded
+> in `data/external/civic/RELEASE`. Change it with
+> `LITKG_CIVIC_RELEASE=nightly` (or another dated release) and re-run — the
+> default is pinned so a regression cannot be confused with a data update.
+
+
 Every figure this project reported before this harness existed was a count:
 how many nodes, how many edges, how many cross-modal links. Counts cannot
 distinguish *more* edges from *better* edges. This harness measures whether the
@@ -176,6 +184,24 @@ In rough order of expected return per unit of effort:
 4. **Reframe to a narrower task.** Ranking therapies for a given variant is
    better posed than open link prediction and the typed graph supports it.
 
+## Which cutoff to use
+
+The 01-Aug-2026 release carries citations through 2025, which makes later
+cutoffs viable. They are not equivalent problems:
+
+| cutoff | train pairs | test pairs | weighted_l3 AUC | hybrid AUC | hybrid H@100 |
+|---|---|---|---|---|---|
+| 2016 | 4913 | 1388 | 0.693 [0.679, 0.708] | 0.748 ± 0.009 | 0.073 |
+| 2020 | 6194 | 513 | 0.768 [0.747, 0.790] | **0.791 ± 0.008** | **0.131** |
+
+**2020 scores higher because it is an easier problem, not because the method
+improved.** It trains on 26% more pairs and predicts a smaller, denser test set.
+Quote the cutoff with any number, and compare methods only at the same cutoff.
+
+2016 remains the reference point for method comparisons in this document,
+because every earlier result was measured there. 2020 is the more realistic
+setting if the question is "what would this surface today".
+
 ## Trained models
 
 `python scripts/train_link_prediction.py --cutoff 2016 --seeds 5`
@@ -316,6 +342,72 @@ from the strings alone. `text_only` bounds that: **AUC 0.581, against 0.750 for
 the hybrid.** Text alone is far above the random floor but nowhere near
 topology, and it is only in combination that it earns its keep. The features
 help the model generalise across similar entities, not match substrings.
+
+### Literature context features do not work
+
+Node names carry no biology — "Imatinib" as a string says nothing about what it
+treats — so the obvious next step was to characterise each entity by the
+sentences it appears in. `litkg.phase2.literature_context` fetches pre-cutoff
+PubMed abstracts per entity, extracts mentioning sentences, and feeds the pooled
+embedding to the model in place of the name.
+
+**It does not work, and the way it fails is the interesting part.**
+
+Measured on the full 2016 test set, context looked like a large win over names:
+
+| text feature | AUC | AP |
+|---|---|---|
+| names | 0.562 [0.549, 0.577] | 0.108 |
+| context | **0.684 [0.668, 0.698]** | 0.193 |
+
+Disjoint intervals, +0.12 AUC, nearly matching the structural baseline. That
+number is an artefact.
+
+Coverage is partial, and nodes without context fall back to their name. That
+makes "has literature context" a feature in itself — and it is a popularity
+proxy:
+
+| | count | median degree |
+|---|---|---|
+| nodes with context | 697 | **6** |
+| nodes without | 1914 | **2** |
+
+A 3x degree difference, and the two groups' feature strings are 1677 versus 12
+characters, so a model can separate them trivially. Well-studied entities have
+more edges, and more edges means more held-out pairs.
+
+Restricting the evaluation to pairs where **both** endpoints have context
+removes the confound, since every node in that comparison is equally covered:
+
+| predictor | covered-only subset (750 positives) |
+|---|---|
+| weighted_l3 | 0.563 [0.542, 0.583] |
+| l3_paths | 0.547 [0.527, 0.565] |
+| names | 0.544 [0.522, 0.564] |
+| **context** | **0.485 [0.464, 0.506]** |
+
+Context lands **below chance**. The entire apparent gain was the availability
+signal, not the content. Every predictor scores lower on this subset because it
+is restricted to well-connected nodes where degree-matched negatives are
+genuinely comparable — which is the point of it.
+
+In the full hybrid, context also *hurts*: 0.737 ± 0.024 against 0.747 ± 0.009
+without text, with variance nearly tripled. A redundant, noisy popularity proxy
+on top of a model that already has log-degree as a feature.
+
+**Why it fails.** Mean-pooling a dozen sentences into one vector per entity
+describes what an entity is generally discussed alongside, not how it relates to
+any particular partner. An "average context" cannot encode that *this* drug
+treats *that* disease. Entity-level context is the wrong granularity.
+
+The plausible fix is pair-level: retrieve sentences mentioning **both**
+endpoints and score the pair from those, which is a co-mention feature rather
+than a node feature. That is a different design and is not implemented. Note it
+would need the same date discipline, and a co-mention in a pre-cutoff abstract
+is close to being the label itself — so it needs care, not just plumbing.
+
+The fetching machinery is sound and tested and the cache is reusable, so trying
+that costs the experiment, not the infrastructure.
 
 ### Cold start: coverage without much signal
 

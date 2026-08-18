@@ -7,6 +7,99 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Literature-context features, measured and rejected.** Entity names carry no
+  biology, so `litkg.phase2.literature_context` characterises each entity by
+  pre-cutoff PubMed sentences instead. On the full test set this looked like a
+  large win -- AUC 0.684 [0.668, 0.698] against 0.562 for names, disjoint
+  intervals.
+
+  **The gain was a confound.** Coverage is partial and uncovered nodes fall back
+  to their name, so "has literature context" becomes a feature -- and covered
+  nodes have median degree 6 against 2 for uncovered ones. Restricting the
+  comparison to pairs where both endpoints have context removes it, and context
+  then scores **0.485 [0.464, 0.506]**: below chance. In the hybrid it also
+  hurts, 0.737 +/- 0.024 against 0.747 +/- 0.009, with tripled variance.
+
+  Mean-pooling sentences per entity describes what an entity is discussed
+  alongside, not how it relates to a specific partner. Entity-level context is
+  the wrong granularity; a pair-level co-mention feature is the plausible fix
+  and is not implemented. The fetching machinery is kept -- it is sound, tested,
+  date-guarded and cached, so the next attempt costs an experiment rather than
+  the infrastructure.
+
+### Fixed
+
+- **A unit test overwrote the real literature-context cache.**
+  `ContextConfig(cache_dir=None)` meant "the default real location" rather than
+  "no cache", so a test that set fixture data and called `save()` destroyed a
+  2911-entity cache. `use_cache` is now a separate flag, `save()` is a no-op
+  when caching is off, and a test asserts a full suite run leaves the cache
+  directory untouched.
+
+  This is the same overloading fixed in `FeatureConfig` earlier the same day.
+  Fixing one and not checking its sibling is how it happened twice.
+
+- `LiteratureContextFetcher.gather` returned a renamed attribute, so a completed
+  fetch saved all its work and then raised `AttributeError` on the way out.
+
+### Documentation
+
+- **README status table now distinguishes "run on real data" from "synthetic
+  demo".** Several `make run-*` targets build `torch.randn` tensors and
+  hardcoded documents; they exercise a code path without saying anything about
+  whether it works on data. Verified by running every phase:
+
+  - Phase 1, chunking, KG preprocessing, entity linking, link prediction: real.
+  - `HybridGNNModel` (Phase 2, 1.8M params, cross-modal attention): synthetic
+    only. It has never been trained on `phase2_graph_data.json`; the measured
+    AUC 0.748 comes from the simpler model in `phase2/link_prediction.py`.
+  - Phase 3 discovery: synthetic only, 6 hardcoded relationships.
+  - RAG and agents: the library imports, constructs, links chunks to graph
+    nodes and answers -- verified directly -- but no script or CLI command runs
+    it, and `make run-langchain` uses hardcoded documents with raw FAISS.
+
+- Stale figures corrected: 276 -> 452 tests, and node/edge/link counts updated
+  to the CIVIC 01-Aug-2026 release.
+
+- Known limits now record that BERT NER fails on abstracts over ~512 tokens
+  (caught and logged, so the pipeline succeeds while that extractor
+  contributes nothing), and that ranking metrics are dominated by a few dozen
+  rows.
+
+### Changed
+
+- **CIVIC data updated from the 01-Feb-2024 release to 01-Aug-2026**, and the
+  release is now configurable rather than hard-coded into three URLs. The
+  default stays *pinned* to a dated release: a nightly build changes underneath
+  you, so a regression could not be told apart from a data update. Override
+  with `LITKG_CIVIC_RELEASE=nightly` or another release date. The active release
+  is recorded in `data/external/civic/RELEASE`.
+
+  Evidence grows 4254 -> 4878 rows, variants 1694 -> 1992, and distinct dated
+  pairs 6643 -> 6981. Citations now run to 2025, which makes later cutoffs
+  viable: the 2020 holdout has 513 test pairs against 116 before.
+
+  Releases from 2024 onward ship a *features* file rather than a genes file --
+  617 genes alongside 345 fusions, 8 factors and 3 regions. These were being
+  typed as genes, which would have put fusions into the vocabulary that
+  literature gene mentions resolve against; `feature_type` is now honoured.
+
+  Results at the comparable 2016 cutoff are unchanged (hybrid 0.748 +/- 0.009
+  against 0.750 on the old release), which is the reassuring outcome for a data
+  refresh. At the 2020 cutoff the hybrid reaches 0.791 +/- 0.008 with Hits@100
+  of 0.131 -- **higher because it is an easier problem**, training on 26% more
+  pairs against a smaller test set, not because the method improved.
+
+### Added
+
+- Schema verification on download. An earlier version of this code read
+  `drugs`, `variant_id` and `clinical_significance` from an evidence file that
+  had none of them and produced 4125 dangling edges in silence. A missing
+  required column is now an error at download time, not an empty string at
+  processing time.
+
+### Added
+
 - **Node text features** (`litkg.phase2.node_features`). Every predictor until
   now used topology alone, which cannot reach the 14% of held-out pairs whose
   endpoints have no path between them. Node display names are embedded and fed

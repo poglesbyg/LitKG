@@ -3,6 +3,7 @@ Tests for Phase 1 components (literature processing, KG preprocessing, entity li
 """
 
 import pytest
+import re
 import numpy as np
 import pandas as pd
 from unittest.mock import Mock, patch, MagicMock
@@ -1164,3 +1165,71 @@ class TestEntityNormalization:
     def test_pure_descriptors_are_still_stripped(self, matcher, descriptor):
         """"BRCA1 gene" is BRCA1; that match is the point of normalizing."""
         assert matcher.calculate_similarity("BRCA1", f"BRCA1 {descriptor}") == 1.0
+
+
+class TestCivicRelease:
+    """
+    CIVIC renames columns across releases. An earlier version of this code read
+    'drugs', 'variant_id' and 'clinical_significance' from an evidence file with
+    none of them and produced 4125 dangling edges in silence, so a schema
+    mismatch must now fail loudly.
+    """
+
+    @pytest.fixture
+    def processor(self):
+        from litkg.utils.config import load_config
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        return CivicProcessor(load_config())
+
+    def test_release_is_pinned_not_nightly(self):
+        """
+        A nightly build changes underneath you, so a regression cannot be
+        distinguished from a data update. The default must be a dated release.
+        """
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        assert CivicProcessor.DEFAULT_RELEASE.lower() != "nightly"
+        assert re.match(r"\d{2}-[A-Z][a-z]{2}-\d{4}$", CivicProcessor.DEFAULT_RELEASE)
+
+    def test_dated_release_urls_repeat_the_date(self, processor):
+        urls = processor.download_urls("01-Aug-2026")
+        assert all("/01-Aug-2026/01-Aug-2026-" in u for u in urls.values())
+        assert set(urls) == {"variants", "evidence", "genes"}
+
+    def test_nightly_release_is_selectable(self, processor):
+        urls = processor.download_urls("nightly")
+        assert all("/nightly/nightly-" in u for u in urls.values())
+
+    def test_release_can_be_overridden_by_environment(self, processor, monkeypatch):
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        monkeypatch.setenv("LITKG_CIVIC_RELEASE", "nightly")
+        assert CivicProcessor.release() == "nightly"
+
+    def test_schema_check_rejects_a_missing_column(self, processor, tmp_path):
+        path = tmp_path / "bad.tsv"
+        path.write_text("evidence_id\tdisease\n1\tMelanoma\n")
+        with pytest.raises(ValueError, match="missing required columns"):
+            processor._verify_schema("evidence", path)
+
+    def test_schema_check_accepts_the_shipped_files(self, processor):
+        from litkg.utils.config import get_data_dir
+        directory = get_data_dir() / "external" / "civic"
+        for kind in ("evidence", "variants", "genes"):
+            path = directory / f"civic_{kind}.tsv"
+            if not path.exists():
+                pytest.skip("CIVIC data not downloaded")
+            processor._verify_schema(kind, path)
+
+    def test_fusions_are_not_typed_as_genes(self):
+        """
+        Releases from 2024 on ship a features file: 617 genes alongside 345
+        fusions. Typing a fusion as a gene would put it in the vocabulary
+        literature gene mentions resolve against.
+        """
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        assert CivicProcessor.FEATURE_TYPES["FUSION"] == "FUSION"
+        assert CivicProcessor.FEATURE_TYPES["GENE"] == "GENE"
+
+    def test_unknown_feature_type_falls_back_to_gene(self):
+        """Older releases have no feature_type column at all."""
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        assert CivicProcessor.FEATURE_TYPES.get("", "GENE") == "GENE"

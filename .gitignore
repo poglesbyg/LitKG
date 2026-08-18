@@ -202,6 +202,11 @@ data/processed/*.pkl
 data/processed/*.csv
 data/processed/*.tsv
 data/processed/*.gpickle
+# Derived caches live in subdirectories, which the patterns above do not reach:
+# a 14MB embedding cache and a 10MB abstract cache were committed before this
+# was added. Both are rebuilt on demand and neither belongs in the repository.
+data/processed/text_features/
+data/processed/literature_context/
 !data/processed/.gitkeep
 
 # Vector stores are rebuilt from source documents at runtime

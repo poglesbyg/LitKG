@@ -22,21 +22,32 @@ The payoff is multi-hop questions. Asked *"why are BRCA1 tumours sensitive to ol
 
 ## Status
 
-| Component | State | Notes |
+The distinction that matters here is whether a component has been **run on the
+real graph** or only demonstrated on synthetic inputs. Several `make run-*`
+targets construct `torch.randn` tensors and hardcoded documents; they exercise
+the code path but say nothing about whether it works on data.
+
+| Component | State | Evidence |
 |---|---|---|
-| Literature processing | Working | PubMed retrieval, biomedical NER, relation extraction |
-| Chunking | Working | Section-aware, sentence-safe, token-sized, with overlap |
-| KG preprocessing | Working | CIVIC/TCGA/CPTAC ingestion, entity resolution cascade |
-| Entity linking | Working | Fuzzy, semantic, and contextual disambiguation |
-| Hybrid GNN (Phase 2) | Working | Cross-modal attention, trains end to end |
-| Discovery (Phase 3) | Working | Novelty detection, hypothesis generation, validation |
-| RAG + agents | Working | Local-first, cited answers, multi-hop retrieval |
-| Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source for real coverage |
-| Cross-modal linking | **Limited** | 100 literature↔KG links on sample data |
+| Literature processing | **Real data** | `make run-phase1`: PubMed retrieval, typed NER, relation extraction |
+| Chunking | **Real data** | Section-aware, sentence-safe, token-sized, with overlap |
+| KG preprocessing | **Real data** | CIVIC 01-Aug-2026 ingestion, entity resolution cascade |
+| Entity linking | **Real data** | 152 literature↔KG links |
+| Link prediction | **Real data, measured** | `make train-lp`: AUC 0.748 ± 0.009 vs 0.687 structural baseline |
+| Hybrid GNN (Phase 2) | **Synthetic demo only** | `HybridGNNModel` (1.8M params) instantiates and a training loop runs on `torch.randn`; it has never been trained on `phase2_graph_data.json` |
+| Discovery (Phase 3) | **Synthetic demo only** | Runs on 6 hardcoded relationships |
+| RAG + agents | **Library, not wired** | Modules import, construct and answer; unit-tested. But no script or CLI command runs them — `make run-langchain` uses hardcoded documents and raw FAISS instead |
+| Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
-**276 tests pass**, enforced by CI on every push and pull request.
+**452 tests pass**, enforced by CI on every push and pull request.
 
-Numbers below come from `make run-phase1` on the bundled sample data: 2084 nodes, 6003 edges, 75.2% high-confidence linking rate.
+The two "synthetic demo" rows are the honest gap: those demos each print their
+own "Next Steps: 1. Prepare real data" on completion. The measured link
+prediction result comes from a separate, simpler model in
+`litkg/phase2/link_prediction.py`, not from `HybridGNNModel`.
+
+Numbers from `make run-phase1` on the bundled sample data with the CIVIC
+01-Aug-2026 release: 3822 nodes, 14810 edges, 152 cross-modal links.
 
 ## Install
 
@@ -82,6 +93,11 @@ make run-langchain   # RAG and agent demo
 ```
 
 ### Asking questions over your corpus
+
+> The API below works — imports, construction and `answer()` are unit-tested and
+> verified against a real graph. What does not exist is a script that wires it
+> to the Phase 1 output, so you have to assemble the vector store and graph
+> yourself. `make run-langchain` does **not** exercise this path.
 
 ```python
 from litkg.langchain_integration import (
@@ -139,6 +155,7 @@ kg.save_integrated_graph("data/processed/kg.json")
 | [docs/Phase3_README.md](docs/Phase3_README.md) | Confidence, novelty, hypotheses, validation |
 | [docs/RAG_and_Agents.md](docs/RAG_and_Agents.md) | Retrievers, chunking, chunk↔graph linkage |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, conventions |
+| [docs/Evaluation.md](docs/Evaluation.md) | Temporal holdout, baselines, what is and isn't measured |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and when |
 
 ## Known limits
@@ -147,8 +164,11 @@ Stated plainly, because they affect how far you should trust output:
 
 - **Ontology coverage is thin.** Entity resolution's strongest rule matches on UMLS CUIs, but the bundled seed carries only six real CUIs. It fires zero times on sample data. Set `UMLS_API_KEY` for real coverage. Fabricated CUIs were deliberately not added: a wrong shared CUI silently merges two distinct entities while looking authoritative.
 - **Literature support classification is a heuristic.** `LiteratureCrossValidator` judges support by scanning for contradiction cues ("no association", "failed to") in title and abstract. It is not entailment, and it does not read full text.
-- **Entity resolution gains are modest on sample data.** The cascade merges 447 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
-- **Link prediction is measured, and a trained model now beats the structural baseline.** Under a temporal holdout (train on pre-2016 papers) with popularity controlled for, a GNN ensemble with node text features reaches AUC 0.750 [95% CI 0.736–0.763] against 0.692 [0.677–0.707] for length-3 paths alone and 0.540 for Adamic-Adar — disjoint intervals. Text features are worth +0.020 AUC over topology alone across 8 seeds, with non-overlapping ranges. The graph is strictly multipartite (0 of 6769 edges join same-type nodes) and every held-out pair is cross-type, so shared-neighbour methods are undefined on it by construction. Ranking quality is still poor — about 10% of held-out associations reach the top 100 — so this is signal, not a working discovery system. Results are reported per entity-type pair, since the aggregate averages four subproblems whose AUC ranges from 0.638 to 0.802, and every metric carries a bootstrap interval because MRR here is set by a couple dozen rows. See [docs/Evaluation.md](docs/Evaluation.md).
+- **Entity resolution gains are modest on sample data.** The cascade merges 453 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
+- **The headline Phase 2 architecture is unvalidated.** `HybridGNNModel` and its cross-modal attention have only ever seen random tensors. The link prediction numbers quoted above come from a different, much simpler model.
+- **BERT NER fails on long abstracts.** Phase 1 logs `size of tensor a (543) must match tensor b (512)` for any abstract over ~512 tokens. The error is caught and the pipeline falls back to other extractors, so it succeeds — but one component silently contributes nothing on long documents.
+- **Ranking metrics are noisy.** Each positive is ranked against ~12000 negatives, so MRR is set by a couple of dozen rows and its confidence interval is about as wide as its value. Compare intervals, and prefer Hits@100. See [docs/Evaluation.md](docs/Evaluation.md).
+- **Link prediction is measured, and a trained model now beats the structural baseline.** Under a temporal holdout (train on pre-2016 papers) with popularity controlled for, a GNN ensemble with node text features reaches AUC 0.748 ± 0.009 at a 2016 cutoff and 0.791 ± 0.008 at 2020 against 0.687 [0.674–0.702] for length-3 paths alone and 0.543 for Adamic-Adar at 2016 — disjoint intervals. Figures are from the CIVIC 01-Aug-2026 release; later cutoffs score higher because they are easier problems, not better methods. Text features are worth +0.020 AUC over topology alone across 8 seeds, with non-overlapping ranges. The graph is strictly multipartite (0 of 6769 edges join same-type nodes) and every held-out pair is cross-type, so shared-neighbour methods are undefined on it by construction. Ranking quality is still poor — about 10% of held-out associations reach the top 100 — so this is signal, not a working discovery system. Results are reported per entity-type pair, since the aggregate averages four subproblems whose AUC ranges from 0.638 to 0.802, and every metric carries a bootstrap interval because MRR here is set by a couple dozen rows. See [docs/Evaluation.md](docs/Evaluation.md).
 - **Cross-modal linking is still the weak point,** at 167 literature↔KG links against 2367 unlinked literature entities — though disease↔disease and chemical↔drug links now exist, which the gene-only KG made impossible. Cell types, tissues and organisms still have no KG counterpart; closing that needs a source beyond CIVIC.
 - **Blocking trades recall for cost.** The fuzzy matching pass blocks candidates by entity type and first character, so pairs like `BRCA1`/`RCA1` are never compared.
 - **`biomedical_score` values are hand-assigned.** Model rankings in `ModelSelector` are informed estimates, not benchmark results.
