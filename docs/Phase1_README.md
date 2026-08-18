@@ -246,12 +246,31 @@ for this corpus yet.
 | Metric | Value |
 |---|---|
 | Documents processed | 100 |
-| Graph size | 2084 nodes, 5925 edges |
+| Graph size | 2084 nodes, 6003 edges |
 | Entities merged by resolution | 447 |
 | High-confidence linking rate | 75.2% |
 | Cross-modal entities (literature ↔ KG) | 100 |
 | Novel literature entities | 1000 |
 | Literature entities (resolved from 1504 mentions) | 309 |
+| Literature relations extracted | 78 |
+
+### Relation extraction
+
+Relations are found by looking for trigger phrases in the span *between* two
+known entities.
+
+The earlier implementation matched regexes whose capture groups had to coincide
+with entity text, which required both entities to be single words directly
+adjacent to the trigger verb. Real prose rarely obliges: "BRCA1 mutations are
+associated with breast cancer" captured `("are", "breast")`, neither an entity,
+so every candidate was discarded — **zero relations across all 100 documents**.
+
+Working from the between-span removes that coupling. Triggers cover TREATS,
+CAUSES, INHIBITS, ACTIVATES, MUTATED_IN, EXPRESSED_IN, INTERACTS_WITH,
+ASSOCIATED_WITH, SENSITIZES_TO, RESISTANT_TO and PREDICTS. Passive forms
+reverse direction ("A treated with B" means B treats A), negated spans are
+skipped, distant pairs are rejected, and confidence falls with trigger
+distance.
 
 ### Literature entity resolution
 
@@ -287,11 +306,17 @@ healthier: previously the linker only attempted the handful of trivially exact
 variant strings. It now attempts real gene matches, which are more numerous and
 less certain.
 
-**Literature relation extraction yields nothing.** All 100 documents produce
-zero relations, so the resolved literature entities have no edges among
-themselves and connect only to the knowledge graph. This predates resolution —
-the edge count fell purely from entity-link aggregation — but it means the
-literature encoder currently sees an edgeless node set.
+**NER typing is unreliable, and now bounds relation precision.** All 78
+extracted relations have GENE→GENE endpoints, because the tagger labels
+diseases ("ALL", "NSCLC", "TNBC"), outcomes ("PFS") and therapies ("CAR") as
+genes. That produces plausible relations stated over mistyped entities
+(`CAR -TREATS-> ALL` is semantically right; both are typed GENE) alongside
+nonsense (`ALK -TREATS-> PFS`).
+
+Type constraints are the obvious filter and were deliberately **not** added:
+they would key off entity type, the very signal that is broken, deleting 65 of
+78 relations while looking like a precision improvement. Fixing NER typing
+comes first.
 
 **The ontology rule fires zero times on this data.** It is correct and
 unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
