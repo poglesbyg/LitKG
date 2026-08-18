@@ -7,6 +7,33 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **`L3PathPredictor` baseline**, and it changes the project's headline result.
+  The CIVIC graph is strictly multipartite — 0 of 6769 edges join same-type
+  nodes — and 100% of held-out pairs are cross-type, so shared-neighbour
+  predictors are undefined on it rather than weak. Counting degree-normalised
+  length-3 paths on the same split with the same negatives raises AUC from
+  0.543 to 0.692 and average precision from 0.107 to 0.204, with no new data.
+  The harness now reports `same_type_edge_ratio` and warns when a graph is
+  multipartite, so this cannot be misread again.
+
+### Fixed
+
+- **`sample_negatives` crashed on positive endpoints absent from the training
+  graph.** networkx returns a `DegreeView` rather than raising for a node it
+  does not contain, so degree-matched sampling failed with a confusing
+  `TypeError`. Callers that filter cold-start pairs never hit this; callers
+  constructing a split directly did.
+
+### Changed
+
+- `docs/Evaluation.md` previously concluded the graph was "too sparse for
+  topological link prediction". That was a measurement artefact of using
+  length-2 predictors on a multipartite graph, and has been corrected along
+  with the guidance that followed from it — a GNN is now worth trying, with
+  0.692 as the number it must beat.
+
+### Added
+
 - **Evaluation harness for link prediction** (`litkg.evaluation`, `make
   evaluate`). Splits knowledge graph edges on the publication year of the
   supporting paper, scores structural baselines, and reports AUC, average

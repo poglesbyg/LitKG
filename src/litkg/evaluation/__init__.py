@@ -16,6 +16,7 @@ from litkg.evaluation.temporal_split import (
 from litkg.evaluation.baselines import (
     LinkPredictor,
     AdamicAdarPredictor,
+    L3PathPredictor,
     CommonNeighborsPredictor,
     JaccardPredictor,
     PreferentialAttachmentPredictor,
@@ -40,6 +41,7 @@ __all__ = [
     "extract_publication_year",
     "LinkPredictor",
     "AdamicAdarPredictor",
+    "L3PathPredictor",
     "CommonNeighborsPredictor",
     "JaccardPredictor",
     "PreferentialAttachmentPredictor",

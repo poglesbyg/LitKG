@@ -6,9 +6,12 @@ distinguish *more* edges from *better* edges. This harness measures whether the
 graph supports predicting associations that were not known when the training
 data was assembled.
 
-The headline result is negative, and worth stating plainly: **the knowledge
-graph as currently built does not support topological link prediction.** The
-harness is what makes that statement possible.
+The first result looked negative and was, in part, a measurement artefact.
+Corrected: **the graph does carry structural signal — AUC 0.692 — but only for
+predictors matched to its topology.** The initial reading of "too sparse for
+link prediction" came from using shared-neighbour methods that are undefined on
+this graph by construction. The harness is what made both the wrong conclusion
+and its correction visible.
 
 ## Running it
 
@@ -100,50 +103,78 @@ Temporal holdout at 2016, degree-matched, 10 negatives per positive:
 ```
 predictor                      AUC      AP     H@1     H@5    H@10     MRR
 --------------------------------------------------------------------------
-jaccard                      0.544   0.115   0.000   0.000   0.001   0.001
-adamic_adar                  0.543   0.106   0.000   0.000   0.001   0.001
-common_neighbors             0.542   0.105   0.000   0.000   0.001   0.001
+l3_paths                     0.692   0.204   0.002   0.002   0.016   0.005
+jaccard                      0.544   0.117   0.000   0.001   0.002   0.002
+adamic_adar                  0.543   0.107   0.000   0.000   0.001   0.001
+common_neighbors             0.543   0.106   0.000   0.000   0.001   0.001
 preferential_attachment      0.511   0.097   0.000   0.001   0.003   0.001
 random                       0.498   0.092   0.000   0.000   0.002   0.001
 ```
 
-Stable across cutoffs — Adamic-Adar 0.536 (2012), 0.547 (2014), 0.543 (2016),
-0.558 (2018), against a random floor of 0.504–0.510.
+## Why shared-neighbour methods fail here
 
-## Why the numbers are this low
+**The graph is strictly multipartite: 0 of its 6769 edges join two nodes of the
+same type, and 100% of held-out pairs are cross-type** (mutation–disease,
+drug–mutation, disease–drug, mutation–phenotype).
 
-**84.6% of test pairs share no neighbour with each other in the training
-graph.** Adamic-Adar, common neighbours and Jaccard all return exactly 0.0 for
-such a pair. They are not ranking those pairs badly — they cannot rank them at
-all. That is why Hits@1 is 0.000 across every predictor while AUC still reads
-above 0.5: AUC is computed over a distribution dominated by ties, and the head
-of the ranking, which is what anyone would actually look at, is empty.
+In a multipartite graph, two nodes of different types can share a neighbour
+only through some third type adjacent to both. That is rare, so Adamic-Adar,
+common neighbours and Jaccard return near-zero for 84.6% of test pairs. They
+are not measuring a weak graph — they are undefined on it.
 
-The training graph is 2613 nodes and 6769 edges with a median degree of 3 and
-average clustering of 0.185. It is close to bipartite in practice — variants
-attach to diseases and therapies with little of the triangle structure that
-shared-neighbour prediction requires.
+Cross-type nodes in such a graph meet at *odd* distance. Of the uncovered test
+pairs, most sit at distance 3 and only 14% are unreachable at all: the
+connectivity is there, one hop beyond what a length-2 method can see.
 
-The harness reports this itself as `structural_coverage` and emits a warning
-below 50%, because a metric that is undefined for most of the test set should
-say so rather than be read as a weak result.
+`l3_paths` counts length-3 paths, normalising by the degrees of both
+intermediates so hub routes count for less. Same graph, same split, same
+negatives — AUC 0.543 → 0.692, average precision 0.107 → 0.204. The gain came
+from matching the predictor to the topology, not from new data.
+
+This is why `preferential_attachment` is kept as a control and why the harness
+now reports `same_type_edge_ratio` and warns when the graph is multipartite. A
+harness that only reported Adamic-Adar would have said this graph was useless.
+
+## Does more data help?
+
+Subsampling the training edges, holding the test set fixed, with `l3_paths`:
+
+| Training edges | AUC | AP | Hits@10 |
+|---|---|---|---|
+| 2967 (25%) | 0.588 | 0.153 | 0.000 |
+| 4235 (50%) | 0.653 | 0.180 | 0.000 |
+| 5503 (75%) | 0.683 | 0.201 | 0.001 |
+| 6772 (100%) | 0.689 | 0.207 | 0.022 |
+
+AUC is decelerating hard — +0.065, +0.030, +0.006 across the quartiles — so
+more edges of the same kind buy progressively less discrimination. But
+**Hits@10 is still climbing steeply** at full data, which is the metric that
+describes the top of the ranking anyone would actually read.
+
+Read together: more data is not the fastest route to better AUC, but the
+ranking head is still data-limited. Predictor choice was worth +0.149 AUC for
+free; the next tranche of data is worth considerably less than that.
 
 ## What this implies
 
-Adding a GNN will not fix this on its own. Message passing propagates over the
-same sparse topology; if 85% of target pairs have no shared neighbour, there
-is no path of length two to propagate along. The plausible directions are:
+A GNN is now worth trying, which the earlier reading wrongly ruled out. A
+two-layer network aggregates over a 2-hop neighbourhood, which is exactly the
+length-3 reach that works here — `l3_paths` is close to what an untrained
+2-layer GNN computes, so 0.692 is the number a trained model has to beat to
+justify itself.
 
-1. **Densify the graph.** More relations per node — more literature, more
-   sources — is the direct attack on structural coverage.
-2. **Use features, not topology.** Node attributes (name and description
-   embeddings, sequence or structure features) can score pairs that share no
-   neighbours. This is where a learned model would earn its complexity.
-3. **Reframe the task.** Ranking therapies for a given variant is a smaller,
-   better-posed problem than open link prediction, and the type-annotated
-   graph now supports it.
+In rough order of expected return per unit of effort:
 
-Any of these is testable with this harness, which is the point of it.
+1. **Beat 0.692 with a trained model.** The baseline is now honest and the
+   target is concrete. A GNN that lands at 0.65 is not "promising" — it is
+   losing to arithmetic.
+2. **Use node features.** Nothing so far uses entity names, descriptions or
+   sequence data. Features can score the 14% of pairs that are topologically
+   unreachable, which no amount of path counting will reach.
+3. **Densify where the head is thin.** Hits@10 is still data-limited even as
+   AUC saturates, so more edges should be judged on ranking quality, not AUC.
+4. **Reframe to a narrower task.** Ranking therapies for a given variant is
+   better posed than open link prediction and the typed graph supports it.
 
 ## Adding a predictor
 
