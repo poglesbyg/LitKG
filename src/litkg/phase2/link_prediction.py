@@ -60,6 +60,9 @@ class TrainingConfig:
     # same pair. num_bases keeps the parameter count sane on 11 relations.
     relational: bool = False
     num_bases: int = 8
+    # Text features are projected down rather than concatenated raw: a 384-dim
+    # embedding would otherwise dominate the learned node embedding.
+    text_feature_dim: int = 64
 
 
 class RelationalGNNEncoder(nn.Module):
@@ -82,12 +85,19 @@ class RelationalGNNEncoder(nn.Module):
         num_types: int,
         num_relations: int,
         config: TrainingConfig,
+        text_dim: int = 0,
     ):
         super().__init__()
         self.embedding = nn.Embedding(num_nodes, config.embedding_dim)
         nn.init.xavier_uniform_(self.embedding.weight)
 
-        input_dim = config.embedding_dim + num_types + 1
+        self.text_projection = (
+            nn.Linear(text_dim, config.text_feature_dim) if text_dim else None
+        )
+        input_dim = (
+            config.embedding_dim + num_types + 1
+            + (config.text_feature_dim if text_dim else 0)
+        )
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         dim = input_dim
@@ -108,8 +118,12 @@ class RelationalGNNEncoder(nn.Module):
         static_features: torch.Tensor,
         edge_index: torch.Tensor,
         edge_type: torch.Tensor,
+        text_features: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        x = torch.cat([self.embedding(node_ids), static_features], dim=1)
+        parts = [self.embedding(node_ids), static_features]
+        if self.text_projection is not None and text_features is not None:
+            parts.append(self.text_projection(text_features))
+        x = torch.cat(parts, dim=1)
         for conv, norm in zip(self.convs, self.norms):
             x = conv(x, edge_index, edge_type)
             x = norm(x)
@@ -134,12 +148,18 @@ class GNNEncoder(nn.Module):
         num_nodes: int,
         num_types: int,
         config: TrainingConfig,
+        text_dim: int = 0,
     ):
         super().__init__()
         self.embedding = nn.Embedding(num_nodes, config.embedding_dim)
         nn.init.xavier_uniform_(self.embedding.weight)
 
-        input_dim = config.embedding_dim + num_types + 1
+        self.text_projection = (
+            nn.Linear(text_dim, config.text_feature_dim) if text_dim else None
+        )
+        extra = config.text_feature_dim if text_dim else 0
+
+        input_dim = config.embedding_dim + num_types + 1 + extra
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         dim = input_dim
@@ -155,8 +175,12 @@ class GNNEncoder(nn.Module):
         node_ids: torch.Tensor,
         static_features: torch.Tensor,
         edge_index: torch.Tensor,
+        text_features: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        x = torch.cat([self.embedding(node_ids), static_features], dim=1)
+        parts = [self.embedding(node_ids), static_features]
+        if self.text_projection is not None and text_features is not None:
+            parts.append(self.text_projection(text_features))
+        x = torch.cat(parts, dim=1)
         for conv, norm in zip(self.convs, self.norms):
             x = conv(x, edge_index)
             x = norm(x)
@@ -207,11 +231,17 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         node_types: Optional[Dict[str, str]] = None,
         edge_years: Optional[Dict[Edge, int]] = None,
         edge_predicates: Optional[Dict[Edge, str]] = None,
+        node_text: Optional[Dict[str, str]] = None,
+        text_encoder: Optional[Any] = None,
     ):
         self.config = config or TrainingConfig()
         self.node_types = node_types or {}
         # Dominant predicate per pair, from pre-cutoff evidence only.
         self.edge_predicates = edge_predicates or {}
+        # Display names per node. Static metadata, so no temporal leak.
+        self.node_text = node_text or {}
+        self.text_encoder = None
+        self.text_encoder = text_encoder
         # Publication years let validation mirror the test distribution. With a
         # random validation split, early stopping selects against an easier
         # problem than the one being measured -- validation AUC lands near 0.91
@@ -243,6 +273,23 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
             features[i, self.type_index[self.node_types.get(node, "UNKNOWN")]] = 1.0
             features[i, -1] = math.log1p(graph.degree(node))
         self.static_features = features.to(self.device)
+
+        # Text features, aligned to the same node ordering. A node without a
+        # name gets zeros rather than being dropped.
+        self.text_features = None
+        if self.node_text:
+            from litkg.phase2.node_features import NodeTextEncoder
+
+            encoder = self.text_encoder or NodeTextEncoder()
+            known = {n: self.node_text[n] for n in self.nodes if n in self.node_text}
+            vectors = encoder.encode_nodes(known)
+            if vectors:
+                width = len(next(iter(vectors.values())))
+                matrix = np.zeros((len(self.nodes), width), dtype=np.float32)
+                for node, i in self.node_index.items():
+                    if node in vectors:
+                        matrix[i] = vectors[node]
+                self.text_features = torch.tensor(matrix, device=self.device)
 
         self.node_ids = torch.arange(len(self.nodes), device=self.device)
 
@@ -302,9 +349,12 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         """Relation ids are only passed to an encoder that can use them."""
         if self.config.relational:
             return self.encoder(
-                self.node_ids, self.static_features, edge_index, edge_type
+                self.node_ids, self.static_features, edge_index, edge_type,
+                self.text_features,
             )
-        return self.encoder(self.node_ids, self.static_features, edge_index)
+        return self.encoder(
+            self.node_ids, self.static_features, edge_index, self.text_features
+        )
 
     def _sample_negatives(
         self, positives: Sequence[Tuple[int, int]], rng: random.Random
@@ -373,14 +423,15 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         ]
         validation_negatives = self._sample_negatives(validation_pairs, random.Random(1234))
 
+        text_dim = self.text_features.shape[1] if self.text_features is not None else 0
         if config.relational:
             self.encoder = RelationalGNNEncoder(
                 len(self.nodes), len(self.type_index),
-                len(self.relation_index), config,
+                len(self.relation_index), config, text_dim=text_dim,
             ).to(self.device)
         else:
             self.encoder = GNNEncoder(
-                len(self.nodes), len(self.type_index), config
+                len(self.nodes), len(self.type_index), config, text_dim=text_dim
             ).to(self.device)
         self.decoder = EdgeDecoder(config.hidden_dim, config.dropout).to(self.device)
         optimizer = torch.optim.Adam(
@@ -572,6 +623,7 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         weight: Optional[float] = None,
         edge_predicates: Optional[Dict[Edge, str]] = None,
         edge_weights: Optional[Dict[Edge, float]] = None,
+        node_text: Optional[Dict[str, str]] = None,
     ):
         self.config = config or TrainingConfig()
         self.node_types = node_types or {}
@@ -583,6 +635,8 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         # (AP 0.238 vs 0.212, MRR 0.017 vs 0.007), so the ensemble uses them
         # when they are available.
         self.edge_weights = edge_weights or {}
+        self.node_text = node_text or {}
+        self.text_encoder = None
 
     def fit(self, graph: nx.Graph) -> "HybridLinkPredictor":
         from litkg.evaluation.baselines import (
@@ -594,6 +648,7 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         self.gnn = GNNLinkPredictor(
             config=self.config, node_types=self.node_types,
             edge_years=self.edge_years, edge_predicates=self.edge_predicates,
+            node_text=self.node_text, text_encoder=self.text_encoder,
         ).fit(graph)
         self.l3 = (
             WeightedL3PathPredictor(weights=self.edge_weights)

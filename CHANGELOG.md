@@ -5,6 +5,45 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Node text features** (`litkg.phase2.node_features`). Every predictor until
+  now used topology alone, which cannot reach the 14% of held-out pairs whose
+  endpoints have no path between them. Node display names are embedded and fed
+  to the GNN alongside its learned embedding, node type and log-degree. Names
+  are static metadata, so this does not leak across the temporal split.
+
+  Measured over **8 seeds** on the hybrid: AUC 0.734 +/- 0.006 [0.724, 0.744]
+  without text, 0.754 +/- 0.005 [0.745, 0.762] with it -- disjoint ranges, about
+  four standard deviations. AP 0.277 -> 0.299, Hits@100 0.090 -> 0.105. Four
+  seeds were **not** enough to establish this: two 4-seed runs of the same
+  configuration disagreed by more than the effect size.
+
+  The encoder was chosen by measurement, not reputation. On name similarity
+  alone: PubMedBERT 0.580 [0.564, 0.595], MiniLM 0.533 [0.516, 0.550], BioBERT
+  0.514 [0.497, 0.530] against a 0.498 floor. PubMedBERT is the default;
+  BioBERT is barely above chance despite also being biomedical.
+
+- **`FeatureOnlyPredictor`**, a deliberate control. Some CIVIC therapies are
+  named for their target ("BRAF Inhibitor" embeds at 0.65 against "BRAF"), so
+  text features could in principle win by string matching. Text alone scores
+  0.581 against the hybrid's 0.750, which bounds that effect: the gain comes
+  from combining text with topology, not from substring overlap.
+
+  It is also the only predictor that can score cold-start pairs at all -- L3
+  scores 0 of 366 -- though at AUC 0.531 [0.501, 0.562] that is coverage
+  without much signal. Entity *names* carry little biology; "Imatinib" says
+  nothing about what it treats. Embedding entities by their literature contexts
+  is the natural next step.
+
+### Fixed
+
+- `FeatureConfig(cache_dir=None)` meant both "use the default cache" and "no
+  cache", so an encoder configured for no caching read vectors written by a
+  different model and failed on a shape mismatch. Caching is now controlled by
+  an explicit `use_cache` flag, and a width mismatch discards the stale cache
+  with a warning rather than raising from inside numpy.
+
 ### Fixed
 
 - **Ranking metrics were reported without uncertainty, and some differences

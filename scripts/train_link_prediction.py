@@ -44,6 +44,10 @@ def main() -> int:
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--loss", default="bpr", choices=["bpr", "bce"])
+    parser.add_argument("--text-model", default=None,
+                        help="Override the node-text encoder")
+    parser.add_argument("--no-text-features", action="store_true",
+                        help="Train on topology alone, ignoring node names")
     parser.add_argument("--relational", action="store_true",
                         help="Use R-GCN: one transform per relation type")
     parser.add_argument("--no-degree-matching", action="store_true")
@@ -62,11 +66,27 @@ def main() -> int:
         print(f"CIVIC data not found in {civic_dir}", file=sys.stderr)
         return 1
 
-    dated, backbone, node_types = load_dated_edges(civic_dir)
+    dated, backbone, node_types, node_text = load_dated_edges(civic_dir)
     split = build_temporal_split(dated, args.cutoff, backbone)
+
+    text_encoder = None
+    if not args.no_text_features:
+        from litkg.phase2.node_features import (
+            FeatureConfig,
+            FeatureOnlyPredictor,
+            NodeTextEncoder,
+        )
+        text_encoder = NodeTextEncoder(
+            FeatureConfig(model_name=args.text_model) if args.text_model
+            else FeatureConfig()
+        )
 
     predictors = [cls() for cls in BASELINE_PREDICTORS]
     predictors.append(WeightedL3PathPredictor(weights=split.edge_weights()))
+    if text_encoder is not None:
+        predictors.append(
+            FeatureOnlyPredictor(node_text=node_text, encoder=text_encoder)
+        )
     if not args.baselines_only:
         config = TrainingConfig(
             hidden_dim=args.hidden_dim,
@@ -86,6 +106,8 @@ def main() -> int:
                 pair: ev.dominant_predicate
                 for pair, ev in split.edge_evidence.items()
             },
+            node_text=None if args.no_text_features else node_text,
+            text_encoder=text_encoder,
         ))
         if not args.no_hybrid:
             predictors.append(HybridLinkPredictor(
@@ -95,7 +117,9 @@ def main() -> int:
                     for pair, ev in split.edge_evidence.items()
                 },
                 edge_weights=split.edge_weights(),
+                node_text=None if args.no_text_features else node_text,
             ))
+            predictors[-1].text_encoder = text_encoder
 
     report = evaluate_baselines(
         split,
