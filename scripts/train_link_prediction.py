@@ -18,6 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from litkg.evaluation import build_temporal_split, evaluate_baselines
+from litkg.evaluation import WeightedL3PathPredictor
 from litkg.evaluation.baselines import BASELINE_PREDICTORS
 from litkg.phase2.link_prediction import (
     GNNLinkPredictor,
@@ -43,6 +44,8 @@ def main() -> int:
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--loss", default="bpr", choices=["bpr", "bce"])
+    parser.add_argument("--relational", action="store_true",
+                        help="Use R-GCN: one transform per relation type")
     parser.add_argument("--no-degree-matching", action="store_true")
     parser.add_argument("--baselines-only", action="store_true")
     parser.add_argument("--no-hybrid", action="store_true",
@@ -63,6 +66,7 @@ def main() -> int:
     split = build_temporal_split(dated, args.cutoff, backbone)
 
     predictors = [cls() for cls in BASELINE_PREDICTORS]
+    predictors.append(WeightedL3PathPredictor(weights=split.edge_weights()))
     if not args.baselines_only:
         config = TrainingConfig(
             hidden_dim=args.hidden_dim,
@@ -74,13 +78,23 @@ def main() -> int:
             seed=args.seed,
             device=args.device,
             loss=args.loss,
+            relational=args.relational,
         )
         predictors.append(GNNLinkPredictor(
-            config=config, node_types=node_types, edge_years=split.edge_years
+            config=config, node_types=node_types, edge_years=split.edge_years,
+            edge_predicates={
+                pair: ev.dominant_predicate
+                for pair, ev in split.edge_evidence.items()
+            },
         ))
         if not args.no_hybrid:
             predictors.append(HybridLinkPredictor(
-                config=config, node_types=node_types, edge_years=split.edge_years
+                config=config, node_types=node_types, edge_years=split.edge_years,
+                edge_predicates={
+                    pair: ev.dominant_predicate
+                    for pair, ev in split.edge_evidence.items()
+                },
+                edge_weights=split.edge_weights(),
             ))
 
     report = evaluate_baselines(

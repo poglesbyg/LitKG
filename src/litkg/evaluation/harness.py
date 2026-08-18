@@ -33,6 +33,11 @@ class EvaluationReport:
     negatives_per_positive: int = 1
     notes: List[str] = field(default_factory=list)
     diagnostics: Dict[str, Any] = field(default_factory=dict)
+    # Per entity-type-pair results. The aggregate number averages four
+    # problems of very different difficulty -- on CIVIC the spread runs from
+    # 0.638 for disease-drug to 0.802 for mutation-phenotype -- so a single
+    # figure hides both progress and regressions.
+    per_type_pair: Dict[str, Dict[str, "RankingMetrics"]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -40,8 +45,32 @@ class EvaluationReport:
             "negatives_per_positive": self.negatives_per_positive,
             "results": {name: m.to_dict() for name, m in self.results.items()},
             "diagnostics": self.diagnostics,
+            "per_type_pair": {
+                pair: {name: m.to_dict() for name, m in results.items()}
+                for pair, results in self.per_type_pair.items()
+            },
             "notes": self.notes,
         }
+
+    def format_type_pair_table(self) -> str:
+        """Per-type-pair AUC, one row per pair and one column per predictor."""
+        if not self.per_type_pair:
+            return ""
+        names = sorted({n for r in self.per_type_pair.values() for n in r})
+        header = f"{'type pair':30} {'n':>5} " + " ".join(f"{n[:12]:>12}" for n in names)
+        lines = [header, "-" * len(header)]
+        for pair in sorted(
+            self.per_type_pair,
+            key=lambda p: -next(iter(self.per_type_pair[p].values())).positives,
+        ):
+            results = self.per_type_pair[pair]
+            count = next(iter(results.values())).positives
+            cells = " ".join(
+                f"{results[n].auc:>12.3f}" if n in results else f"{'-':>12}"
+                for n in names
+            )
+            lines.append(f"{pair:30} {count:>5} {cells}")
+        return "\n".join(lines)
 
     def format_table(self) -> str:
         """Render results as a fixed-width table, best AUC first."""
@@ -293,10 +322,12 @@ class Harness(LoggerMixin):
         if predictors is None:
             predictors = [cls() for cls in BASELINE_PREDICTORS]
 
+        scored: Dict[str, Tuple[List[float], List[float]]] = {}
         for predictor in predictors:
             predictor.fit(train_graph)
-            positive_scores = predictor.score_pairs(positives)
-            negative_scores = predictor.score_pairs(negatives)
+            positive_scores = list(predictor.score_pairs(positives))
+            negative_scores = list(predictor.score_pairs(negatives))
+            scored[predictor.name] = (positive_scores, negative_scores)
             report.results[predictor.name] = evaluate_scores(
                 positive_scores, negative_scores
             )
@@ -304,7 +335,49 @@ class Harness(LoggerMixin):
                 f"{predictor.name}: AUC={report.results[predictor.name].auc:.3f}"
             )
 
+        if node_types:
+            report.per_type_pair = self._breakdown_by_type_pair(
+                positives, negatives, scored, node_types
+            )
+
         return report
+
+    @staticmethod
+    def _breakdown_by_type_pair(
+        positives: Sequence[Edge],
+        negatives: Sequence[Edge],
+        scored: Dict[str, Tuple[List[float], List[float]]],
+        node_types: Dict[str, str],
+    ) -> Dict[str, Dict[str, RankingMetrics]]:
+        """
+        Split the scores by entity-type pair and re-score each group.
+
+        Negatives are type-matched to the positives they were drawn for, so
+        grouping both sides by type pair keeps each group's positives measured
+        against negatives of the same shape.
+        """
+        def label(edge: Edge) -> str:
+            first, second = node_types.get(edge[0], "?"), node_types.get(edge[1], "?")
+            return "-".join(sorted((first, second)))
+
+        positive_groups: Dict[str, List[int]] = {}
+        for index, edge in enumerate(positives):
+            positive_groups.setdefault(label(edge), []).append(index)
+        negative_groups: Dict[str, List[int]] = {}
+        for index, edge in enumerate(negatives):
+            negative_groups.setdefault(label(edge), []).append(index)
+
+        breakdown: Dict[str, Dict[str, RankingMetrics]] = {}
+        for pair, indices in positive_groups.items():
+            negative_indices = negative_groups.get(pair, [])
+            if not negative_indices:
+                continue
+            for name, (pos_scores, neg_scores) in scored.items():
+                breakdown.setdefault(pair, {})[name] = evaluate_scores(
+                    [pos_scores[i] for i in indices],
+                    [neg_scores[i] for i in negative_indices],
+                )
+        return breakdown
 
 
 def evaluate_baselines(

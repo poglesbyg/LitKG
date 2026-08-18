@@ -10,6 +10,8 @@ assembled.
 
 from litkg.evaluation.temporal_split import (
     TemporalSplit,
+    RelationRecord,
+    EdgeEvidence,
     build_temporal_split,
     extract_publication_year,
 )
@@ -17,6 +19,7 @@ from litkg.evaluation.baselines import (
     LinkPredictor,
     AdamicAdarPredictor,
     L3PathPredictor,
+    WeightedL3PathPredictor,
     CommonNeighborsPredictor,
     JaccardPredictor,
     PreferentialAttachmentPredictor,
@@ -37,11 +40,14 @@ from litkg.evaluation.harness import (
 
 __all__ = [
     "TemporalSplit",
+    "RelationRecord",
+    "EdgeEvidence",
     "build_temporal_split",
     "extract_publication_year",
     "LinkPredictor",
     "AdamicAdarPredictor",
     "L3PathPredictor",
+    "WeightedL3PathPredictor",
     "CommonNeighborsPredictor",
     "JaccardPredictor",
     "PreferentialAttachmentPredictor",

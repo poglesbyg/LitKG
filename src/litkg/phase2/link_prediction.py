@@ -28,7 +28,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import SAGEConv
+from torch_geometric.nn import RGCNConv, SAGEConv
 
 from litkg.evaluation.baselines import LinkPredictor
 from litkg.utils.logging import LoggerMixin
@@ -55,6 +55,67 @@ class TrainingConfig:
     device: str = "cpu"
     loss: str = "bpr"                   # "bpr" ranks per positive; "bce" does not
     margin: float = 1.0
+    # Relation-aware message passing. The flattened graph treats SENSITIZES_TO
+    # and RESISTANT_TO as the same edge, which are opposite claims about the
+    # same pair. num_bases keeps the parameter count sane on 11 relations.
+    relational: bool = False
+    num_bases: int = 8
+
+
+class RelationalGNNEncoder(nn.Module):
+    """
+    R-GCN encoder: one transform per relation type instead of one for all.
+
+    Collapsing the graph to untyped edges asserts that every relation carries
+    the same meaning. It does not -- SENSITIZES_TO and RESISTANT_TO are
+    opposite claims about the same variant and drug, and 1731 relations are
+    explicitly negated. A relational encoder can represent that difference.
+
+    Basis decomposition shares parameters across relations so the rarer
+    predicates (EXCLUDES_DIAGNOSIS appears 8 times) are not modelled from
+    nothing.
+    """
+
+    def __init__(
+        self,
+        num_nodes: int,
+        num_types: int,
+        num_relations: int,
+        config: TrainingConfig,
+    ):
+        super().__init__()
+        self.embedding = nn.Embedding(num_nodes, config.embedding_dim)
+        nn.init.xavier_uniform_(self.embedding.weight)
+
+        input_dim = config.embedding_dim + num_types + 1
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        dim = input_dim
+        for _ in range(config.num_layers):
+            self.convs.append(RGCNConv(
+                dim, config.hidden_dim,
+                num_relations=max(num_relations, 1),
+                num_bases=min(config.num_bases, max(num_relations, 1)),
+            ))
+            self.norms.append(nn.LayerNorm(config.hidden_dim))
+            dim = config.hidden_dim
+
+        self.dropout = config.dropout
+
+    def forward(
+        self,
+        node_ids: torch.Tensor,
+        static_features: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_type: torch.Tensor,
+    ) -> torch.Tensor:
+        x = torch.cat([self.embedding(node_ids), static_features], dim=1)
+        for conv, norm in zip(self.convs, self.norms):
+            x = conv(x, edge_index, edge_type)
+            x = norm(x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        return x
 
 
 class GNNEncoder(nn.Module):
@@ -145,9 +206,12 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         config: Optional[TrainingConfig] = None,
         node_types: Optional[Dict[str, str]] = None,
         edge_years: Optional[Dict[Edge, int]] = None,
+        edge_predicates: Optional[Dict[Edge, str]] = None,
     ):
         self.config = config or TrainingConfig()
         self.node_types = node_types or {}
+        # Dominant predicate per pair, from pre-cutoff evidence only.
+        self.edge_predicates = edge_predicates or {}
         # Publication years let validation mirror the test distribution. With a
         # random validation split, early stopping selects against an easier
         # problem than the one being measured -- validation AUC lands near 0.91
@@ -166,6 +230,13 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
 
         types = sorted({self.node_types.get(n, "UNKNOWN") for n in self.nodes})
         self.type_index = {t: i for i, t in enumerate(types)}
+
+        # Relation 0 is "untyped": the backbone gene-variant edges and any pair
+        # whose predicate is unknown.
+        predicates = sorted({p for p in self.edge_predicates.values() if p})
+        self.relation_index = {"": 0}
+        for i, predicate in enumerate(predicates, start=1):
+            self.relation_index[predicate] = i
 
         features = torch.zeros(len(self.nodes), len(types) + 1)
         for node, i in self.node_index.items():
@@ -195,18 +266,45 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         }
 
     def _edge_index(self, edges: Sequence[Edge]) -> torch.Tensor:
+        return self._edge_tensors(edges)[0]
+
+    def _edge_tensors(
+        self, edges: Sequence[Edge]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Edge index and matching relation ids, both symmetrised."""
+        empty = (
+            torch.zeros((2, 0), dtype=torch.long, device=self.device),
+            torch.zeros(0, dtype=torch.long, device=self.device),
+        )
         if not edges:
-            return torch.zeros((2, 0), dtype=torch.long, device=self.device)
-        pairs = [
-            (self.node_index[u], self.node_index[v])
-            for u, v in edges
-            if u in self.node_index and v in self.node_index
-        ]
+            return empty
+        pairs, relations = [], []
+        for u, v in edges:
+            if u not in self.node_index or v not in self.node_index:
+                continue
+            pairs.append((self.node_index[u], self.node_index[v]))
+            key = (u, v) if u <= v else (v, u)
+            relations.append(
+                self.relation_index.get(self.edge_predicates.get(key, ""), 0)
+            )
         if not pairs:
-            return torch.zeros((2, 0), dtype=torch.long, device=self.device)
+            return empty
         source = [p[0] for p in pairs] + [p[1] for p in pairs]
         target = [p[1] for p in pairs] + [p[0] for p in pairs]
-        return torch.tensor([source, target], dtype=torch.long, device=self.device)
+        return (
+            torch.tensor([source, target], dtype=torch.long, device=self.device),
+            torch.tensor(relations + relations, dtype=torch.long, device=self.device),
+        )
+
+    def _encode(
+        self, edge_index: torch.Tensor, edge_type: torch.Tensor
+    ) -> torch.Tensor:
+        """Relation ids are only passed to an encoder that can use them."""
+        if self.config.relational:
+            return self.encoder(
+                self.node_ids, self.static_features, edge_index, edge_type
+            )
+        return self.encoder(self.node_ids, self.static_features, edge_index)
 
     def _sample_negatives(
         self, positives: Sequence[Tuple[int, int]], rng: random.Random
@@ -275,9 +373,15 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         ]
         validation_negatives = self._sample_negatives(validation_pairs, random.Random(1234))
 
-        self.encoder = GNNEncoder(
-            len(self.nodes), len(self.type_index), config
-        ).to(self.device)
+        if config.relational:
+            self.encoder = RelationalGNNEncoder(
+                len(self.nodes), len(self.type_index),
+                len(self.relation_index), config,
+            ).to(self.device)
+        else:
+            self.encoder = GNNEncoder(
+                len(self.nodes), len(self.type_index), config
+            ).to(self.device)
         self.decoder = EdgeDecoder(config.hidden_dim, config.dropout).to(self.device)
         optimizer = torch.optim.Adam(
             list(self.encoder.parameters()) + list(self.decoder.parameters()),
@@ -289,6 +393,7 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         best_state = None
         epochs_without_improvement = 0
         message_index = None
+        message_type = None
         positives = None
         negatives = None
 
@@ -301,7 +406,7 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
                 cut = int(len(pool) * config.supervision_fraction)
                 supervision_edges = pool[:cut]
                 message_edges = pool[cut:]
-                message_index = self._edge_index(message_edges)
+                message_index, message_type = self._edge_tensors(message_edges)
                 positives = [
                     (self.node_index[u], self.node_index[v])
                     for u, v in supervision_edges
@@ -312,16 +417,14 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
             self.decoder.train()
             optimizer.zero_grad()
 
-            embeddings = self.encoder(
-                self.node_ids, self.static_features, message_index
-            )
+            embeddings = self._encode(message_index, message_type)
             loss = self._loss(embeddings, positives, negatives)
             loss.backward()
             optimizer.step()
 
             if epoch % 5 == 0 or epoch == config.epochs - 1:
                 auc = self._validation_auc(
-                    message_index, validation_pairs, validation_negatives
+                    message_index, message_type, validation_pairs, validation_negatives
                 )
                 self.history.append(
                     {"epoch": epoch, "loss": float(loss.item()), "val_auc": auc}
@@ -350,9 +453,8 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         self.encoder.eval()
         self.decoder.eval()
         with torch.no_grad():
-            self.final_embeddings = self.encoder(
-                self.node_ids, self.static_features, self._edge_index(all_edges)
-            )
+            final_index, final_type = self._edge_tensors(all_edges)
+            self.final_embeddings = self._encode(final_index, final_type)
         return self
 
     def _loss(
@@ -390,6 +492,7 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
     def _validation_auc(
         self,
         message_index: torch.Tensor,
+        message_type: torch.Tensor,
         positives: Sequence[Tuple[int, int]],
         negatives: Sequence[Tuple[int, int]],
     ) -> float:
@@ -398,9 +501,7 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         self.encoder.eval()
         self.decoder.eval()
         with torch.no_grad():
-            embeddings = self.encoder(
-                self.node_ids, self.static_features, message_index
-            )
+            embeddings = self._encode(message_index, message_type)
             index = torch.tensor(
                 list(positives) + list(negatives), dtype=torch.long, device=self.device
             )
@@ -469,21 +570,35 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         node_types: Optional[Dict[str, str]] = None,
         edge_years: Optional[Dict[Edge, int]] = None,
         weight: Optional[float] = None,
+        edge_predicates: Optional[Dict[Edge, str]] = None,
+        edge_weights: Optional[Dict[Edge, float]] = None,
     ):
         self.config = config or TrainingConfig()
         self.node_types = node_types or {}
         self.edge_years = edge_years or {}
         self.weight = weight          # None selects on validation
         self.selected_weight: float = 0.5
+        self.edge_predicates = edge_predicates or {}
+        # Evidence weights make the structural half strictly better on its own
+        # (AP 0.238 vs 0.212, MRR 0.017 vs 0.007), so the ensemble uses them
+        # when they are available.
+        self.edge_weights = edge_weights or {}
 
     def fit(self, graph: nx.Graph) -> "HybridLinkPredictor":
-        from litkg.evaluation.baselines import L3PathPredictor
+        from litkg.evaluation.baselines import (
+            L3PathPredictor,
+            WeightedL3PathPredictor,
+        )
 
         self.graph = graph
         self.gnn = GNNLinkPredictor(
-            config=self.config, node_types=self.node_types, edge_years=self.edge_years
+            config=self.config, node_types=self.node_types,
+            edge_years=self.edge_years, edge_predicates=self.edge_predicates,
         ).fit(graph)
-        self.l3 = L3PathPredictor().fit(graph)
+        self.l3 = (
+            WeightedL3PathPredictor(weights=self.edge_weights)
+            if self.edge_weights else L3PathPredictor()
+        ).fit(graph)
         self._build_reference(graph, random.Random(self.config.seed))
 
         if self.weight is not None:

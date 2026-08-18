@@ -23,10 +23,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import pandas as pd
 
 from litkg.evaluation import (
+    RelationRecord,
+    WeightedL3PathPredictor,
     build_temporal_split,
     evaluate_baselines,
     extract_publication_year,
 )
+from litkg.evaluation.baselines import BASELINE_PREDICTORS
 from litkg.evaluation.temporal_split import year_distribution
 from litkg.phase1.kg_preprocessor import CivicProcessor
 from litkg.utils.config import get_data_dir, load_config
@@ -68,12 +71,19 @@ def load_dated_edges(
         for row in evidence.itertuples()
     }
 
-    dated: List[Tuple[str, str, Optional[int]]] = []
+    dated: List[RelationRecord] = []
     for relation in relations:
         # Relation ids are CIVIC:REL:<KIND>:<evidence_id>:<...>
         parts = relation.id.split(":")
         evidence_id = parts[3] if len(parts) > 3 else ""
-        dated.append((relation.subject, relation.object, years.get(evidence_id)))
+        dated.append(RelationRecord(
+            subject=relation.subject,
+            object=relation.object,
+            year=years.get(evidence_id),
+            predicate=relation.predicate,
+            confidence=relation.confidence,
+            negated=bool(relation.attributes.get("negated")),
+        ))
 
     backbone = [(r.subject, r.object) for r in variant_relations]
     return dated, backbone, node_types
@@ -122,9 +132,14 @@ def main() -> int:
         return 0
 
     split = build_temporal_split(dated, args.cutoff, backbone)
+
+    predictors = [cls() for cls in BASELINE_PREDICTORS]
+    predictors.append(WeightedL3PathPredictor(weights=split.edge_weights()))
+
     report = evaluate_baselines(
         split,
         node_types=None if args.no_type_matching else node_types,
+        predictors=predictors,
         negatives_per_positive=args.negatives,
         seed=args.seed,
         degree_matched=args.degree_matched,
@@ -149,6 +164,11 @@ def main() -> int:
               f"avg clustering {d['average_clustering']:.3f}")
         print(f"Structural coverage: {d['structural_coverage']:.1%} of test pairs "
               f"share a neighbour")
+
+    if report.per_type_pair:
+        print("\nAUC by entity-type pair "
+              "(the aggregate above averages problems of unequal difficulty):")
+        print(report.format_type_pair_table())
 
     if report.notes:
         print("\nNotes:")

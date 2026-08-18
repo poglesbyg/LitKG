@@ -156,3 +156,83 @@ class TestHybridLinkPredictor:
         reference = np.array([0.0, 0.0, 0.0, 1.0, 2.0])
         values = model._percentile(np.array([0.0, 0.0]), reference)
         assert values[0] == values[1]
+
+
+class TestRelationalEncoder:
+    """
+    The untyped graph asserts every relation means the same thing. It does not:
+    SENSITIZES_TO and RESISTANT_TO are opposite claims about the same pair.
+    """
+
+    @pytest.fixture
+    def predicates(self, toy_graph):
+        return {
+            (u, v) if u <= v else (v, u):
+            ("SENSITIZES_TO" if v.startswith("t") or u.startswith("t")
+             else "ASSOCIATED_WITH")
+            for u, v in toy_graph.edges()
+        }
+
+    def test_relational_encoder_trains(self, toy_graph, toy_types, predicates):
+        config = TrainingConfig(epochs=10, patience=10, hidden_dim=16,
+                                embedding_dim=16, relational=True, seed=0)
+        model = GNNLinkPredictor(
+            config=config, node_types=toy_types, edge_predicates=predicates
+        ).fit(toy_graph)
+        assert np.isfinite(model.score("v0", "d1"))
+
+    def test_relation_index_reserves_zero_for_untyped(self, toy_graph, toy_types, predicates):
+        """Backbone edges carry no predicate and must still pass through."""
+        config = TrainingConfig(epochs=5, patience=5, hidden_dim=16,
+                                embedding_dim=16, relational=True, seed=0)
+        model = GNNLinkPredictor(
+            config=config, node_types=toy_types, edge_predicates=predicates
+        ).fit(toy_graph)
+        assert model.relation_index[""] == 0
+        assert len(model.relation_index) == len(set(predicates.values())) + 1
+
+    def test_edge_types_align_with_the_symmetrised_index(self, toy_graph, toy_types, predicates):
+        """
+        Edges are added in both directions for undirected message passing, so
+        the relation vector must be duplicated the same way or every reverse
+        edge is labelled with another edge's relation.
+        """
+        config = TrainingConfig(epochs=5, patience=5, hidden_dim=16,
+                                embedding_dim=16, relational=True, seed=0)
+        model = GNNLinkPredictor(
+            config=config, node_types=toy_types, edge_predicates=predicates
+        ).fit(toy_graph)
+        edges = [(u, v) for u, v in toy_graph.edges()]
+        index, relation = model._edge_tensors(edges)
+        assert index.shape[1] == relation.shape[0]
+        half = relation.shape[0] // 2
+        assert relation[:half].tolist() == relation[half:].tolist()
+
+    def test_untyped_model_ignores_predicates(self, toy_graph, toy_types, predicates):
+        config = TrainingConfig(epochs=5, patience=5, hidden_dim=16,
+                                embedding_dim=16, relational=False, seed=0)
+        model = GNNLinkPredictor(
+            config=config, node_types=toy_types, edge_predicates=predicates
+        ).fit(toy_graph)
+        assert np.isfinite(model.score("v0", "d1"))
+
+
+class TestHybridUsesEvidence:
+    def test_hybrid_prefers_weighted_l3_when_weights_given(self, toy_graph, toy_types, fast_config):
+        from litkg.evaluation import WeightedL3PathPredictor
+        weights = {
+            (u, v) if u <= v else (v, u): 2.0 for u, v in toy_graph.edges()
+        }
+        model = HybridLinkPredictor(
+            config=fast_config, node_types=toy_types,
+            edge_weights=weights, weight=0.5,
+        ).fit(toy_graph)
+        assert isinstance(model.l3, WeightedL3PathPredictor)
+
+    def test_hybrid_falls_back_without_weights(self, toy_graph, toy_types, fast_config):
+        from litkg.evaluation import L3PathPredictor, WeightedL3PathPredictor
+        model = HybridLinkPredictor(
+            config=fast_config, node_types=toy_types, weight=0.5
+        ).fit(toy_graph)
+        assert isinstance(model.l3, L3PathPredictor)
+        assert not isinstance(model.l3, WeightedL3PathPredictor)
