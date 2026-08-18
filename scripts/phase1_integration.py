@@ -22,6 +22,10 @@ sys.path.insert(0, str(project_root / "src"))
 from litkg.phase1.literature_processor import LiteratureProcessor
 from litkg.phase1.kg_preprocessor import KGPreprocessor
 from litkg.phase1.entity_linker import EntityLinker
+from litkg.phase1.literature_resolution import (
+    LiteratureEntityResolver,
+    aggregate_edges,
+)
 from litkg.utils.config import load_config
 from litkg.utils.logging import setup_logging
 
@@ -467,32 +471,51 @@ class Phase1Integrator:
                 }
             }
             
-            # Add literature entities as nodes
-            lit_node_id = 0
-            lit_entity_map = {}
-            
+            # Add literature entities as nodes.
+            #
+            # One node per distinct entity, not per mention. NER emits a mention
+            # for every occurrence, so a corpus discussing BRCA1 in sixty papers
+            # would otherwise produce sixty "BRCA1" nodes, making degree and
+            # centrality properties of how often a name was repeated rather than
+            # of the entity. Mention detail is kept on the node as evidence.
+            resolver = LiteratureEntityResolver()
+
             for doc in self.literature_results:
                 for entity in doc.entities:
-                    node_id = f"lit_{lit_node_id}"
-                    lit_entity_map[f"{doc.pmid}_{entity.start}_{entity.end}"] = node_id
-                    
-                    phase2_data["nodes"].append({
-                        "id": node_id,
-                        "type": "literature_entity",
-                        "text": entity.text,
-                        "label": entity.label,
-                        "confidence": entity.confidence,
-                        "document_id": doc.pmid
-                    })
-                    
-                    phase2_data["node_features"][node_id] = {
-                        "entity_type": entity.label,
-                        "confidence": entity.confidence,
-                        "text_length": len(entity.text),
-                        "has_cui": 1 if entity.cui else 0
-                    }
-                    
-                    lit_node_id += 1
+                    resolver.add_mention(
+                        mention_key=f"{doc.pmid}_{entity.start}_{entity.end}",
+                        text=entity.text,
+                        label=entity.label,
+                        confidence=entity.confidence,
+                        document_id=doc.pmid,
+                    )
+
+            resolved_entities, lit_entity_map = resolver.resolve()
+
+            for resolved in resolved_entities:
+                phase2_data["nodes"].append({
+                    "id": resolved.node_id,
+                    "type": "literature_entity",
+                    "text": resolved.canonical_text,
+                    "label": resolved.label,
+                    "confidence": resolved.mean_confidence,
+                    "surface_forms": resolved.surface_forms,
+                    "mention_count": resolved.mention_count,
+                    "document_count": resolved.document_count,
+                    "document_ids": resolved.document_ids[:20],
+                })
+
+                phase2_data["node_features"][resolved.node_id] = {
+                    "entity_type": resolved.label,
+                    "confidence": resolved.mean_confidence,
+                    "max_confidence": resolved.max_confidence,
+                    "text_length": len(resolved.canonical_text),
+                    # Corpus-level evidence, meaningful only now that a node is
+                    # an entity rather than a single occurrence
+                    "mention_count": resolved.mention_count,
+                    "document_count": resolved.document_count,
+                    "surface_form_count": len(resolved.surface_forms),
+                }
             
             # Add KG entities as nodes
             if self.kg_results:
@@ -516,29 +539,42 @@ class Phase1Integrator:
             # Add edges
             edge_id = 0
             
-            # Literature relations
+            # Literature relations.
+            #
+            # Now that endpoints are entities rather than mentions, the same
+            # relationship asserted in many papers arrives as many identical
+            # edges. They are aggregated into one edge whose mention_count
+            # records how many times the corpus asserted it -- support, which
+            # is signal, rather than duplication.
+            literature_edges = []
             for doc in self.literature_results:
                 for relation in doc.relations:
                     subj_key = f"{doc.pmid}_{relation.subject.start}_{relation.subject.end}"
                     obj_key = f"{doc.pmid}_{relation.object.start}_{relation.object.end}"
-                    
+
                     if subj_key in lit_entity_map and obj_key in lit_entity_map:
-                        phase2_data["edges"].append({
-                            "id": f"lit_rel_{edge_id}",
-                            "source": lit_entity_map[subj_key],
-                            "target": lit_entity_map[obj_key],
+                        source, target = lit_entity_map[subj_key], lit_entity_map[obj_key]
+                        # Resolution can collapse both endpoints onto one entity
+                        if source == target:
+                            continue
+                        literature_edges.append({
+                            "source": source,
+                            "target": target,
                             "type": "literature_relation",
                             "predicate": relation.predicate,
-                            "confidence": relation.confidence
-                        })
-                        
-                        phase2_data["edge_features"][f"lit_rel_{edge_id}"] = {
-                            "relation_type": relation.predicate,
                             "confidence": relation.confidence,
-                            "source": "literature"
-                        }
-                        
-                        edge_id += 1
+                        })
+
+            for edge in aggregate_edges(literature_edges):
+                edge["id"] = f"lit_rel_{edge_id}"
+                phase2_data["edges"].append(edge)
+                phase2_data["edge_features"][edge["id"]] = {
+                    "relation_type": edge["predicate"],
+                    "confidence": edge["confidence"],
+                    "mention_count": edge["mention_count"],
+                    "source": "literature",
+                }
+                edge_id += 1
             
             # KG relations
             if self.kg_results:
@@ -558,29 +594,34 @@ class Phase1Integrator:
                         "source": relation.source
                     }
             
-            # Entity links
+            # Entity links. One link per (literature entity, KG entity) pair;
+            # every mention of that entity previously produced its own copy.
+            link_edges = []
             for result in self.linking_results:
                 for match in result.matches:
                     lit_key = f"{result.document_id}_{match.literature_entity.start}_{match.literature_entity.end}"
-                    
+
                     if lit_key in lit_entity_map:
-                        phase2_data["edges"].append({
-                            "id": f"link_{edge_id}",
+                        link_edges.append({
                             "source": lit_entity_map[lit_key],
                             "target": match.kg_entity.id,
                             "type": "entity_link",
                             "match_type": match.match_type,
-                            "confidence": match.confidence_score
-                        })
-                        
-                        phase2_data["edge_features"][f"link_{edge_id}"] = {
-                            "relation_type": "entity_link",
                             "confidence": match.confidence_score,
-                            "match_type": match.match_type,
-                            "similarity": match.similarity_score
-                        }
-                        
-                        edge_id += 1
+                            "similarity": match.similarity_score,
+                        })
+
+            for edge in aggregate_edges(link_edges, key_fields=("source", "target")):
+                edge["id"] = f"link_{edge_id}"
+                phase2_data["edges"].append(edge)
+                phase2_data["edge_features"][edge["id"]] = {
+                    "relation_type": "entity_link",
+                    "confidence": edge["confidence"],
+                    "match_type": edge["match_type"],
+                    "similarity": edge["similarity"],
+                    "mention_count": edge["mention_count"],
+                }
+                edge_id += 1
             
             # Save Phase 2 preparation data
             phase2_file = "data/processed/phase2_graph_data.json"

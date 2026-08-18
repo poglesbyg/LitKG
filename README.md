@@ -34,7 +34,7 @@ The payoff is multi-hop questions. Asked *"why are BRCA1 tumours sensitive to ol
 
 **241 tests pass.** There is no CI yet — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Numbers below come from `make run-phase1` on the bundled sample data: 3279 nodes, 6329 edges, 75.2% high-confidence linking rate.
+Numbers below come from `make run-phase1` on the bundled sample data: 2084 nodes, 5925 edges, 75.2% high-confidence linking rate.
 
 ## Install
 
@@ -146,6 +146,7 @@ Stated plainly, because they affect how far you should trust output:
 - **Ontology coverage is thin.** Entity resolution's strongest rule matches on UMLS CUIs, but the bundled seed carries only six real CUIs. It fires zero times on sample data. Set `UMLS_API_KEY` for real coverage. Fabricated CUIs were deliberately not added: a wrong shared CUI silently merges two distinct entities while looking authoritative.
 - **Literature support classification is a heuristic.** `LiteratureCrossValidator` judges support by scanning for contradiction cues ("no association", "failed to") in title and abstract. It is not entailment, and it does not read full text.
 - **Entity resolution gains are modest on sample data.** The cascade merges 447 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
+- **Literature relation extraction yields nothing.** All 100 sample documents produce zero relations, so the literature graph has no internal edges — its 309 entities connect only to the knowledge graph. The literature encoder is currently operating on an edgeless node set.
 - **Blocking trades recall for cost.** The fuzzy matching pass blocks candidates by entity type and first character, so pairs like `BRCA1`/`RCA1` are never compared.
 - **`biomedical_score` values are hand-assigned.** Model rankings in `ModelSelector` are informed estimates, not benchmark results.
 
