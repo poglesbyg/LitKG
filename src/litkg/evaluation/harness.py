@@ -78,8 +78,8 @@ class EvaluationReport:
             return "No results."
 
         header = (
-            f"{'predictor':26} {'AUC':>7} {'AP':>7} {'H@1':>7} "
-            f"{'H@5':>7} {'H@10':>7} {'MRR':>7}"
+            f"{'predictor':26} {'AUC':>7} {'95% CI':>16} {'AP':>7} "
+            f"{'H@10':>7} {'H@100':>7} {'MRR':>8} {'MRR 95% CI':>18}"
         )
         lines = [header, "-" * len(header)]
         ordered = sorted(
@@ -88,10 +88,19 @@ class EvaluationReport:
             reverse=True,
         )
         for name, m in ordered:
-            lines.append(
-                f"{name:26} {m.auc:7.3f} {m.average_precision:7.3f} "
-                f"{m.hits_at_1:7.3f} {m.hits_at_5:7.3f} {m.hits_at_10:7.3f} {m.mrr:7.3f}"
+            auc_ci = f"[{m.auc_ci[0]:.3f}, {m.auc_ci[1]:.3f}]" if m.auc_ci else "-"
+            mrr_ci = (
+                f"[{m.mrr_ci[0]:.4f}, {m.mrr_ci[1]:.4f}]" if m.mrr_ci else "-"
             )
+            lines.append(
+                f"{name:26} {m.auc:7.3f} {auc_ci:>16} {m.average_precision:7.3f} "
+                f"{m.hits_at_10:7.3f} {m.hits_at_100:7.3f} {m.mrr:8.4f} {mrr_ci:>18}"
+            )
+        lines.append("")
+        lines.append(
+            "Intervals are 95% bootstrap over positives. Overlapping intervals "
+            "are not a difference."
+        )
         return "\n".join(lines)
 
 
@@ -317,6 +326,15 @@ class Harness(LoggerMixin):
                 f"training graph. Shared-neighbour predictors score exactly 0 "
                 f"for the rest and cannot rank them, so their Hits@K and MRR "
                 f"reflect an undefined score, not a wrong one."
+            )
+
+        if len(positives) and len(negatives):
+            report.diagnostics["negative_pool"] = len(negatives)
+            notes.append(
+                f"Ranking metrics rank each of {len(positives)} positives against "
+                f"all {len(negatives)} negatives, so Hits@10 and MRR are set by a "
+                f"few dozen rows and are noisy. Read their confidence intervals, "
+                f"and prefer Hits@100 for a cutoff that moves."
             )
 
         if predictors is None:
