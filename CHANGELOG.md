@@ -5,6 +5,24 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Derived evaluation data was being committed** -- two FAISS indexes and two
+  fetched corpora, 2.5MB of rebuildable files. The `data/processed` patterns
+  match only that directory's own files, so anything in a new subdirectory
+  slipped past them, which had already happened once with a 14MB embedding
+  cache and a 10MB abstract cache.
+
+  Pattern-per-filetype cannot win that race, so the default is inverted:
+  everything under `data/processed` is ignored and the exceptions are
+  allow-listed, covering a future cache directory before it exists.
+
+  The judged query sets stay tracked -- they are the benchmark, and
+  regenerating them would silently change what a reported number means.
+  `--rebuild-corpus` refetches the papers an existing query set names, which is
+  what a fresh clone needs, and the evaluation script says so when the corpus
+  is absent.
+
 ### Added
 
 - **A multi-hop query set, and two fixes that make graph expansion contribute.**

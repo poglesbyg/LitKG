@@ -197,17 +197,21 @@ Thumbs.db
 # Data directories
 data/raw/
 data/external/
-data/processed/*.json
-data/processed/*.pkl
-data/processed/*.csv
-data/processed/*.tsv
-data/processed/*.gpickle
-# Derived caches live in subdirectories, which the patterns above do not reach:
-# a 14MB embedding cache and a 10MB abstract cache were committed before this
-# was added. Both are rebuilt on demand and neither belongs in the repository.
-data/processed/text_features/
-data/processed/literature_context/
+# Everything under data/processed is derived, so the default is to ignore it
+# and allow-list the exceptions. Pattern-per-filetype was tried and leaked
+# twice: a 14MB embedding cache and a 10MB abstract cache, then 1.2MB of FAISS
+# indexes, each in a new subdirectory the patterns did not reach.
+data/processed/**
 !data/processed/.gitkeep
+
+# The judged query sets are the exception worth keeping. They are the benchmark
+# itself: PubMed content and CIVIC releases drift, so regenerating them would
+# silently change what a number means. Same reasoning as pinning the CIVIC
+# release rather than tracking nightly. The corpora and vector stores they
+# refer to are rebuilt from them.
+!data/processed/retrieval_eval/
+!data/processed/retrieval_eval/queries.json
+!data/processed/retrieval_eval/multihop_queries.json
 
 # Vector stores are rebuilt from source documents at runtime
 data/knowledge_base/vector_store/

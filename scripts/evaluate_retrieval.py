@@ -63,6 +63,14 @@ def main() -> int:
         print(f"No query set at {queries_path}. Run "
               f"scripts/build_retrieval_queryset.py first.", file=sys.stderr)
         return 1
+    if not corpus_path.exists():
+        # Query sets are tracked, corpora are not: a fresh clone has the
+        # judgements but must refetch the papers they refer to.
+        print(f"No corpus at {corpus_path}. Rebuild it for these queries with:",
+              file=sys.stderr)
+        print(f"  python scripts/build_retrieval_queryset.py --rebuild-corpus"
+              f"{' --multihop' if args.multihop else ''}", file=sys.stderr)
+        return 1
 
     queries = load_queries(queries_path)
     pipeline = RAGPipeline(PipelineConfig(

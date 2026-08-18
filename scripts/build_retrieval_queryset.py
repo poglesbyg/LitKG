@@ -29,6 +29,7 @@ import pandas as pd
 from litkg.evaluation import (
     MultiHopQuerySetBuilder,
     QuerySetBuilder,
+    load_queries,
     save_queries,
 )
 from litkg.utils.config import get_data_dir
@@ -85,6 +86,11 @@ def main() -> int:
                         help="Minimum cited papers per query")
     parser.add_argument("--email", default="litkg@example.org")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--rebuild-corpus", action="store_true",
+                        help="Refetch the corpus for an existing query set instead "
+                             "of deriving new queries. The query sets are tracked "
+                             "and the corpora are not, so this is what a fresh "
+                             "clone needs to reproduce a reported number.")
     parser.add_argument("--multihop", action="store_true",
                         help="Build bridge queries whose relevant papers share no "
                              "vocabulary with the query")
@@ -99,6 +105,22 @@ def main() -> int:
     if not evidence_path.exists():
         print(f"No CIVIC evidence at {evidence_path}", file=sys.stderr)
         return 1
+
+    prefix_early = "multihop_" if args.multihop else ""
+    if args.rebuild_corpus:
+        queries_path = out_dir / f"{prefix_early}queries.json"
+        if not queries_path.exists():
+            print(f"No query set at {queries_path}", file=sys.stderr)
+            return 1
+        queries = load_queries(queries_path)
+        pmids = sorted({p for q in queries for p in q.relevant_pmids} |
+                       {p for q in queries for p in getattr(q, "seed_pmids", [])})
+        print(f"Refetching {len(pmids)} papers for {len(queries)} existing queries")
+        documents = fetch_abstracts(pmids, email=args.email)
+        corpus_path = out_dir / f"{prefix_early}corpus.json"
+        corpus_path.write_text(json.dumps({"documents": documents}, indent=2))
+        print(f"\n{len(documents)} documents\n  {corpus_path}")
+        return 0
 
     evidence = pd.read_csv(evidence_path, sep="\t", low_memory=False)
 
