@@ -153,7 +153,12 @@ def sample_negatives(
 
     def pool_key(node: str) -> Tuple[str, int]:
         node_type = node_types.get(node, "UNKNOWN") if node_types else "ANY"
-        bucket = _degree_bucket(graph.degree(node)) if degree_matched else -1
+        # networkx treats a node it does not contain as an nbunch and returns a
+        # DegreeView rather than raising, so an absent node must be handled
+        # before the lookup. Callers that filter cold-start pairs never hit
+        # this; callers that construct a split directly do.
+        degree = graph.degree(node) if node in graph else 0
+        bucket = _degree_bucket(degree) if degree_matched else -1
         return (node_type, bucket)
 
     pools: Dict[Tuple[str, int], List[str]] = {}
@@ -252,13 +257,37 @@ class Harness(LoggerMixin):
         report.diagnostics["average_clustering"] = round(
             nx.average_clustering(train_graph), 4
         )
+        if node_types:
+            same_type = sum(
+                1 for u, v in train_graph.edges()
+                if node_types.get(u) == node_types.get(v)
+            )
+            total_edges = train_graph.number_of_edges()
+            same_ratio = same_type / total_edges if total_edges else 0.0
+            cross_positives = sum(
+                1 for u, v in positives if node_types.get(u) != node_types.get(v)
+            )
+            report.diagnostics["same_type_edge_ratio"] = round(same_ratio, 4)
+            report.diagnostics["cross_type_test_ratio"] = round(
+                cross_positives / len(positives), 4
+            )
+            if same_ratio < 0.05 and cross_positives / len(positives) > 0.9:
+                notes.append(
+                    f"The graph is effectively multipartite "
+                    f"({same_ratio:.1%} of edges join same-type nodes) and "
+                    f"{cross_positives / len(positives):.0%} of test pairs are "
+                    f"cross-type. Nodes of different types meet at odd distance, "
+                    f"so shared-neighbour predictors are near-zero by "
+                    f"construction, not because the graph lacks signal. Read "
+                    f"l3_paths, not adamic_adar, as the structural baseline here."
+                )
+
         if coverage < 0.5:
             notes.append(
                 f"Only {coverage:.1%} of test pairs share a neighbour in the "
                 f"training graph. Shared-neighbour predictors score exactly 0 "
                 f"for the rest and cannot rank them, so their Hits@K and MRR "
-                f"reflect an undefined score, not a wrong one. The graph is too "
-                f"sparse for topological link prediction as built."
+                f"reflect an undefined score, not a wrong one."
             )
 
         if predictors is None:

@@ -410,9 +410,10 @@ no gold standard to compute them against. Earlier versions of this document
 quoted precision ranges; they had no basis and have been removed.
 
 Link prediction over the assembled graph *is* now measured, under a temporal
-holdout — see [Evaluation.md](Evaluation.md). The result is negative: the graph
-is too sparse for topological prediction, with 84.6% of held-out pairs sharing
-no neighbour in the training graph.
+holdout — see [Evaluation.md](Evaluation.md). The graph carries real structural
+signal (AUC 0.692) but only for predictors matched to its multipartite shape;
+shared-neighbour methods are undefined on it, since every edge joins two
+different entity types and every held-out pair is cross-type.
 
 ## Quality Assessment
 

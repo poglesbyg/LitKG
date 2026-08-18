@@ -15,6 +15,7 @@ from litkg.evaluation import (
     AdamicAdarPredictor,
     CommonNeighborsPredictor,
     JaccardPredictor,
+    L3PathPredictor,
     PreferentialAttachmentPredictor,
     RandomPredictor,
     build_temporal_split,
@@ -273,3 +274,78 @@ class TestHarnessEndToEnd:
         report = evaluate_baselines(split, negatives_per_positive=5)
         if report.results:
             assert "structural_coverage" in report.diagnostics
+
+
+class TestHarnessRobustness:
+    def test_negative_sampling_survives_absent_positive_endpoints(self):
+        """
+        networkx returns a DegreeView (not an error) for a node it does not
+        contain, so an unguarded degree lookup fails with a confusing TypeError
+        rather than a missing-node error. Splits built directly, bypassing the
+        cold-start filter, hit this.
+        """
+        graph = nx.Graph([("a", "b"), ("b", "c")])
+        negatives = sample_negatives(
+            [("a", "absent")], graph, node_types={"a": "X", "b": "X", "c": "X"},
+            negatives_per_positive=2, seed=0, degree_matched=True,
+        )
+        assert isinstance(negatives, list)
+
+
+class TestL3PathPredictor:
+    """The graph is multipartite, so length-2 methods are undefined on it."""
+
+    def test_scores_cross_type_pairs_that_share_no_neighbour(self):
+        """
+        The case that matters: a bipartite chain a-x-b-y where a and y are two
+        hops apart in type space. Adamic-Adar sees nothing; L3 sees the path.
+        """
+        g = nx.Graph([("a", "x"), ("x", "b"), ("b", "y")])
+        assert AdamicAdarPredictor().fit(g).score("a", "y") == 0.0
+        assert L3PathPredictor().fit(g).score("a", "y") > 0.0
+
+    def test_more_paths_scores_higher(self):
+        one = nx.Graph([("a", "x"), ("x", "b"), ("b", "y")])
+        two = nx.Graph([("a", "x"), ("x", "b"), ("b", "y"),
+                        ("a", "p"), ("p", "q"), ("q", "y")])
+        assert (L3PathPredictor().fit(two).score("a", "y")
+                > L3PathPredictor().fit(one).score("a", "y"))
+
+    def test_hub_routes_count_for_less(self):
+        """Degree normalisation is what stops this becoming a popularity score."""
+        rare = nx.Graph([("a", "m"), ("m", "n"), ("n", "y")])
+        hub = nx.Graph([("a", "m"), ("m", "n"), ("n", "y")])
+        hub.add_edges_from([(f"e{i}", "m") for i in range(30)])
+        hub.add_edges_from([(f"f{i}", "n") for i in range(30)])
+        assert (L3PathPredictor().fit(hub).score("a", "y")
+                < L3PathPredictor().fit(rare).score("a", "y"))
+
+    def test_unknown_nodes_score_zero(self):
+        g = nx.Graph([("a", "x"), ("x", "b")])
+        assert L3PathPredictor().fit(g).score("absent", "a") == 0.0
+
+    def test_does_not_score_a_pair_via_its_own_endpoint(self):
+        """A path that doubles back through u is not a length-3 path to v."""
+        g = nx.Graph([("u", "a"), ("a", "u")])
+        assert L3PathPredictor().fit(g).score("u", "a") == 0.0
+
+    def test_included_in_default_baselines(self):
+        """A harness that omits it reports this graph as unpredictable."""
+        from litkg.evaluation import BASELINE_PREDICTORS
+        assert L3PathPredictor in BASELINE_PREDICTORS
+
+
+class TestMultipartiteDiagnostic:
+    def test_warns_when_graph_is_multipartite(self):
+        edges, types = [], {}
+        for i in range(60):
+            g_id, d_id = f"g{i}", f"d{i % 8}"
+            types[g_id], types[d_id] = "GENE", "DISEASE"
+            edges.append((g_id, d_id, 2000 + (i % 10)))
+        for i in range(60):
+            edges.append((f"g{i}", f"d{(i + 3) % 8}", 2020))
+        split = build_temporal_split(edges, cutoff_year=2015)
+        report = evaluate_baselines(split, node_types=types, negatives_per_positive=5)
+        if report.results:
+            assert report.diagnostics["same_type_edge_ratio"] == 0.0
+            assert any("multipartite" in n for n in report.notes)
