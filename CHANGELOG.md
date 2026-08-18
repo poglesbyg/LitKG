@@ -7,6 +7,34 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Evidence-weighted edges.** Flattening the graph discarded 11 predicates,
+  direction, confidence and 1731 negation flags, collapsing 13194 relations
+  into 6645 pairs. `RelationRecord` and `EdgeEvidence` carry those through the
+  temporal split, and `WeightedL3PathPredictor` weights each path hop by mean
+  confidence x log support, penalised by the negated fraction. On its own that
+  lifts average precision 0.205 -> 0.238 and MRR 0.0050 -> 0.0170.
+
+  Weights are aggregated from **pre-cutoff evidence only**; weighting an edge
+  with later evidence would leak the knowledge the holdout withholds.
+
+- **Relation-aware encoder** (`--relational`). An R-GCN learning one transform
+  per predicate, since the untyped graph treats SENSITIZES_TO and RESISTANT_TO
+  -- opposite claims about the same pair -- as identical edges. Trades a little
+  AUC (0.735 vs 0.743) for the best MRR of any configuration (0.0170).
+
+- **Per-entity-type-pair reporting.** Every evaluation now breaks results down
+  by type pair, because the aggregate averages four problems whose AUC spans
+  0.638 (disease-drug) to 0.802 (mutation-phenotype).
+
+### Changed
+
+- The hybrid now ensembles the GNN with *weighted* L3 and passes relation types
+  through. Against the previous best: AUC 0.729 -> 0.743, AP 0.244 -> 0.270,
+  Hits@10 0.014 -> 0.021, **MRR 0.0072 -> 0.0144**. Seed variance halved, from
+  +/-0.018 to +/-0.010.
+
+### Added
+
 - **Trained link predictors** (`litkg.phase2.link_prediction`,
   `scripts/train_link_prediction.py`). A 2-layer GraphSAGE encoder with an MLP
   edge decoder, and a hybrid that ensembles it with the L3 path baseline.

@@ -8,6 +8,7 @@ when the supporting paper was published asks the question that matters -- given
 what was known by year Y, can the graph predict what came after?
 """
 
+import math
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -22,6 +23,64 @@ from litkg.utils.logging import LoggerMixin
 _YEAR_PATTERN = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
 
 Edge = Tuple[str, str]
+
+
+@dataclass(frozen=True)
+class RelationRecord:
+    """
+    One asserted relation, with the evidence attributes the graph discards.
+
+    Flattening to a simple undirected graph collapses 13194 CIVIC relations
+    into 6645 pairs and drops the predicate, direction, curator confidence and
+    negation flag along the way. Carrying them this far lets a predictor use
+    them without changing what the structural baselines see.
+    """
+
+    subject: str
+    object: str
+    year: Optional[int] = None
+    predicate: str = ""
+    confidence: float = 1.0
+    negated: bool = False
+
+
+@dataclass
+class EdgeEvidence:
+    """Evidence supporting one node pair, aggregated across relations."""
+
+    support: int = 0
+    total_confidence: float = 0.0
+    negated_count: int = 0
+    predicates: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def mean_confidence(self) -> float:
+        return self.total_confidence / self.support if self.support else 0.0
+
+    @property
+    def negated_fraction(self) -> float:
+        return self.negated_count / self.support if self.support else 0.0
+
+    @property
+    def dominant_predicate(self) -> str:
+        if not self.predicates:
+            return ""
+        return max(self.predicates.items(), key=lambda kv: kv[1])[0]
+
+    def weight(self) -> float:
+        """
+        Edge weight from evidence strength.
+
+        Repeated assertion is support, so it enters logarithmically rather than
+        linearly. Negated evidence argues against the association and pulls the
+        weight down without erasing the edge -- "does not support" is a claim
+        about the association, not an absence of one.
+        """
+        if not self.support:
+            return 1.0
+        magnitude = self.mean_confidence * math.log1p(self.support)
+        penalty = 1.0 - 0.5 * self.negated_fraction
+        return max(0.05, magnitude * penalty)
 
 
 def extract_publication_year(citation: Any) -> Optional[int]:
@@ -65,6 +124,14 @@ class TemporalSplit:
     excluded_already_known: int = 0
     excluded_cold_start: int = 0
     edge_years: Dict[Edge, int] = field(default_factory=dict)
+    # Evidence aggregated from pre-cutoff relations only. Including post-cutoff
+    # evidence would leak the very associations being predicted into the weight
+    # of the edges used to predict them.
+    edge_evidence: Dict[Edge, EdgeEvidence] = field(default_factory=dict)
+
+    def edge_weights(self) -> Dict[Edge, float]:
+        """Evidence-derived weight per training pair; 1.0 where unknown."""
+        return {pair: ev.weight() for pair, ev in self.edge_evidence.items()}
 
     @property
     def train_nodes(self) -> Set[str]:
@@ -94,9 +161,17 @@ def _normalize(u: str, v: str) -> Edge:
 class TemporalSplitter(LoggerMixin):
     """Builds temporal splits from dated and undated edges."""
 
+    @staticmethod
+    def _as_record(item: Any) -> RelationRecord:
+        """Accept plain (source, target, year) triples or full records."""
+        if isinstance(item, RelationRecord):
+            return item
+        source, target, year = item
+        return RelationRecord(subject=source, object=target, year=year)
+
     def split(
         self,
-        dated_edges: Iterable[Tuple[str, str, Optional[int]]],
+        dated_edges: Iterable[Any],
         cutoff_year: int,
         backbone_edges: Iterable[Edge] = (),
     ) -> TemporalSplit:
@@ -118,11 +193,27 @@ class TemporalSplitter(LoggerMixin):
         # being a discovery.
         first_year: Dict[Edge, int] = {}
         undated: Set[Edge] = set()
+        evidence: Dict[Edge, EdgeEvidence] = {}
 
-        for source, target, year in dated_edges:
+        for item in dated_edges:
+            record = self._as_record(item)
+            source, target, year = record.subject, record.object, record.year
             if source == target:
                 continue  # self-loops are not predictions
             pair = _normalize(source, target)
+
+            # Only evidence published before the cutoff may inform edge
+            # weights; anything later is knowledge the model is not entitled to.
+            if year is not None and year < cutoff_year:
+                entry = evidence.setdefault(pair, EdgeEvidence())
+                entry.support += 1
+                entry.total_confidence += record.confidence
+                entry.negated_count += int(record.negated)
+                if record.predicate:
+                    entry.predicates[record.predicate] = (
+                        entry.predicates.get(record.predicate, 0) + 1
+                    )
+
             if year is None:
                 undated.add(pair)
                 continue
@@ -166,6 +257,7 @@ class TemporalSplitter(LoggerMixin):
             excluded_already_known=len(already_known),
             excluded_cold_start=len(cold_start),
             edge_years=first_year,
+            edge_evidence=evidence,
         )
 
         self.logger.info(
@@ -176,7 +268,7 @@ class TemporalSplitter(LoggerMixin):
 
 
 def build_temporal_split(
-    dated_edges: Iterable[Tuple[str, str, Optional[int]]],
+    dated_edges: Iterable[Any],
     cutoff_year: int,
     backbone_edges: Iterable[Edge] = (),
 ) -> TemporalSplit:
@@ -184,12 +276,12 @@ def build_temporal_split(
     return TemporalSplitter().split(dated_edges, cutoff_year, backbone_edges)
 
 
-def year_distribution(
-    dated_edges: Iterable[Tuple[str, str, Optional[int]]]
-) -> Dict[int, int]:
+def year_distribution(dated_edges: Iterable[Any]) -> Dict[int, int]:
     """Count distinct pairs by first assertion year, for choosing a cutoff."""
     first_year: Dict[Edge, int] = {}
-    for source, target, year in dated_edges:
+    for item in dated_edges:
+        record = TemporalSplitter._as_record(item)
+        source, target, year = record.subject, record.object, record.year
         if year is None or source == target:
             continue
         pair = _normalize(source, target)

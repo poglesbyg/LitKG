@@ -349,3 +349,114 @@ class TestMultipartiteDiagnostic:
         if report.results:
             assert report.diagnostics["same_type_edge_ratio"] == 0.0
             assert any("multipartite" in n for n in report.notes)
+
+
+class TestEvidenceWeights:
+    """
+    Flattening the graph discarded predicate, confidence and negation. These
+    tests cover recovering them -- and the leak that recovery invites.
+    """
+
+    def test_weights_use_only_pre_cutoff_evidence(self):
+        """
+        The leak this invites: weighting an edge by evidence published after
+        the cutoff feeds the model exactly the knowledge the holdout is meant
+        to withhold. A pair's weight must reflect only what was known in time.
+        """
+        from litkg.evaluation import RelationRecord
+        records = [
+            RelationRecord("a", "b", 2010, "TREATS", 0.5),
+            RelationRecord("a", "b", 2020, "TREATS", 1.0),   # after the cutoff
+            RelationRecord("a", "b", 2021, "TREATS", 1.0),   # after the cutoff
+        ]
+        split = build_temporal_split(records, cutoff_year=2015)
+        evidence = split.edge_evidence[("a", "b")]
+        assert evidence.support == 1, "post-cutoff evidence leaked into the weight"
+        assert evidence.mean_confidence == pytest.approx(0.5)
+
+    def test_repeated_assertion_raises_weight_sublinearly(self):
+        from litkg.evaluation import EdgeEvidence
+        one = EdgeEvidence(support=1, total_confidence=0.8)
+        ten = EdgeEvidence(support=10, total_confidence=8.0)
+        assert ten.weight() > one.weight()
+        # Ten assertions are not ten times the evidence.
+        assert ten.weight() < 10 * one.weight()
+
+    def test_negated_evidence_lowers_weight(self):
+        """1731 CIVIC relations say the association does NOT hold."""
+        from litkg.evaluation import EdgeEvidence
+        supported = EdgeEvidence(support=4, total_confidence=3.2, negated_count=0)
+        contested = EdgeEvidence(support=4, total_confidence=3.2, negated_count=4)
+        assert contested.weight() < supported.weight()
+        assert contested.weight() > 0, "contested is not the same as absent"
+
+    def test_dominant_predicate_reported(self):
+        from litkg.evaluation import EdgeEvidence
+        evidence = EdgeEvidence(
+            support=5, total_confidence=4.0,
+            predicates={"SENSITIZES_TO": 4, "RESISTANT_TO": 1},
+        )
+        assert evidence.dominant_predicate == "SENSITIZES_TO"
+
+    def test_plain_tuples_still_accepted(self):
+        """Existing callers pass (source, target, year) triples."""
+        split = build_temporal_split([("a", "b", 2010), ("c", "d", 2020)], 2015)
+        assert ("a", "b") in split.train_edges
+
+    def test_weighted_l3_differs_from_unweighted(self):
+        from litkg.evaluation import L3PathPredictor, WeightedL3PathPredictor
+        g = nx.Graph([("a", "x"), ("x", "b"), ("b", "y")])
+        weights = {("a", "x"): 5.0, ("b", "x"): 5.0, ("b", "y"): 5.0}
+        plain = L3PathPredictor().fit(g).score("a", "y")
+        weighted = WeightedL3PathPredictor(weights=weights).fit(g).score("a", "y")
+        assert weighted > plain
+
+    def test_weighted_l3_defaults_to_one_for_unknown_edges(self):
+        from litkg.evaluation import L3PathPredictor, WeightedL3PathPredictor
+        g = nx.Graph([("a", "x"), ("x", "b"), ("b", "y")])
+        assert (WeightedL3PathPredictor(weights={}).fit(g).score("a", "y")
+                == pytest.approx(L3PathPredictor().fit(g).score("a", "y")))
+
+
+class TestPerTypePairBreakdown:
+    """
+    One aggregate number averages four problems whose AUC ranges from 0.638 to
+    0.802, hiding both progress and regressions.
+    """
+
+    @pytest.fixture
+    def report(self):
+        edges, types = [], {}
+        for i in range(60):
+            for suffix, kind in (("d", "DISEASE"), ("t", "DRUG")):
+                node, other = f"v{i}", f"{suffix}{i % 5}"
+                types[node], types[other] = "MUTATION", kind
+                edges.append((node, other, 2000 + (i % 12)))
+        split = build_temporal_split(edges, cutoff_year=2008)
+        return evaluate_baselines(
+            split, node_types=types, negatives_per_positive=5, seed=0
+        )
+
+    def test_breaks_results_down_by_pair(self, report):
+        if report.results:
+            assert report.per_type_pair
+            assert all("-" in pair for pair in report.per_type_pair)
+
+    def test_pair_labels_are_order_independent(self, report):
+        """DISEASE-MUTATION and MUTATION-DISEASE are one group, not two."""
+        for pair in report.per_type_pair:
+            parts = pair.split("-")
+            assert parts == sorted(parts)
+
+    def test_group_sizes_sum_to_the_whole(self, report):
+        if not report.per_type_pair:
+            pytest.skip("no test edges in this fixture")
+        name = next(iter(next(iter(report.per_type_pair.values()))))
+        total = sum(r[name].positives for r in report.per_type_pair.values())
+        assert total == report.results[name].positives
+
+    def test_breakdown_absent_without_node_types(self):
+        split = build_temporal_split(
+            [(f"a{i}", f"b{i % 4}", 2000 + i % 10) for i in range(40)], 2005
+        )
+        assert not evaluate_baselines(split, negatives_per_positive=3).per_type_pair
