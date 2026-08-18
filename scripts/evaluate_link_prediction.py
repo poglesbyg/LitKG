@@ -32,13 +32,16 @@ from litkg.evaluation import (
 from litkg.evaluation.baselines import BASELINE_PREDICTORS
 from litkg.evaluation.temporal_split import year_distribution
 from litkg.phase1.kg_preprocessor import CivicProcessor
+from litkg.phase2.node_features import build_node_text
 from litkg.utils.config import get_data_dir, load_config
 from litkg.utils.logging import setup_logging
 
 
 def load_dated_edges(
     civic_dir: Path,
-) -> Tuple[List[Tuple[str, str, Optional[int]]], List[Tuple[str, str]], Dict[str, str]]:
+) -> Tuple[
+    List["RelationRecord"], List[Tuple[str, str]], Dict[str, str], Dict[str, str]
+]:
     """
     Build dated evidence edges and undated backbone edges from CIVIC.
 
@@ -56,13 +59,16 @@ def load_dated_edges(
 
     entities, relations = processor._process_civic_evidence(evidence_file, variants_file)
     node_types: Dict[str, str] = {e.id: e.type for e in entities}
+    all_entities = list(entities)
 
     # Variant and gene nodes come from the other two files.
     variant_entities, variant_relations = processor._process_civic_variants(variants_file)
     for entity in variant_entities:
         node_types[entity.id] = entity.type
+        all_entities.append(entity)
     for entity in processor._process_civic_genes(genes_file):
         node_types[entity.id] = entity.type
+        all_entities.append(entity)
 
     # Evidence id -> publication year, from the citation string.
     evidence = pd.read_csv(evidence_file, sep="\t")
@@ -86,7 +92,7 @@ def load_dated_edges(
         ))
 
     backbone = [(r.subject, r.object) for r in variant_relations]
-    return dated, backbone, node_types
+    return dated, backbone, node_types, build_node_text(all_entities)
 
 
 def main() -> int:
@@ -116,7 +122,7 @@ def main() -> int:
         print("Run: python scripts/phase1_integration.py", file=sys.stderr)
         return 1
 
-    dated, backbone, node_types = load_dated_edges(civic_dir)
+    dated, backbone, node_types, _node_text = load_dated_edges(civic_dir)
 
     if args.list_years:
         distribution = year_distribution(dated)

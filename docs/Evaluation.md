@@ -185,7 +185,8 @@ this same harness so the comparison is like for like.
 
 | predictor | AUC | AUC 95% CI | AP | H@100 | MRR | MRR 95% CI |
 |---|---|---|---|---|---|---|
-| **hybrid** (GNN + weighted L3) | **0.743** | [0.729, 0.755] | **0.262** | **0.069** | 0.0114 | [0.0075, 0.0163] |
+| **hybrid** (GNN + weighted L3 + text) | **0.750** | [0.736, 0.763] | **0.300** | **0.105** | 0.0171 | [0.0117, 0.0244] |
+| text_only | 0.581 | [0.566, 0.597] | 0.117 | 0.012 | 0.0012 | [0.0007, 0.0019] |
 | weighted_l3 | 0.698 | [0.682, 0.713] | 0.231 | 0.053 | 0.0097 | [0.0065, 0.0133] |
 | gnn alone | 0.697 | [0.685, 0.709] | 0.170 | 0.040 | 0.0031 | [0.0016, 0.0056] |
 | l3_paths | 0.692 | [0.677, 0.707] | 0.204 | 0.042 | 0.0044 | [0.0031, 0.0061] |
@@ -280,6 +281,61 @@ currently **no measured reason to prefer either**. It is kept because modelling
 opposite predicates as the same edge is wrong in principle, and because a
 denser graph may make the difference measurable.
 
+### Node text features
+
+Every predictor before this used topology alone, which caps what is reachable:
+14% of held-out pairs have no path between their endpoints at any length.
+`NodeTextEncoder` embeds each node's display name and the GNN takes those
+vectors as input alongside its learned embedding, node type and log-degree.
+
+Names are static metadata, so this does not leak across the temporal split — a
+disease was called "melanoma" before and after 2016.
+
+**Measured effect, 8 seeds**, hybrid predictor:
+
+| | AUC | range | AP | H@100 |
+|---|---|---|---|---|
+| topology only | 0.734 ± 0.006 | [0.724, 0.744] | 0.277 | 0.090 |
+| **with text** | **0.754 ± 0.005** | **[0.745, 0.762]** | 0.299 | 0.105 |
+
+The ranges are disjoint: +0.020 AUC, roughly four standard deviations. Four
+seeds were not enough to see this — two 4-seed runs of the same configuration
+disagreed by 0.023, more than the effect. Use `--seeds` generously.
+
+**Which encoder, decided by measurement:** on name similarity alone,
+PubMedBERT scores 0.580 [0.564, 0.595], MiniLM 0.533 [0.516, 0.550], and
+BioBERT 0.514 [0.497, 0.530] against a 0.498 floor. PubMedBERT is the default.
+BioBERT is barely distinguishable from chance despite also being a biomedical
+model, so "biomedical" alone does not predict which encoder helps.
+
+### The gain is not string matching
+
+Some CIVIC therapies are named for their target — "BRAF Inhibitor" embeds at
+cosine 0.65 against "BRAF" — so a model handed names could score certain pairs
+from the strings alone. `text_only` bounds that: **AUC 0.581, against 0.750 for
+the hybrid.** Text alone is far above the random floor but nowhere near
+topology, and it is only in combination that it earns its keep. The features
+help the model generalise across similar entities, not match substrings.
+
+### Cold start: coverage without much signal
+
+The split excludes 366 pairs whose endpoints never appear in training, because
+no topological method can score them. Text features can:
+
+| predictor | AUC | pairs it can score |
+|---|---|---|
+| l3_paths | 0.418 | **0 of 366** |
+| weighted_l3 | 0.418 | 0 of 366 |
+| text_only | 0.531 [0.501, 0.562] | 366 of 366 |
+
+L3's 0.418 is an artefact of every pair tying at zero. So text features are the
+only thing that addresses cold start at all — but at 0.531 with a lower bound
+of 0.501, barely better than guessing. This is a capability, not yet a result,
+and it points at the limit of names: "Imatinib" as a string says nothing about
+what it treats. That knowledge is in the literature, not the label. Embedding
+entities by the abstract contexts they appear in is the obvious next step, and
+the corpus is already processed.
+
 ### Read the per-type-pair table, not just the aggregate
 
 The single headline number averages four problems of very different difficulty.
@@ -329,9 +385,9 @@ Three consequences, all now implemented:
 
 ### Reading this honestly
 
-AUC 0.743 against an 0.692 baseline is a real gain with disjoint confidence
-intervals, bought with a large increase in complexity. **Hits@100 of 0.069
-means fewer than 7% of held-out associations reach the top 100 of ~12000** — this is a measurable improvement in a research
+AUC 0.750 against an 0.692 baseline is a real gain with disjoint confidence
+intervals, bought with a large increase in complexity. **Hits@100 of 0.105
+means about 10% of held-out associations reach the top 100 of ~12000** — this is a measurable improvement in a research
 setting, not a system that surfaces useful hypotheses yet. The MRR gain
 (0.0050 → 0.0072) is the more meaningful movement, and it is still small in
 absolute terms.
