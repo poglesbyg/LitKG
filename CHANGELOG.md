@@ -7,6 +7,36 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Trained link predictors** (`litkg.phase2.link_prediction`,
+  `scripts/train_link_prediction.py`). A 2-layer GraphSAGE encoder with an MLP
+  edge decoder, and a hybrid that ensembles it with the L3 path baseline.
+
+  The hybrid reaches **AUC 0.729 ± 0.018 against the 0.692 baseline, beating it
+  in 5 of 5 seeds**, with average precision 0.244 vs 0.205 and MRR 0.0072 vs
+  0.0050. The GNN alone does not clear the bar reliably: 0.670 ± 0.089, with
+  one seed collapsing to 0.512. The two components correlate at only Spearman
+  0.33, which is why ensembling them helps and why the ensemble is far more
+  stable than the learned part alone.
+
+  Four things were required to make the GNN train meaningfully: disjoint
+  message-passing and supervision edges (otherwise it reads the adjacency it
+  was handed), temporal rather than random validation (a random slice reported
+  0.912 against a true 0.737), a BPR ranking loss rather than cross entropy,
+  and type- and degree-matched training negatives matching the evaluation.
+
+  Hits@10 remains 0.014 — this is a measurable research result, not a system
+  that surfaces useful hypotheses.
+
+### Fixed
+
+- **The first hybrid scored AUC 0.000.** It rank-transformed within each call,
+  and the harness scores positives and negatives separately, so with ten times
+  as many negatives every negative outranked every positive. Percentiles are
+  now taken against a reference distribution fixed at fit time, making scores
+  independent of the batch they were computed in.
+
+### Added
+
 - **`L3PathPredictor` baseline**, and it changes the project's headline result.
   The CIVIC graph is strictly multipartite — 0 of 6769 edges join same-type
   nodes — and 100% of held-out pairs are cross-type, so shared-neighbour

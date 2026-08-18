@@ -176,6 +176,70 @@ In rough order of expected return per unit of effort:
 4. **Reframe to a narrower task.** Ranking therapies for a given variant is
    better posed than open link prediction and the typed graph supports it.
 
+## Trained models
+
+`python scripts/train_link_prediction.py --cutoff 2016 --seeds 5`
+
+Two learned predictors live in `litkg.phase2.link_prediction`, scored through
+this same harness so the comparison is like for like.
+
+| predictor | AUC | AP | H@10 | MRR |
+|---|---|---|---|---|
+| **hybrid** (GNN + L3) | **0.729 ± 0.018** | 0.244 | 0.014 | 0.0072 |
+| gnn alone | 0.670 ± 0.089 | 0.172 | 0.003 | 0.0024 |
+| l3_paths | 0.692 | 0.205 | 0.017 | 0.0050 |
+
+Averages over 5 seeds. The hybrid beats the L3 bar in **5 of 5 seeds**; the GNN
+alone does not, and one seed collapsed to 0.512.
+
+### What made the GNN work at all
+
+**Edge masking.** At test time the target edge is absent from the graph. If
+training supervises on edges that are also in the message-passing graph, the
+model learns to read the adjacency it was handed rather than to predict.
+Training edges are split into disjoint message-passing and supervision sets,
+resampled every few epochs.
+
+**Temporal validation.** A random validation slice reported AUC 0.912 while the
+model scored 0.737 on the temporal test — early stopping was selecting against
+a much easier distribution. Validating on the most recent training edges closed
+that gap to 0.66 versus 0.71 and picks better models.
+
+**Ranking loss.** Cross entropy optimises a global threshold; Hits@K and MRR
+are per-positive rankings. Switching to BPR cost some AUC and doubled MRR. BCE
+also proved much weaker overall here (validation 0.588 against BPR's 0.727).
+
+**Hard negatives.** Training draws negatives matched on type and degree, the
+same way the evaluation does. Training against easy negatives teaches a
+boundary the evaluation never asks about.
+
+### Why the ensemble beats both parts
+
+The GNN and L3 agree less than they disagree — Spearman 0.33 on held-out pairs.
+L3 counts concrete evidence paths in the observed graph; the GNN learns a
+latent representation that generalises past the paths that happen to exist.
+Averaging their percentiles beats both on AUC, AP and MRR, and every blend
+weight from 0.25 to 0.75 beats both components, so the result does not hinge on
+tuning. The weight is nevertheless selected on a temporal validation slice, not
+on test.
+
+The ensemble is also what makes the result *stable*: the GNN alone swings
+±0.089 across seeds, the hybrid ±0.018. L3 acts as a floor the learned
+component cannot fall through.
+
+### Reading this honestly
+
+AUC 0.729 against an 0.692 baseline is a real but modest gain, bought with a
+large increase in complexity. **Hits@10 of 0.014 means the top of the ranking
+is still nearly empty** — this is a measurable improvement in a research
+setting, not a system that surfaces useful hypotheses yet. The MRR gain
+(0.0050 → 0.0072) is the more meaningful movement, and it is still small in
+absolute terms.
+
+Note also that runs are not bit-reproducible despite seeding: scatter-add
+ordering in the graph convolutions varies. Single-seed numbers should not be
+quoted; use `--seeds`.
+
 ## Adding a predictor
 
 Implement `score`, and the harness handles the rest:
