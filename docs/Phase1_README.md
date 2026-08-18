@@ -46,7 +46,9 @@ Phase 1 establishes the foundation for LitKG-Integrate by implementing three cor
 **Models Used**:
 - **PubMedBERT**: `microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext`
 - **BioBERT**: `dmis-lab/biobert-base-cased-v1.1`
-- **scispacy**: `en_core_sci_md` for biomedical named entity recognition
+- **scispacy**: `en_ner_bionlp13cg_md` and `en_ner_bc5cdr_md` for typed
+  biomedical NER (`en_core_sci_md` emits a single `ENTITY` label and cannot
+  distinguish a gene from a disease, so it is used only for parsing)
 
 **Output**: `ProcessedDocument` objects containing:
 - Extracted entities with positions and confidence scores
@@ -274,8 +276,8 @@ distance.
 
 ### Literature entity resolution
 
-NER emits one mention per occurrence, so the corpus's 1504 mentions cover only
-309 distinct entities — BRCA1 alone appeared 62 times. Building a node per
+NER emits one mention per occurrence, so the corpus's 3411 mentions cover only
+1028 distinct entities — BRCA1 alone appeared 62 times. Building a node per
 mention made the literature graph mention-level, where degree and centrality
 measured how often a paper repeated a name rather than anything about the
 entity, and every GNN node feature inherited that.
@@ -306,25 +308,43 @@ healthier: previously the linker only attempted the handful of trivially exact
 variant strings. It now attempts real gene matches, which are more numerous and
 less certain.
 
-**NER typing is unreliable, and now bounds relation precision.** All 78
-extracted relations have GENE→GENE endpoints, because the tagger labels
-diseases ("ALL", "NSCLC", "TNBC"), outcomes ("PFS") and therapies ("CAR") as
-genes. That produces plausible relations stated over mistyped entities
-(`CAR -TREATS-> ALL` is semantically right; both are typed GENE) alongside
-nonsense (`ALK -TREATS-> PFS`).
+**NER typing was the binding constraint on relation quality, and is fixed.**
+Every one of the 78 relations previously had GENE→GENE endpoints. Two causes
+compounded: `en_core_sci_md` emits a single `ENTITY` label, which is not in the
+kept entity types, so the scispacy path contributed nothing; the rule-based
+fallback then typed any all-caps token matching `[A-Z][A-Z0-9]{2,10}` as a
+gene. Diseases (`ALL`, `NSCLC`, `TNBC`), outcomes (`PFS`) and methods (`DNA`,
+`PCR`) all became genes, producing nonsense like `ALK -TREATS-> PFS`.
 
-Type constraints are the obvious filter and were deliberately **not** added:
-they would key off entity type, the very signal that is broken, deleting 65 of
-78 relations while looking like a precision improvement. Fixing NER typing
-comes first.
+Extraction now runs the specialized models `en_ner_bionlp13cg_md` and
+`en_ner_bc5cdr_md`, whose labels are mapped onto the kept types, and gene
+acceptance is vocabulary-driven — the KG's own gene symbols plus a stoplist of
+non-gene biomedical acronyms — rather than shape-driven. Entity types across
+1028 entities:
+
+| Type | Count |
+|---|---|
+| DISEASE | 303 |
+| GENE | 301 |
+| CHEMICAL | 175 |
+| CELL_TYPE | 167 |
+| TISSUE | 45 |
+| ORGANISM | 37 |
+
+Relation endpoints are correspondingly varied — GENE→DISEASE (65) now leads,
+with GENE→GENE at 30 of 301. Type constraints, previously declined because they
+would have keyed off the broken signal, are now a defensible next filter.
+
+Recall did not pay for this: of the 67 KG gene symbols that appear verbatim in
+the corpus, 66 are still extracted (`CTLA4` is missed, appearing as `CTLA-4`).
 
 **The ontology rule fires zero times on this data.** It is correct and
 unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
 matches. Set `UMLS_API_KEY` for real coverage. The bottleneck here is input
 identifier coverage, not the algorithm.
 
-**Cross-modal linking is still the weak point,** though far less so. 100
-literature↔KG links against 1000 "novel" literature entities.
+**Cross-modal linking is still the weak point,** though far less so. 92
+literature↔KG links against 2723 "novel" literature entities.
 
 It was 12 until gene-level nodes were added. CIVIC's variant records are named
 for the alteration ("1100delC"), while literature NER extracts gene symbols
@@ -332,9 +352,12 @@ for the alteration ("1100delC"), while literature NER extracts gene symbols
 appear verbatim in abstracts. With 513 gene nodes in place they share a
 vocabulary, and linking rose 8x.
 
-The remaining 1000 are mostly still unlinked rather than genuinely novel. The
-dominant cause now is NER precision: "CAR", "ALL", "DNA" and "ICI" are all
-tagged as genes.
+The remaining entities are mostly still unlinked rather than genuinely novel.
+The count grew because typed NER extracts diseases, chemicals, cell types and
+tissues that the gene-only regex never saw; the KG side is gene- and
+variant-centric, so those have nothing to link against. Links fell 100 → 92 as
+spurious acronym matches disappeared. Extending the KG side beyond genes and
+variants is the next lever, not NER.
 
 **No precision or recall figures are given** because there is no gold standard
 to compute them against. Earlier versions of this document quoted precision

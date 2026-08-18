@@ -244,6 +244,50 @@ class PubMedRetriever(LoggerMixin):
 class BiomedicalNLP(LoggerMixin):
     """Biomedical NLP processor using multiple models."""
     
+    # Specialized scispacy NER models, in order of preference. en_core_sci_*
+    # emits a single "ENTITY" label and cannot type anything, so relying on it
+    # alone leaves the rule-based path as the only source of entity types.
+    NER_MODELS = ("en_ner_bionlp13cg_md", "en_ner_bc5cdr_md")
+
+    # Model labels mapped onto this project's entity vocabulary
+    NER_LABEL_MAP = {
+        "GENE_OR_GENE_PRODUCT": "GENE",
+        "SIMPLE_CHEMICAL": "CHEMICAL",
+        "CHEMICAL": "CHEMICAL",
+        "DISEASE": "DISEASE",
+        "CANCER": "DISEASE",
+        "CELL": "CELL_TYPE",
+        "CELLULAR_COMPONENT": "CELL_TYPE",
+        "TISSUE": "TISSUE",
+        "ORGAN": "TISSUE",
+        "ANATOMICAL_SYSTEM": "TISSUE",
+        "MULTI_TISSUE_STRUCTURE": "TISSUE",
+        "ORGANISM": "ORGANISM",
+        "AMINO_ACID": "CHEMICAL",
+    }
+
+    # All-caps acronyms the gene regex would otherwise claim. These are the
+    # observed offenders in the sample corpus: disease abbreviations, outcome
+    # measures, therapy classes, study designs and plain molecules. A gene
+    # regex of the form [A-Z][A-Z0-9]{2,10} matches every one of them.
+    NON_GENE_ACRONYMS = frozenset({
+        # Diseases and conditions
+        "ALL", "AML", "CLL", "CML", "NSCLC", "SCLC", "TNBC", "HCC", "CRC",
+        "GBM", "DLBCL", "MDS", "MM", "RCC", "HNSCC", "COPD", "AIDS", "HIV",
+        # Outcome measures and statistics
+        "PFS", "OS", "ORR", "DFS", "RFS", "TTP", "DCR", "CR", "PR", "SD", "PD",
+        "HR", "CI", "AUC", "ROC", "IQR", "SEM", "ANOVA",
+        # Therapies and modalities
+        "CAR", "ICI", "ICB", "TKI", "PARP", "ADC", "SOC", "CHT", "RT",
+        "CTLA", "IMRT", "SBRT",
+        # Molecules, methods and general terms
+        "DNA", "RNA", "MRNA", "CDNA", "PCR", "QPCR", "RTPCR", "NGS", "WES",
+        "WGS", "IHC", "FISH", "ELISA", "MRI", "PET", "CT", "US", "FDA", "EMA",
+        "NCI", "WHO", "NIH", "USA", "UK", "EU",
+        # Study and trial vocabulary
+        "RCT", "ITT", "QOL", "AE", "SAE", "MTD", "DLT", "PK", "PD",
+    })
+
     def __init__(self, config: LitKGConfig):
         self.config = config
         self.models_config = config.phase1.literature.models
@@ -253,6 +297,8 @@ class BiomedicalNLP(LoggerMixin):
         self._load_models()
         
         # Entity types we're interested in
+
+
         self.entity_types = {
             "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE", 
             "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION"
@@ -269,6 +315,10 @@ class BiomedicalNLP(LoggerMixin):
         """Load all required NLP models."""
         self.logger.info("Loading biomedical NLP models...")
         
+        # Specialized NER models. Loaded lazily on first use.
+        self._ner_pipelines = None
+        self._gene_vocabulary = None
+
         # Load scispacy model
         try:
             self.nlp = spacy.load(self.models_config["scispacy_model"])
@@ -341,23 +391,82 @@ class BiomedicalNLP(LoggerMixin):
         
         return entities
     
+    @property
+    def ner_pipelines(self) -> List[Any]:
+        """
+        Specialized NER models, loaded once on first use.
+
+        The general en_core_sci_* model emits a single "ENTITY" label, which is
+        not in ``entity_types``, so it contributed nothing and left the gene
+        regex as the only source of entity types -- which is why every entity
+        in the corpus came out typed GENE.
+        """
+        if self._ner_pipelines is not None:
+            return self._ner_pipelines
+
+        self._ner_pipelines = []
+        for model_name in self.NER_MODELS:
+            try:
+                self._ner_pipelines.append(spacy.load(model_name))
+                self.logger.info(f"Loaded NER model {model_name}")
+            except OSError:
+                self.logger.warning(
+                    f"NER model {model_name} not installed; entity typing will be "
+                    "less accurate. Run scripts/setup_models.py"
+                )
+
+        if not self._ner_pipelines:
+            self.logger.warning(
+                "No specialized NER model available; falling back to the general "
+                "model, which cannot distinguish entity types"
+            )
+
+        return self._ner_pipelines
+
     def _extract_entities_scispacy(self, text: str) -> List[Entity]:
-        """Extract entities using scispacy."""
+        """
+        Extract typed entities using the specialized biomedical NER models.
+
+        Each model contributes the types it was trained for -- bionlp13cg for
+        genes, cancers, cells and tissues; bc5cdr for diseases and chemicals --
+        and their labels are mapped onto this project's vocabulary.
+        """
         entities = []
-        doc = self.nlp(text)
-        
-        for ent in doc.ents:
-            if ent.label_ in self.entity_types:
-                entity = Entity(
+
+        for pipeline in self.ner_pipelines:
+            try:
+                doc = pipeline(text)
+            except Exception as e:
+                self.logger.warning(f"NER model failed on this text: {e}")
+                continue
+
+            for ent in doc.ents:
+                label = self.NER_LABEL_MAP.get(ent.label_, ent.label_)
+                if label not in self.entity_types:
+                    continue
+
+                entities.append(Entity(
                     text=ent.text,
-                    label=ent.label_,
+                    label=label,
                     start=ent.start_char,
                     end=ent.end_char,
-                    confidence=0.8,  # scispacy doesn't provide confidence scores
-                    cui=ent._.cui if hasattr(ent._, 'cui') else None
-                )
-                entities.append(entity)
-        
+                    # scispacy does not expose per-entity confidence; a trained
+                    # model is still worth more than the regex fallback
+                    confidence=0.85,
+                    cui=ent._.cui if hasattr(ent._, "cui") else None,
+                ))
+
+        # Fall back to the general model only when no specialized model loaded
+        if not self.ner_pipelines:
+            for ent in self.nlp(text).ents:
+                label = self.NER_LABEL_MAP.get(ent.label_, ent.label_)
+                if label in self.entity_types:
+                    entities.append(Entity(
+                        text=ent.text, label=label,
+                        start=ent.start_char, end=ent.end_char,
+                        confidence=0.6,
+                    ))
+
         return entities
     
     def _extract_entities_bert(self, text: str) -> List[Entity]:
@@ -638,15 +747,69 @@ class BiomedicalNLP(LoggerMixin):
         }
         return mapping.get(bert_label, bert_label)
     
+    @property
+    def gene_vocabulary(self) -> set:
+        """
+        Known gene symbols, loaded once from the curated sources on disk.
+
+        Drawn from the CIVIC gene list and the seed ontology. Used to keep the
+        rule-based extractor honest: an all-caps token is only called a gene if
+        something authoritative says it is one.
+        """
+        if self._gene_vocabulary is not None:
+            return self._gene_vocabulary
+
+        vocabulary = set()
+
+        try:
+            from litkg.utils.config import get_data_dir
+            civic_genes = get_data_dir() / "external" / "civic" / "civic_genes.tsv"
+            if civic_genes.exists():
+                frame = pd.read_csv(civic_genes, sep="\t")
+                column = "name" if "name" in frame.columns else "gene"
+                vocabulary |= {
+                    str(v).strip().upper() for v in frame[column].dropna()
+                }
+
+            ontology = get_data_dir() / "ontologies" / "biomedical_seed.json"
+            if ontology.exists():
+                with open(ontology) as handle:
+                    for name, record in json.load(handle).items():
+                        if str(record.get("type", "")).upper() == "GENE":
+                            vocabulary.add(name.strip().upper())
+                            vocabulary |= {
+                                str(s).strip().upper()
+                                for s in record.get("synonyms", [])
+                            }
+        except Exception as e:
+            self.logger.warning(f"Could not load gene vocabulary: {e}")
+
+        self._gene_vocabulary = vocabulary
+        self.logger.info(f"Gene vocabulary: {len(vocabulary)} symbols")
+        return vocabulary
+
     def _is_likely_gene(self, text: str) -> bool:
-        """Check if text is likely a gene symbol."""
-        # Simple heuristics
-        if len(text) < 2 or len(text) > 10:
+        """
+        Decide whether an all-caps token is really a gene symbol.
+
+        The previous version accepted anything 2-10 characters starting with a
+        capital, so the gene regex ``[A-Z][A-Z0-9]{2,10}`` claimed every
+        acronym in the corpus: ALL and NSCLC (diseases), PFS (an outcome
+        measure), CAR and ICI (therapy classes), DNA and PCR. That is why every
+        extracted relation had GENE->GENE endpoints.
+
+        Now a token must be in the curated gene vocabulary, and known non-gene
+        acronyms are rejected outright. The specialized NER models cover genes
+        the vocabulary has not heard of.
+        """
+        candidate = text.strip().upper()
+
+        if not 2 <= len(candidate) <= 10:
             return False
-        if not text[0].isupper():
+        if candidate in self.NON_GENE_ACRONYMS:
             return False
-        # Add more sophisticated checks here
-        return True
+
+        return candidate in self.gene_vocabulary
     
     def _split_into_sentences(self, text: str) -> List[Dict[str, Any]]:
         """Split text into sentences with position information."""
