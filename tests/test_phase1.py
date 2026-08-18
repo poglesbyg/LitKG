@@ -791,3 +791,88 @@ class TestPhase1Integration:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+class TestCivicGeneNodes:
+    """
+    Gene-level nodes are what literature mentions resolve against.
+
+    Literature NER extracts gene symbols ("BRCA1"); CIVIC variant records are
+    named for the alteration ("1100delC"). Without gene nodes the two
+    vocabularies cannot meet, and cross-modal linking collapses to the few
+    variant notations that appear verbatim in abstracts.
+    """
+
+    @staticmethod
+    def _processor():
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+        from litkg.utils.config import load_config
+        return CivicProcessor(load_config())
+
+    def test_gene_and_variant_processors_agree_on_id(self):
+        """
+        Both sides must derive the same id or every HAS_VARIANT edge dangles.
+
+        civic_genes.tsv and civic_variants.tsv name the entrez column
+        identically but pandas yields a float from one and a string from the
+        other, so the helper must normalize both.
+        """
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+
+        from_genes_file = CivicProcessor._civic_gene_id("ALK", 238.0)
+        from_variants_file = CivicProcessor._civic_gene_id("ALK", "238")
+
+        assert from_genes_file == from_variants_file
+
+    def test_gene_id_falls_back_to_symbol(self):
+        from litkg.phase1.kg_preprocessor import CivicProcessor
+
+        for missing in ("", "nan", None):
+            assert CivicProcessor._civic_gene_id("ALK", missing) == "CIVIC:GENE:ALK"
+
+    def test_genes_are_read_from_the_name_column(self, tmp_path):
+        """
+        civic_genes.tsv carries the symbol in "name"; only civic_variants.tsv
+        has a "gene" column. Reading the wrong one silently drops every gene.
+        """
+        genes_file = tmp_path / "civic_genes.tsv"
+        genes_file.write_text(
+            "gene_id\tgene_civic_url\tname\tentrez_id\tdescription\n"
+            "1\thttp://x\tALK\t238\tsome description\n"
+            "2\thttp://y\tBRCA1\t672\tanother description\n"
+        )
+
+        entities = self._processor()._process_civic_genes(genes_file)
+
+        assert [e.name for e in entities] == ["ALK", "BRCA1"]
+        assert all(e.type == "GENE" for e in entities)
+
+    def test_accepts_either_column_name(self, tmp_path):
+        """A schema change on one file must not empty the vocabulary."""
+        genes_file = tmp_path / "civic_genes.tsv"
+        genes_file.write_text("gene_id\tgene\tentrez_id\n1\tALK\t238\n")
+
+        entities = self._processor()._process_civic_genes(genes_file)
+
+        assert [e.name for e in entities] == ["ALK"]
+
+    def test_variant_edges_point_at_real_gene_nodes(self, tmp_path):
+        """The end-to-end invariant: no dangling HAS_VARIANT edges."""
+        processor = self._processor()
+
+        genes_file = tmp_path / "civic_genes.tsv"
+        genes_file.write_text("gene_id\tname\tentrez_id\n1\tALK\t238\n")
+        variants_file = tmp_path / "civic_variants.tsv"
+        variants_file.write_text(
+            "variant_id\tgene\tentrez_id\tvariant\n"
+            "10\tALK\t238\tF1174L\n"
+        )
+
+        genes = processor._process_civic_genes(genes_file)
+        _, relations = processor._process_civic_variants(variants_file)
+
+        gene_ids = {g.id for g in genes}
+        assert relations, "expected a HAS_VARIANT relation"
+        for relation in relations:
+            assert relation.subject in gene_ids, (
+                f"{relation.subject} has no matching gene node; edge would dangle"
+            )

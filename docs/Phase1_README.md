@@ -246,27 +246,42 @@ for this corpus yet.
 | Metric | Value |
 |---|---|
 | Documents processed | 100 |
-| Graph size | 2766 nodes, 5990 edges |
+| Graph size | 3279 nodes, 6329 edges |
 | Entities merged by resolution | 447 |
-| High-confidence linking rate | 91.5% |
-| Cross-modal entities (literature ↔ KG) | 12 |
-| Novel literature entities | 1339 |
+| High-confidence linking rate | 75.2% |
+| Cross-modal entities (literature ↔ KG) | 100 |
+| Novel literature entities | 1000 |
 
 ### Reading these honestly
 
-**Resolution's real gain is smaller than 447 suggests.** Node count moves from
-2822 to 2766, so roughly 56 merges are new; the remainder were already caught
-by exact-name matching before the cascade existed.
+**Resolution's real gain is smaller than 447 suggests.** When the cascade was
+introduced, node count moved by only ~56 — the other ~390 merges were already
+being caught by the exact-name matching it replaced. The cascade's contribution
+is punctuation folding and fuzzy matching, not the headline total.
+
+**The high-confidence rate fell from 91.5% to 75.2%,** which is expected and
+healthier: previously the linker only attempted the handful of trivially exact
+variant strings. It now attempts real gene matches, which are more numerous and
+less certain.
 
 **The ontology rule fires zero times on this data.** It is correct and
 unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
 matches. Set `UMLS_API_KEY` for real coverage. The bottleneck here is input
 identifier coverage, not the algorithm.
 
-**Cross-modal linking is weak.** 12 literature↔KG links against 1339 "novel"
-literature entities. Most of that 1339 is unlinked rather than genuinely
-novel — literature↔KG linking runs through `EntityLinker`, a separate path
-from KG-internal resolution, and has not had the same attention.
+**Cross-modal linking is still the weak point,** though far less so. 100
+literature↔KG links against 1000 "novel" literature entities.
+
+It was 12 until gene-level nodes were added. CIVIC's variant records are named
+for the alteration ("1100delC"), while literature NER extracts gene symbols
+("BRCA1"), so the two vocabularies could only meet on variant notations that
+appear verbatim in abstracts. With 513 gene nodes in place they share a
+vocabulary, and linking rose 8x.
+
+The remaining 1000 are mostly still unlinked rather than genuinely novel. Two
+known causes: literature entities are not deduplicated (1504 mention-level
+nodes for 309 distinct surface forms), and NER precision is poor — "CAR",
+"ALL", "DNA" and "ICI" are all tagged as genes.
 
 **No precision or recall figures are given** because there is no gold standard
 to compute them against. Earlier versions of this document quoted precision

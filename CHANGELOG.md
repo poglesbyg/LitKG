@@ -154,7 +154,7 @@ Carried forward deliberately rather than papered over:
   matching already caught.
 - Literature support classification is a contradiction-cue heuristic over
   title and abstract, not entailment.
-- Cross-modal linking yields 12 literature↔KG links on sample data.
+- Cross-modal linking yields 100 literature↔KG links on sample data.
 - No CI, and no gold-standard evaluation set — which is why this project
   reports counts rather than precision.
 
