@@ -510,3 +510,120 @@ class TestBiomedicalChunking:
 
         assert any(section is None for _, section in labeled)
         assert any("preamble" in chunk for chunk, _ in labeled)
+
+
+class TestRAGPipelineWiring:
+    """
+    The retrievers, chunk index and agents were unit tested but nothing joined
+    them to Phase 1 output, so the graph-aware path was never exercised outside
+    tests. These cover the wiring itself.
+    """
+
+    def test_missing_phase1_output_is_a_clear_error(self, tmp_path):
+        from litkg.langchain_integration import PipelineConfig, RAGPipeline
+        config = PipelineConfig(
+            documents_path=tmp_path / "absent.json",
+            graph_path=tmp_path / "absent.gpickle",
+            vector_store_path=tmp_path / "store",
+        )
+        with pytest.raises(FileNotFoundError, match="run-phase1"):
+            RAGPipeline(config).build()
+
+    def test_documents_load_from_each_shape_phase1_writes(self, tmp_path):
+        import json
+        from litkg.langchain_integration.pipeline import load_documents
+
+        record = [{"pmid": "1", "title": "T", "abstract": "A"}]
+        for payload in (record, {"documents": record}, {"results": record}):
+            path = tmp_path / "docs.json"
+            path.write_text(json.dumps(payload))
+            assert len(load_documents(path)) == 1
+
+    def test_chunks_carry_a_stable_chunk_id(self, tmp_path):
+        """
+        ChunkGraphIndex keys on chunk_id. Without a stable one the chunk-to-node
+        mapping cannot be joined back to retrieval, and graph expansion silently
+        returns nothing.
+        """
+        from langchain_core.documents import Document
+        from litkg.langchain_integration import PipelineConfig, RAGPipeline
+
+        pipeline = RAGPipeline(PipelineConfig(vector_store_path=tmp_path / "s"))
+        chunks = pipeline._chunk([
+            Document(page_content="BRCA1 repairs DNA. " * 40, metadata={"pmid": "99"})
+        ])
+        assert chunks
+        ids = [c.metadata["chunk_id"] for c in chunks]
+        assert len(ids) == len(set(ids))
+        assert all(i.startswith("99:") for i in ids)
+
+
+class TestHubTraversalCap:
+    """
+    Expansion through generic hubs makes every oncology passage a neighbour of
+    every other. On the CIVIC graph DOID:162 ("cancer") has degree 429 and is
+    reached from 29 of 81 chunks; two hops through it reach 824 nodes.
+    """
+
+    @pytest.fixture
+    def hub_graph(self):
+        import networkx as nx
+        g = nx.Graph()
+        for i in range(200):
+            g.add_edge("hub", f"n{i}")
+        g.add_edge("a", "hub")
+        g.add_edge("a", "b")
+        g.add_edge("b", "c")
+        return g
+
+    def test_expansion_does_not_walk_through_a_hub(self, hub_graph):
+        from litkg.langchain_integration import ChunkGraphIndex, EntityAliasIndex
+        index = ChunkGraphIndex(EntityAliasIndex())
+        reached = index.neighbors(hub_graph, ["a"], max_hops=2, max_traversal_degree=50)
+        assert "hub" in reached, "a hub should still be reachable as evidence"
+        assert "n0" not in reached, "but must not be walked through"
+
+    def test_uncapped_expansion_explodes(self, hub_graph):
+        from litkg.langchain_integration import ChunkGraphIndex, EntityAliasIndex
+        index = ChunkGraphIndex(EntityAliasIndex())
+        uncapped = index.neighbors(hub_graph, ["a"], max_hops=2, max_traversal_degree=0)
+        capped = index.neighbors(hub_graph, ["a"], max_hops=2, max_traversal_degree=50)
+        assert len(uncapped) > 10 * len(capped)
+
+    def test_low_degree_paths_are_still_followed(self, hub_graph):
+        """The cap must not block the ordinary two-hop path a -> b -> c."""
+        from litkg.langchain_integration import ChunkGraphIndex, EntityAliasIndex
+        index = ChunkGraphIndex(EntityAliasIndex())
+        reached = index.neighbors(hub_graph, ["a"], max_hops=2, max_traversal_degree=50)
+        assert reached.get("b") == 1
+        assert reached.get("c") == 2
+
+    def test_cap_defaults_on(self):
+        from litkg.langchain_integration import ChunkGraphIndex
+        assert ChunkGraphIndex.DEFAULT_MAX_TRAVERSAL_DEGREE > 0
+
+
+class TestAnswerSourceShape:
+    def test_sources_flatten_metadata_rather_than_nesting_it(self):
+        """
+        `answer()` returns {"content": ..., **document.metadata}. Consumers that
+        expect a nested "metadata" key read nothing and render every source as
+        "hop 0, pmid ?" -- which is what the CLI did before this was pinned.
+        """
+        from langchain_core.documents import Document
+        from litkg.langchain_integration.rag_system import BiomedicalRAGSystem
+
+        class StubRetriever:
+            def invoke(self, *a, **k):
+                return [Document(page_content="Evidence.",
+                                 metadata={"pmid": "123", "hop_distance": 1})]
+
+        class StubLLM:
+            def process_biomedical_task(self, **kwargs):
+                return type("R", (), {"content": "Answer [1].", "model": "stub"})()
+
+        system = BiomedicalRAGSystem(retriever=StubRetriever(), llm_manager=StubLLM())
+        source = system.answer("q")["sources"][0]
+        assert source["pmid"] == "123"
+        assert source["hop_distance"] == 1
+        assert "metadata" not in source

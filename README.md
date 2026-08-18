@@ -36,7 +36,7 @@ the code path but say nothing about whether it works on data.
 | Link prediction | **Real data, measured** | `make train-lp`: AUC 0.748 ± 0.009 vs 0.687 structural baseline |
 | Hybrid GNN (Phase 2) | **Synthetic demo only** | `HybridGNNModel` (1.8M params) instantiates and a training loop runs on `torch.randn`; it has never been trained on `phase2_graph_data.json` |
 | Discovery (Phase 3) | **Synthetic demo only** | Runs on 6 hardcoded relationships |
-| RAG + agents | **Library, not wired** | Modules import, construct and answer; unit-tested. But no script or CLI command runs them — `make run-langchain` uses hardcoded documents and raw FAISS instead |
+| RAG + agents | **Real data** | `make rag Q="..."` builds the index from Phase 1 output and answers with citations. Retrieval relevance is unmeasured — there is no relevance-judged query set |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
 **452 tests pass**, enforced by CI on every push and pull request.
@@ -94,10 +94,24 @@ make run-langchain   # RAG and agent demo
 
 ### Asking questions over your corpus
 
-> The API below works — imports, construction and `answer()` are unit-tested and
-> verified against a real graph. What does not exist is a script that wires it
-> to the Phase 1 output, so you have to assemble the vector store and graph
-> yourself. `make run-langchain` does **not** exercise this path.
+`RAGPipeline` assembles everything from what `make run-phase1` already wrote:
+
+```bash
+make rag Q="Why are BRCA1 tumours sensitive to olaparib?"
+make rag-coverage        # index stats, no LLM call
+python scripts/run_rag.py "..." --retrieval-only   # inspect retrieval alone
+```
+
+```python
+from litkg.langchain_integration import RAGPipeline, PipelineConfig
+
+pipeline = RAGPipeline(PipelineConfig(max_hops=1, k=5)).build()
+result = pipeline.rag_system().answer("Why are BRCA1 tumours sensitive to olaparib?")
+print(result["answer"])    # cites evidence as [1], [2], ...
+print(result["sources"])   # each carries pmid and hop_distance
+```
+
+To assemble the parts yourself instead:
 
 ```python
 from litkg.langchain_integration import (
@@ -167,6 +181,7 @@ Stated plainly, because they affect how far you should trust output:
 - **Entity resolution gains are modest on sample data.** The cascade merges 453 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
 - **The headline Phase 2 architecture is unvalidated.** `HybridGNNModel` and its cross-modal attention have only ever seen random tensors. The link prediction numbers quoted above come from a different, much simpler model.
 - **BERT NER fails on long abstracts.** Phase 1 logs `size of tensor a (543) must match tensor b (512)` for any abstract over ~512 tokens. The error is caught and the pipeline falls back to other extractors, so it succeeds — but one component silently contributes nothing on long documents.
+- **Graph expansion is noisy.** On the BRCA1/olaparib question all five seed passages are on-target, but only about one in five graph-expanded passages is relevant, even with the hub-traversal cap. There is no relevance-judged query set, so retrieval quality is unmeasured and that ratio is an observation on one question, not a metric.
 - **Ranking metrics are noisy.** Each positive is ranked against ~12000 negatives, so MRR is set by a couple of dozen rows and its confidence interval is about as wide as its value. Compare intervals, and prefer Hits@100. See [docs/Evaluation.md](docs/Evaluation.md).
 - **Link prediction is measured, and a trained model now beats the structural baseline.** Under a temporal holdout (train on pre-2016 papers) with popularity controlled for, a GNN ensemble with node text features reaches AUC 0.748 ± 0.009 at a 2016 cutoff and 0.791 ± 0.008 at 2020 against 0.687 [0.674–0.702] for length-3 paths alone and 0.543 for Adamic-Adar at 2016 — disjoint intervals. Figures are from the CIVIC 01-Aug-2026 release; later cutoffs score higher because they are easier problems, not better methods. Text features are worth +0.020 AUC over topology alone across 8 seeds, with non-overlapping ranges. The graph is strictly multipartite (0 of 6769 edges join same-type nodes) and every held-out pair is cross-type, so shared-neighbour methods are undefined on it by construction. Ranking quality is still poor — about 10% of held-out associations reach the top 100 — so this is signal, not a working discovery system. Results are reported per entity-type pair, since the aggregate averages four subproblems whose AUC ranges from 0.638 to 0.802, and every metric carries a bootstrap interval because MRR here is set by a couple dozen rows. See [docs/Evaluation.md](docs/Evaluation.md).
 - **Cross-modal linking is still the weak point,** at 167 literature↔KG links against 2367 unlinked literature entities — though disease↔disease and chemical↔drug links now exist, which the gene-only KG made impossible. Cell types, tissues and organisms still have no KG counterpart; closing that needs a source beyond CIVIC.

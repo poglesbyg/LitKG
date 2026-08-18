@@ -7,6 +7,37 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **`RAGPipeline`: the wiring between Phase 1 output and the retrieval stack**
+  (`make rag Q="..."`, `scripts/run_rag.py`, `litkg.langchain_integration`).
+  The retrievers, chunk-to-graph index and agents were unit tested but nothing
+  connected them to real data -- `make run-langchain` built its own hardcoded
+  documents and a bare FAISS index, so the graph-aware path was never exercised
+  outside tests.
+
+  On the bundled corpus: 80 documents, 81 chunks, 78 of 81 (96%) linked to the
+  graph, reaching 158 of 2971 nodes. Answers are grounded and cited -- asked why
+  BRCA1 tumours are sensitive to olaparib, the system explains synthetic
+  lethality and quotes TBCRC 048 and OlympiA figures from the passages it cites.
+
+- **Hub-traversal cap on graph expansion.** `CIVIC:DISEASE:DOID:162` ("cancer")
+  has degree 429 and is linked from 29 of 81 chunks; expanding through it
+  reaches 207 nodes in one hop and 824 in two, so every oncology passage became
+  a neighbour of every other. `ChunkGraphIndex.neighbors` now refuses to walk
+  *through* nodes above `DEFAULT_MAX_TRAVERSAL_DEGREE` (50), while still
+  allowing them to be reached and reported as evidence.
+
+  Retrieval relevance remains **unmeasured**: there is no relevance-judged query
+  set, and on the one question examined only about one graph-expanded passage in
+  five is relevant even after the cap.
+
+### Fixed
+
+- The CLI rendered every source as "hop 0, pmid ?" because `answer()` flattens
+  document metadata into each source dict rather than nesting it under
+  "metadata". Pinned with a test on the payload shape.
+
+### Added
+
 - **Literature-context features, measured and rejected.** Entity names carry no
   biology, so `litkg.phase2.literature_context` characterises each entity by
   pre-cutoff PubMed sentences instead. On the full test set this looked like a
