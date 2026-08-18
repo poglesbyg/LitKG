@@ -449,59 +449,144 @@ class BiomedicalNLP(LoggerMixin):
             if len(sentence_entities) >= 2:
                 relations.extend(
                     self._extract_relations_from_sentence(
-                        sentence['text'], sentence_entities
+                        sentence['text'], sentence_entities, sentence['start']
                     )
                 )
         
         return relations
     
+    # Trigger phrases mapped to a relation type and whether the phrase reverses
+    # the reading. "A treats B" is forward; "A treated with B" means B treats A.
+    RELATION_TRIGGERS = [
+        # (trigger phrase, relation type, reverses subject/object)
+        ("treated with", "TREATS", True),
+        ("treatment with", "TREATS", True),
+        ("responds to", "TREATS", True),
+        ("sensitive to", "SENSITIZES_TO", False),
+        ("resistant to", "RESISTANT_TO", False),
+        ("treats", "TREATS", False),
+        ("therapy for", "TREATS", False),
+        ("effective against", "TREATS", False),
+        ("inhibits", "INHIBITS", False),
+        ("suppresses", "INHIBITS", False),
+        ("blocks", "INHIBITS", False),
+        ("downregulates", "INHIBITS", False),
+        ("activates", "ACTIVATES", False),
+        ("upregulates", "ACTIVATES", False),
+        ("promotes", "ACTIVATES", False),
+        ("induces", "CAUSES", False),
+        ("causes", "CAUSES", False),
+        ("leads to", "CAUSES", False),
+        ("results in", "CAUSES", False),
+        ("drives", "CAUSES", False),
+        ("contributes to", "CAUSES", False),
+        ("mutated in", "MUTATED_IN", False),
+        ("mutations in", "MUTATED_IN", True),
+        ("expressed in", "EXPRESSED_IN", False),
+        ("overexpressed in", "EXPRESSED_IN", False),
+        ("interacts with", "INTERACTS_WITH", False),
+        ("binds", "INTERACTS_WITH", False),
+        ("associated with", "ASSOCIATED_WITH", False),
+        ("correlated with", "ASSOCIATED_WITH", False),
+        ("linked to", "ASSOCIATED_WITH", False),
+        ("implicated in", "ASSOCIATED_WITH", False),
+        ("involved in", "ASSOCIATED_WITH", False),
+        ("predicts", "PREDICTS", False),
+        ("biomarker for", "PREDICTS", False),
+    ]
+
+    # A trigger inside a negated span asserts the opposite of what it names
+    NEGATION_CUES = (
+        "not", "no ", "never", "without", "failed to", "did not", "does not",
+        "lack of", "absence of", "unable to", "rather than",
+    )
+
+    # Beyond this many characters apart, two entities in one sentence are
+    # usually not the pair the trigger relates.
+    MAX_TRIGGER_SPAN_CHARS = 120
+
+    # Entity pairs considered per sentence. Pairing is quadratic, and sentences
+    # listing many entities are typically enumerations rather than assertions.
+    MAX_PAIRS_PER_SENTENCE = 60
+
     def _extract_relations_from_sentence(
-        self, sentence: str, entities: List[Entity]
+        self, sentence: str, entities: List[Entity], sentence_start: int = 0
     ) -> List[Relation]:
-        """Extract relations from a single sentence."""
-        relations = []
-        
-        # Define relation patterns
-        patterns = {
-            "TREATS": [
-                r"(\w+)\s+treats?\s+(\w+)",
-                r"(\w+)\s+therapy\s+for\s+(\w+)",
-                r"treatment\s+of\s+(\w+)\s+with\s+(\w+)"
-            ],
-            "CAUSES": [
-                r"(\w+)\s+causes?\s+(\w+)",
-                r"(\w+)\s+leads?\s+to\s+(\w+)",
-                r"(\w+)\s+induces?\s+(\w+)"
-            ],
-            "ASSOCIATED_WITH": [
-                r"(\w+)\s+associated\s+with\s+(\w+)",
-                r"(\w+)\s+correlated\s+with\s+(\w+)"
-            ]
-        }
-        
-        for relation_type, pattern_list in patterns.items():
-            for pattern in pattern_list:
-                matches = re.finditer(pattern, sentence, re.IGNORECASE)
-                for match in matches:
-                    # Find entities that match the pattern groups
-                    group1, group2 = match.groups()
-                    
-                    subject = self._find_entity_by_text(entities, group1)
-                    obj = self._find_entity_by_text(entities, group2)
-                    
-                    if subject and obj:
-                        relation = Relation(
-                            subject=subject,
-                            predicate=relation_type,
-                            object=obj,
-                            confidence=0.7,
-                            context=sentence,
-                            sentence=sentence
+        """
+        Extract relations by looking for trigger phrases between entity pairs.
+
+        The earlier implementation matched regexes whose capture groups had to
+        coincide with entity text, which required both entities to be single
+        words directly adjacent to the trigger verb. Real prose almost never
+        obliges: "BRCA1 mutations are associated with breast cancer" captured
+        ("are", "breast"), neither of which is an entity, so every candidate was
+        discarded. Working from the span *between* two known entities removes
+        that coupling entirely.
+
+        Args:
+            sentence: The sentence text.
+            entities: Entities occurring in this sentence.
+            sentence_start: Character offset of the sentence within the document,
+                used to convert entity offsets into sentence-local ones.
+
+        Returns:
+            Relations asserted in this sentence.
+        """
+        relations: List[Relation] = []
+
+        ordered = sorted(entities, key=lambda e: e.start)
+        pairs_examined = 0
+
+        for i, first in enumerate(ordered):
+            for second in ordered[i + 1:]:
+                if pairs_examined >= self.MAX_PAIRS_PER_SENTENCE:
+                    return relations
+                pairs_examined += 1
+
+                # An entity cannot relate to itself, and overlapping spans are
+                # usually one entity the tagger split
+                if first.text.lower() == second.text.lower():
+                    continue
+
+                between_start = max(0, first.end - sentence_start)
+                between_end = max(between_start, second.start - sentence_start)
+                between = sentence[between_start:between_end].lower()
+
+                if not between.strip() or len(between) > self.MAX_TRIGGER_SPAN_CHARS:
+                    continue
+
+                if any(cue in between for cue in self.NEGATION_CUES):
+                    continue
+
+                # Longest trigger first so "treated with" wins over "treats"
+                match = next(
+                    (
+                        (phrase, relation, reverse)
+                        for phrase, relation, reverse in sorted(
+                            self.RELATION_TRIGGERS, key=lambda t: -len(t[0])
                         )
-                        relations.append(relation)
-        
+                        if phrase in between
+                    ),
+                    None,
+                )
+                if match is None:
+                    continue
+
+                phrase, relation_type, reverse = match
+                subject, obj = (second, first) if reverse else (first, second)
+
+                relations.append(Relation(
+                    subject=subject,
+                    predicate=relation_type,
+                    object=obj,
+                    # Nearby triggers are more reliable than distant ones
+                    confidence=0.75 if len(between) <= 40 else 0.55,
+                    context=phrase,
+                    sentence=sentence,
+                ))
+
         return relations
-    
+
     def process_document(self, article_data: Dict[str, Any]) -> ProcessedDocument:
         """
         Process a single document through the complete NLP pipeline.

@@ -22,11 +22,12 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-requires-python = ">=3.9"
+# Upper bound is measured, not assumed: scispacy pins thinc <8.2.0 and
+# thinc 8.1.12 has no 3.12 wheel, failing to build from source.
+requires-python = ">=3.9,<3.12"
 dependencies = [
     # Core ML/DL frameworks
     "torch>=2.0.0",
