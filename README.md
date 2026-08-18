@@ -1,5 +1,7 @@
 # LitKG-Integrate
 
+[![CI](https://github.com/poglesbyg/LitKG/actions/workflows/ci.yml/badge.svg)](https://github.com/poglesbyg/LitKG/actions/workflows/ci.yml)
+
 Integrates biomedical literature with structured knowledge graphs (CIVIC, TCGA, CPTAC) to surface relationships that neither source states on its own.
 
 Runs entirely on a local LLM by default. No API key required.
@@ -32,7 +34,7 @@ The payoff is multi-hop questions. Asked *"why are BRCA1 tumours sensitive to ol
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source for real coverage |
 | Cross-modal linking | **Limited** | 100 literature↔KG links on sample data |
 
-**241 tests pass.** There is no CI yet — see [CONTRIBUTING.md](CONTRIBUTING.md).
+**276 tests pass**, enforced by CI on every push and pull request.
 
 Numbers below come from `make run-phase1` on the bundled sample data: 2084 nodes, 6003 edges, 75.2% high-confidence linking rate.
 

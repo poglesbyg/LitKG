@@ -23,9 +23,18 @@ uv run pytest -k "entity_resolution" -v
 uv run pytest --no-cov    # skip coverage for a faster loop
 ```
 
-**241 tests currently pass.** There is no CI yet — see [Open needs](#open-needs).
-Until there is, run the suite locally before pushing. It is fast enough that
-there is no excuse not to.
+**276 tests currently pass**, and CI runs them on every push and pull request.
+Run them locally before pushing anyway — the suite takes about 45 seconds, and
+finding out from CI is slower than finding out from your terminal.
+
+CI gates on three things: every module imports, `flake8` finds no syntax errors
+or undefined names, and the suite passes. Style and type findings are reported
+but do not block, because the codebase carries substantial pre-existing debt
+(~2.7k style, ~487 type). Paying that down is welcome; the gate can tighten as
+it shrinks.
+
+CI runs Python 3.11 only. scispacy pins `thinc <8.2.0`, and thinc 8.1.12 has no
+3.12 wheel — it tries to compile from source and fails in Cython.
 
 Tests must not require network access or an LLM. Inject stubs instead:
 
@@ -158,12 +167,11 @@ wrong rather than the code.
 
 Genuinely useful contributions, roughly in order:
 
-1. **CI.** No workflow exists. The suite runs in ~45s; a GitHub Actions job
-   would make "241 passing" a guarantee rather than a claim.
-2. **Ontology coverage.** Entity resolution's strongest rule is inert without
+1. **Ontology coverage.** Entity resolution's strongest rule is inert without
    CUIs. A UMLS loader, or a larger curated vocabulary, unblocks it.
-3. **Cross-modal linking.** 12 literature↔KG links on sample data. `EntityLinker`
-   has not had the attention KG-internal resolution has.
+3. **Cross-modal linking.** 100 literature↔KG links on sample data, up from 12
+   once gene-level nodes existed. `EntityLinker` still has not had the attention
+   KG-internal resolution has.
 4. **Support classification.** Literature validation uses contradiction cues on
    title and abstract. Entailment over full text would be a real improvement.
 5. **Evaluation set.** There is no gold standard, which is why this project

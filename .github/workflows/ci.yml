@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run for the same ref
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep the suite offline and deterministic: no PubMed, no model downloads,
+  # no Ollama. Tests that need those inject stubs.
+  LITKG_CI: "1"
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 only. scispacy constrains thinc to <8.2.0, and thinc 8.1.12 has
+        # no 3.12 wheel -- it falls back to compiling from source and fails in
+        # Cython. Verified before this workflow was added; adding 3.12 to the
+        # matrix would make CI red on its first run.
+        python-version: ["3.11"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Verify every module imports
+        # A module that cannot be imported will not show up as a test failure,
+        # only as a collection error in whichever test happens to touch it.
+        # This has broken twice in this repo, both times silently.
+        run: |
+          uv run python - <<'PY'
+          import importlib, pkgutil, sys, litkg
+          failed = []
+          for module in pkgutil.walk_packages(litkg.__path__, "litkg."):
+              try:
+                  importlib.import_module(module.name)
+              except Exception as exc:
+                  failed.append(f"{module.name}: {exc!r}")
+          for line in failed:
+              print(f"FAILED {line}")
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Run tests
+        run: uv run pytest -q --no-header
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-py${{ matrix.python-version }}
+          path: test_reports/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Critical errors
+        # Blocking. Syntax errors and undefined names are always bugs -- this
+        # check caught a NameError in scripts/ the day it was added.
+        run: uv run flake8 src/ tests/ scripts/ --count --select=E9,F63,F7,F82 --show-source
+
+      - name: Style report
+        # Non-blocking. The codebase has substantial style debt (~2.7k findings)
+        # that predates CI. Reported so it stays visible and can be paid down,
+        # not blocking so CI is not red from day one.
+        continue-on-error: true
+        run: uv run flake8 src/ tests/ --count --max-line-length=100 --statistics
+
+      - name: Type check
+        # Non-blocking for the same reason (~487 findings).
+        continue-on-error: true
+        run: uv run mypy src/litkg --ignore-missing-imports --no-error-summary
