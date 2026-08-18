@@ -51,6 +51,39 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **A relevance-judged retrieval query set, derived from CIVIC citations**
+  (`make build-queryset`, `make eval-retrieval`, `litkg.evaluation.retrieval`).
+  Retrieval was unmeasured, so `k`, `max_hops` and the hub-degree cap were set
+  by judgement with nothing to check them against.
+
+  There are no human labels for this corpus, and an LLM judging retrieval that
+  feeds the same LLM is close to circular. CIVIC supplies judgements instead:
+  each evidence row cites a paper *and* states the relationship it supports, so
+  cited papers are relevant to a question about that relationship on a
+  curator's judgement. Grouping by (profile, disease, evidence type) with at
+  least three cited papers gives **57 queries over 228 papers**.
+
+  **Vector retrieval works**: MRR 0.81, hit-rate 0.98, R@10 0.815
+  [0.753, 0.875].
+
+  **Graph expansion does not.** Every hops setting scores identically and the
+  hub cap changes nothing. By origin, hop-0 passages are 55.4% relevant against
+  4.6% for hop-1 -- twelve times less precise -- and this is not a plumbing
+  failure, since all 235 chunks link to the graph.
+
+### Changed
+
+- `PipelineConfig.max_hops` now defaults to **0**. Expansion on by default
+  dilutes the evidence handed to the model, and the measurement does not
+  support it. It stays available via `--hops`, because the judgements are
+  biased against expansion by construction: they mark relevant only what CIVIC
+  cited for one relationship, which is exactly not the vocabulary-crossing
+  evidence multi-hop exists to reach. So this shows expansion does not help on
+  questions of this shape, not that it is useless -- establishing that needs
+  judgements built for multi-hop questions, which do not exist yet.
+
+### Added
+
 - **`RAGPipeline`: the wiring between Phase 1 output and the retrieval stack**
   (`make rag Q="..."`, `scripts/run_rag.py`, `litkg.langchain_integration`).
   The retrievers, chunk-to-graph index and agents were unit tested but nothing

@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-years train-lp rag rag-coverage run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
+.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-years train-lp rag rag-coverage build-queryset eval-retrieval run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
 
 # Default target
 help:
@@ -34,6 +34,8 @@ help:
 	@echo "  train-lp     Train the GNN/hybrid link predictors and compare"
 	@echo "  rag          Ask a question over the corpus (Q=\"...\")"
 	@echo "  rag-coverage Report RAG index coverage without calling the LLM"
+	@echo "  build-queryset Build the CIVIC-judged retrieval query set"
+	@echo "  eval-retrieval Score retrieval against the judged queries"
 	@echo "  evaluate-years Show year distribution for choosing a cutoff"
 	@echo "  run-examples Run all example scripts"
 	@echo "  run-lit      Run literature processing example"
@@ -233,3 +235,9 @@ rag:
 
 rag-coverage:
 	PYTHONPATH=$(PWD)/src uv run python scripts/run_rag.py --coverage
+
+build-queryset:
+	PYTHONPATH=$(PWD)/src uv run python scripts/build_retrieval_queryset.py --queries $(or $(N),60)
+
+eval-retrieval:
+	PYTHONPATH=$(PWD)/src uv run python scripts/evaluate_retrieval.py $(if $(SWEEP),--sweep,)

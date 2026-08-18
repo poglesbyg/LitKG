@@ -287,8 +287,78 @@ sensitive to olaparib, the system explains synthetic lethality and quotes the
 TBCRC 048 response rates and the OlympiA disease-free survival result, citing
 the passages it drew them from.
 
-Retrieval quality is **unmeasured**. On that question all five seed passages
-are on-target, but only about one in five graph-expanded passages is relevant
-even with the cap. There is no relevance-judged query set for this corpus, so
-that is an observation on a single question rather than a metric, and building
-one is the obvious prerequisite to tuning `k`, `max_hops` or the degree cap.
+Retrieval is now measured — see below. The short version: vector retrieval is
+strong, and graph expansion is not.
+
+## Measuring retrieval
+
+```bash
+make build-queryset      # derive judged queries from CIVIC citations
+make eval-retrieval SWEEP=1
+```
+
+### Where the judgements come from
+
+There are no human relevance labels for this corpus, and using an LLM to judge
+retrieval that feeds the same LLM is close to circular. CIVIC supplies
+judgements instead: every evidence row cites a PubMed paper **and** states the
+relationship it supports — a molecular profile, a disease, an evidence type.
+For a question about that relationship, the cited papers are relevant by a
+curator's judgement rather than ours.
+
+`scripts/build_retrieval_queryset.py` groups evidence by
+`(molecular profile, disease, evidence type)`, keeps groups with at least three
+distinct cited papers, phrases a question per evidence type, and fetches the
+cited abstracts. The bundled set is **57 queries over 228 papers**.
+
+Evidence type drives the phrasing because it is what the paper was cited to
+establish — asking "which therapies" of a prognostic paper would score relevant
+papers as misses for a question they never answered.
+
+### Results
+
+| k | hops | P@k | R@k | MRR | nDCG@k | hit-rate |
+|---|---|---|---|---|---|---|
+| 5 | 0 | 0.547 [0.484, 0.611] | 0.657 | 0.803 | 0.716 | 0.947 |
+| 5 | 1 | 0.551 [0.488, 0.614] | 0.660 | 0.803 | 0.719 | 0.947 |
+| 10 | 0 | 0.363 [0.318, 0.414] | 0.815 [0.753, 0.875] | 0.808 | 0.770 | 0.982 |
+| 10 | 1 | 0.363 [0.318, 0.414] | 0.815 | 0.808 | 0.770 | 0.982 |
+
+Intervals are 95% bootstrap over queries.
+
+**Vector retrieval works.** A relevant paper appears in the top 10 for 98% of
+queries, and the first hit is usually at rank 1 or 2 (MRR 0.81).
+
+**Graph expansion does not help.** Every hops setting scores the same, and the
+hub-traversal cap makes no difference either. Broken down by where a passage
+came from:
+
+| passages | relevant | precision |
+|---|---|---|
+| hop 0 (vector) | 158 / 285 | **55.4%** |
+| hop 1 (graph) | 13 / 285 | **4.6%** |
+
+Twelve times less precise. This is not a plumbing failure — every chunk in this
+corpus links to the graph (235/235, reaching 327 nodes). Expansion is working
+as designed and what it reaches is mostly not relevant.
+
+`PipelineConfig.max_hops` therefore defaults to **0**. Shipping expansion on by
+default would dilute the evidence handed to the model on the strength of a
+story rather than a measurement.
+
+### The caveat that keeps this honest
+
+**These judgements are biased against expansion by construction.** They mark
+relevant only what CIVIC cited for one specific relationship — which is
+precisely *not* the vocabulary-crossing evidence multi-hop retrieval exists to
+reach. A genuinely useful expanded passage is scored as a miss.
+
+So this measures that expansion does not help *on questions of this shape*. It
+is not proof that expansion is useless. Establishing that would need judgements
+built for multi-hop questions — ones whose answer requires connecting two
+papers that share no terms — and that query set does not exist yet.
+
+Judgements are also **incomplete** in the ordinary IR sense: an uncited paper
+about the same gene may be relevant and is scored as a miss, so every number
+here is a lower bound. And the queries are **templated**, so they are more
+uniform than real user questions.

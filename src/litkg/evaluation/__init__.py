@@ -32,6 +32,14 @@ from litkg.evaluation.metrics import (
     hits_at_k,
     mean_reciprocal_rank,
 )
+from litkg.evaluation.retrieval import (
+    RetrievalQuery,
+    RetrievalMetrics,
+    QuerySetBuilder,
+    evaluate_retrieval,
+    load_queries,
+    save_queries,
+)
 from litkg.evaluation.harness import (
     EvaluationReport,
     evaluate_baselines,
@@ -39,6 +47,12 @@ from litkg.evaluation.harness import (
 )
 
 __all__ = [
+    "RetrievalQuery",
+    "RetrievalMetrics",
+    "QuerySetBuilder",
+    "evaluate_retrieval",
+    "load_queries",
+    "save_queries",
     "TemporalSplit",
     "RelationRecord",
     "EdgeEvidence",
