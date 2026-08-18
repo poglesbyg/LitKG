@@ -46,6 +46,11 @@ Phase 1 establishes the foundation for LitKG-Integrate by implementing three cor
 **Models Used**:
 - **PubMedBERT**: `microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext`
 - **BioBERT**: `dmis-lab/biobert-base-cased-v1.1`
+- **Biomedical NER**: `alvaroalon2/biobert_genetic_ner` (BioBERT fine-tuned on
+  JNLPBA/BC2GM). It must be a checkpoint with a trained token-classification
+  head -- a base LM gets a randomly initialized one and emits `LABEL_0`/`LABEL_1`
+  at ~0.5 confidence, which maps to no entity type; `BiomedicalNLP` detects that
+  at load time and disables the path rather than running it for nothing
 - **scispacy**: `en_ner_bionlp13cg_md` and `en_ner_bc5cdr_md` for typed
   biomedical NER (`en_core_sci_md` emits a single `ENTITY` label and cannot
   distinguish a gene from a disease, so it is used only for parsing)

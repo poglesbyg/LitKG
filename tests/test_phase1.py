@@ -966,6 +966,242 @@ class TestNERPrecision:
         assert not any(m.startswith("en_core_sci") for m in BiomedicalNLP.NER_MODELS)
 
 
+class TestBertNERHead:
+    """The BERT NER path ran on a checkpoint with no NER head.
+
+    `config.yaml` pointed the pipeline at `dmis-lab/biobert-base-cased-v1.1`,
+    a base language model. transformers initialized a classifier head at
+    random, warned, and ran anyway: every span came back LABEL_0/LABEL_1 at
+    ~0.5 confidence, none of which is an entity type this processor keeps. The
+    path was live in the code, cost a model load per run, and returned zero
+    entities on every document.
+    """
+
+    UNTRAINED_LABELS = {0: "LABEL_0", 1: "LABEL_1"}
+
+    @pytest.fixture
+    def nlp(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        instance = BiomedicalNLP.__new__(BiomedicalNLP)
+        instance._gene_vocabulary = None
+        instance.entity_types = {
+            "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE",
+            "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION",
+        }
+        instance.ner_pipeline = None
+        return instance
+
+    def test_untrained_head_is_detected(self):
+        from litkg.phase1.literature_processor import is_untrained_token_classifier
+        assert is_untrained_token_classifier(self.UNTRAINED_LABELS)
+        assert is_untrained_token_classifier({}), "no labels at all is not a trained head"
+        assert not is_untrained_token_classifier(
+            {0: "B-GENETIC", 1: "I-GENETIC", 2: "O"}
+        )
+
+    def test_configured_checkpoint_has_a_real_label_scheme(self):
+        """Fails if the configured model's id2label is the LABEL_N default.
+
+        CI is offline, so the checkpoint is not downloaded here: the stub
+        stands in for whatever `biomedical_ner` names, and the assertion is
+        that a LABEL_N scheme is rejected at load time instead of being run
+        for nothing.
+        """
+        import yaml
+        from litkg.phase1.literature_processor import (
+            BiomedicalNLP, is_untrained_token_classifier,
+        )
+
+        config_path = Path(__file__).resolve().parents[1] / "config" / "config.yaml"
+        models = yaml.safe_load(config_path.read_text())["phase1"]["literature"]["models"]
+        configured = models.get("biomedical_ner", BiomedicalNLP.DEFAULT_BERT_NER_MODEL)
+
+        # A base LM has no NER head no matter how biomedical it is.
+        assert configured not in {
+            models.get("biobert"),
+            models.get("pubmedbert"),
+            "dmis-lab/biobert-base-cased-v1.1",
+            "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext",
+        }, (
+            f"{configured} is a base language model with no token-classification "
+            "head; the NER pipeline built on it emits LABEL_N and yields no entities"
+        )
+
+        # The label scheme the configured checkpoint reports, stubbed for CI.
+        assert is_untrained_token_classifier(self.UNTRAINED_LABELS), (
+            "an untrained head must be rejected"
+        )
+
+    def test_untrained_head_disables_the_path(self, nlp, caplog):
+        """A LABEL_N pipeline must not be installed and quietly run."""
+        from litkg.phase1.literature_processor import BiomedicalNLP
+
+        class StubConfig:
+            id2label = dict(TestBertNERHead.UNTRAINED_LABELS)
+
+        class StubModel:
+            config = StubConfig()
+
+        class StubPipeline:
+            model = StubModel()
+            called = False
+
+            def __call__(self, text):
+                type(self).called = True
+                return [{"entity_group": "LABEL_0", "word": "BRCA1",
+                         "start": 0, "end": 5, "score": 0.51}]
+
+        stub = StubPipeline()
+        nlp.models_config = {
+            "biomedical_ner": "some/base-lm",
+            "scispacy_model": "en_core_sci_md",
+            "pubmedbert": "stub/pubmedbert",
+            "biobert": "stub/biobert",
+        }
+        nlp.nlp = object()
+
+        with patch("litkg.phase1.literature_processor.pipeline", return_value=stub), \
+             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()), \
+             patch("litkg.phase1.literature_processor.AutoTokenizer"), \
+             patch("litkg.phase1.literature_processor.AutoModel"), \
+             patch("litkg.phase1.literature_processor.BertTokenizer"), \
+             patch("litkg.phase1.literature_processor.BertModel"):
+            BiomedicalNLP._load_models(nlp)
+
+        assert nlp.ner_pipeline is None, (
+            "a checkpoint with a randomly initialized head was installed as the "
+            "NER pipeline; it will run on every document and return nothing"
+        )
+        assert nlp._extract_entities_bert("BRCA1 mutations") == []
+        assert not StubPipeline.called, "the dead pipeline was still invoked"
+
+    def test_trained_head_is_installed_and_extracts(self, nlp):
+        """The real checkpoint's scheme must survive mapping into entity types."""
+        from litkg.phase1.literature_processor import BiomedicalNLP
+
+        text = "Loss of SetD5 and Fgfr2 drives tumor growth."
+
+        class StubConfig:
+            id2label = {0: "B-GENETIC", 1: "I-GENETIC", 2: "O"}
+
+        class StubModel:
+            config = StubConfig()
+
+        class StubPipeline:
+            model = StubModel()
+            tokenizer = StubTokenizer()
+
+            def __call__(self, _text):
+                return [
+                    {"entity_group": "GENETIC", "word": "SetD5",
+                     "start": 8, "end": 13, "score": 0.98},
+                    {"entity_group": "GENETIC", "word": "Fgfr2",
+                     "start": 18, "end": 23, "score": 0.97},
+                ]
+
+        nlp.models_config = {
+            "biomedical_ner": "alvaroalon2/biobert_genetic_ner",
+            "scispacy_model": "en_core_sci_md",
+            "pubmedbert": "stub/pubmedbert",
+            "biobert": "stub/biobert",
+        }
+
+        with patch("litkg.phase1.literature_processor.pipeline", return_value=StubPipeline()), \
+             patch("litkg.phase1.literature_processor.spacy.load", return_value=object()), \
+             patch("litkg.phase1.literature_processor.AutoTokenizer"), \
+             patch("litkg.phase1.literature_processor.AutoModel"), \
+             patch("litkg.phase1.literature_processor.BertTokenizer"), \
+             patch("litkg.phase1.literature_processor.BertModel"):
+            BiomedicalNLP._load_models(nlp)
+
+        assert nlp.ner_pipeline is not None
+        entities = nlp._extract_entities_bert(text)
+        assert [e.text for e in entities] == ["SetD5", "Fgfr2"]
+        assert {e.label for e in entities} == {"GENE"}, (
+            "GENETIC must map to a type in entity_types, or the path is inert again"
+        )
+
+    def test_every_mapped_label_is_a_usable_entity_type(self):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        valid = {
+            "GENE", "DISEASE", "DRUG", "PROTEIN", "CELL_TYPE",
+            "TISSUE", "ORGANISM", "CHEMICAL", "MUTATION",
+        }
+        unknown = set(BiomedicalNLP.BERT_NER_LABEL_MAP.values()) - valid
+        assert not unknown, f"BERT_NER_LABEL_MAP produces unusable types: {unknown}"
+
+    def test_label_n_is_never_mapped_to_an_entity_type(self, nlp):
+        """The old mapper passed LABEL_0 straight through."""
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        for label in ("LABEL_0", "LABEL_1", "LABEL_7"):
+            assert BiomedicalNLP._map_bert_label(nlp, label) not in nlp.entity_types
+
+    def test_bio_prefixes_and_case_are_normalized(self, nlp):
+        from litkg.phase1.literature_processor import BiomedicalNLP
+        for label in ("GENETIC", "B-GENETIC", "I-genetic"):
+            assert BiomedicalNLP._map_bert_label(nlp, label) == "GENE"
+
+    def test_subword_fragments_are_rejected(self, nlp):
+        """Aggregation cuts words in half: "isplatin", "arubicin", "inib"."""
+        text = "Treatment with cisplatin and doxorubicin was given."
+
+        class StubPipeline:
+            tokenizer = StubTokenizer()
+            model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=512))
+
+            def __call__(self, _text):
+                return [
+                    # a mid-word fragment of "cisplatin"
+                    {"entity_group": "CHEMICAL", "word": "isplatin",
+                     "start": 16, "end": 24, "score": 0.95},
+                    # the whole word
+                    {"entity_group": "CHEMICAL", "word": "doxorubicin",
+                     "start": 29, "end": 40, "score": 0.95},
+                ]
+
+        nlp.ner_pipeline = StubPipeline()
+        entities = nlp._extract_entities_bert(text)
+        assert [e.text for e in entities] == ["doxorubicin"]
+
+    def test_non_gene_acronyms_are_not_typed_as_genes(self, nlp):
+        """The checkpoint tags CAR and MDS as genes; they are not."""
+        text = "CAR T-cell therapy in MDS patients."
+
+        class StubPipeline:
+            tokenizer = StubTokenizer()
+            model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=512))
+
+            def __call__(self, _text):
+                return [
+                    {"entity_group": "GENETIC", "word": "CAR",
+                     "start": 0, "end": 3, "score": 0.93},
+                    {"entity_group": "GENETIC", "word": "MDS",
+                     "start": 22, "end": 25, "score": 0.91},
+                ]
+
+        nlp.ner_pipeline = StubPipeline()
+        assert nlp._extract_entities_bert(text) == []
+
+    def test_spans_claimed_by_scispacy_are_not_re_emitted(self, nlp):
+        """One mention must not become two entities with different spans."""
+        text = "Elevated serum MMP-9 was observed."
+
+        class StubPipeline:
+            tokenizer = StubTokenizer()
+            model = SimpleNamespace(config=SimpleNamespace(max_position_embeddings=512))
+
+            def __call__(self, _text):
+                return [
+                    {"entity_group": "GENETIC", "word": "serum MMP-9",
+                     "start": 9, "end": 20, "score": 0.9},
+                ]
+
+        nlp.ner_pipeline = StubPipeline()
+        # scispacy already claimed "MMP-9" at 15-20
+        assert nlp._extract_entities_bert(text, [(15, 20)]) == []
+        assert len(nlp._extract_entities_bert(text, [(0, 8)])) == 1
+
+
 class TestClinicalEntityExtraction:
     """CIVIC evidence carries diseases, therapies and phenotypes.
 

@@ -8,6 +8,14 @@ phase1:
       pubmedbert: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
       biobert: "dmis-lab/biobert-base-cased-v1.1"
       scispacy_model: "en_core_sci_md"
+      # Token-classification checkpoint for the BERT NER path. It must be a
+      # model that was fine-tuned for NER: a base LM such as
+      # dmis-lab/biobert-base-cased-v1.1 has no classifier head, so
+      # transformers initializes one at random and the pipeline emits
+      # LABEL_0/LABEL_1 at ~0.5 confidence -- which mapped to nothing and made
+      # the whole path inert. BiomedicalNLP refuses such a checkpoint at load
+      # time rather than running it for nothing.
+      biomedical_ner: "alvaroalon2/biobert_genetic_ner"
     
     # PubMed API settings
     pubmed:

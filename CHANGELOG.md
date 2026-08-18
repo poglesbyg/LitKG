@@ -5,6 +5,32 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The BERT NER path extracted nothing on every document.** The pipeline was
+  built from `dmis-lab/biobert-base-cased-v1.1`, a base language model with no
+  token-classification head, so transformers initialized one at random
+  ("Some weights ... newly initialized: ['classifier.bias', 'classifier.weight']")
+  and the pipeline returned `LABEL_0`/`LABEL_1` spans at ~0.5 confidence.
+  `_map_bert_label` passed those through unchanged, none is in `entity_types`,
+  and every one was dropped -- a stage that loaded a model per run, appeared
+  active, and contributed zero entities.
+
+  The path now runs `alvaroalon2/biobert_genetic_ner` (BioBERT fine-tuned on
+  JNLPBA/BC2GM, configurable as `phase1.literature.models.biomedical_ner`), and
+  `BiomedicalNLP` refuses any checkpoint whose `id2label` is the untrained
+  `LABEL_N` default instead of running it for nothing.
+
+  On 150 abstracts sampled from `data/processed/literature_context`, it adds
+  **247 entities over 182 distinct surface forms** that neither scispacy model
+  nor the gene rules produce -- mixed-case symbols (`Gsα`, `SetD5`, `apoE4`,
+  `cullin-2`, `p16`), mouse allele notation (`Fgfr2(+/S252W)`) and modified
+  residues (`H3K27me3`) -- against 4906 entities from those paths combined.
+  Spans are dropped when they cut a word in half (5.7% of raw spans, an
+  artifact of subword aggregation: "isplatin", "arubicin"), when the surface is
+  a known non-gene acronym (`CAR`, `MDS`), or when they overlap a span scispacy
+  already claimed, so one mention cannot become two entities.
+
 ### Added
 
 - **`RAGPipeline`: the wiring between Phase 1 output and the retrieval stack**

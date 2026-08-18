@@ -101,6 +101,28 @@ def verify_installations():
         tokenizer = AutoTokenizer.from_pretrained("dmis-lab/biobert-base-cased-v1.1")
         model = AutoModel.from_pretrained("dmis-lab/biobert-base-cased-v1.1")
         logger.info("BioBERT loaded successfully")
+
+        # Test the biomedical NER checkpoint. It has to be a fine-tuned NER
+        # model: a base LM gets a randomly initialized head and emits
+        # LABEL_0/LABEL_1, which the processor refuses to run.
+        from transformers import AutoModelForTokenClassification
+        from litkg.phase1.literature_processor import (
+            BiomedicalNLP, is_untrained_token_classifier,
+        )
+
+        ner_name = BiomedicalNLP.DEFAULT_BERT_NER_MODEL
+        tokenizer = AutoTokenizer.from_pretrained(ner_name)
+        ner_model = AutoModelForTokenClassification.from_pretrained(ner_name)
+        if is_untrained_token_classifier(ner_model.config.id2label):
+            logger.error(
+                f"{ner_name} has no trained NER head; the BERT NER path would "
+                "return nothing"
+            )
+            return False
+        logger.info(
+            f"Biomedical NER model loaded successfully "
+            f"({ner_name}: {sorted(ner_model.config.id2label.values())})"
+        )
         
     except Exception as e:
         logger.error(f"Transformers model verification failed: {e}")
