@@ -5,6 +5,32 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Seeds and graph-expanded passages are now combined by reciprocal rank
+  fusion** rather than concatenated. Concatenation gave dense retrieval half the
+  returned slots whether or not it had found anything, and on bridge queries it
+  usually had not.
+
+  Predicting which questions are entity-anchored and reallocating was the
+  obvious alternative; it was measured and rejected. Seed coverage of the
+  query's own entities separates the two query sets far too weakly to switch on
+  -- zero coverage fires on 6 of 55 bridge queries -- and a classifier keyed on
+  phrasing would fit the templates the queries are generated from. Fusion needs
+  no prediction: a passage ranked highly by either route earns a place. The
+  fusion constant stays at the published default, since tuning it on 55 queries
+  would fit the query set.
+
+  Bridge queries: hit-rate **0.236 -> 0.327**, P@10 0.031 -> 0.049, MRR
+  0.047 -> 0.095.
+
+  The cost, stated rather than buried: with expansion switched on, the
+  single-relationship set drops from P@10 0.370 / R@10 0.826 to 0.304 / 0.712.
+  `max_hops` defaults to 0, so that path is opt-in, and enabling expansion is
+  now a measured trade -- reach on questions whose answers are not lexically
+  present, against precision on questions where dense retrieval was already
+  right.
+
 ### Fixed
 
 - **Derived evaluation data was being committed** -- two FAISS indexes and two
