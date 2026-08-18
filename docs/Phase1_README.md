@@ -405,9 +405,14 @@ and 35 chemical↔drug pairs that were structurally impossible before.
 Cell types (167), tissues (45) and organisms (37) still have no KG counterpart.
 That is the next coverage gap, and it needs a source beyond CIVIC.
 
-**No precision or recall figures are given** because there is no gold standard
-to compute them against. Earlier versions of this document quoted precision
-ranges; they had no basis and have been removed.
+**No precision or recall figures are given for extraction** because there is
+no gold standard to compute them against. Earlier versions of this document
+quoted precision ranges; they had no basis and have been removed.
+
+Link prediction over the assembled graph *is* now measured, under a temporal
+holdout — see [Evaluation.md](Evaluation.md). The result is negative: the graph
+is too sparse for topological prediction, with 84.6% of held-out pairs sharing
+no neighbour in the training graph.
 
 ## Quality Assessment
 

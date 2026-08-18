@@ -1,0 +1,275 @@
+"""
+Tests for the link prediction evaluation harness.
+
+A harness that leaks is worse than no harness: it produces confident numbers
+that are wrong, and nothing downstream can tell. Most of these tests target
+leakage and degenerate cases rather than happy paths.
+"""
+
+import math
+
+import networkx as nx
+import pytest
+
+from litkg.evaluation import (
+    AdamicAdarPredictor,
+    CommonNeighborsPredictor,
+    JaccardPredictor,
+    PreferentialAttachmentPredictor,
+    RandomPredictor,
+    build_temporal_split,
+    evaluate_baselines,
+    evaluate_scores,
+    extract_publication_year,
+    hits_at_k,
+    mean_reciprocal_rank,
+    sample_negatives,
+)
+from litkg.evaluation.harness import build_graph, structural_coverage
+from litkg.evaluation.temporal_split import year_distribution
+
+
+class TestPublicationYear:
+    @pytest.mark.parametrize("citation,expected", [
+        ("Levine et al., 2005", 2005),
+        ("Lasota et al., 2004", 2004),
+        ("Smith, 1998", 1998),
+        ("Jones et al., 2023", 2023),
+    ])
+    def test_extracts_year(self, citation, expected):
+        assert extract_publication_year(citation) == expected
+
+    def test_takes_the_last_year_like_token(self):
+        """Author lists can contain numbers; the year comes last."""
+        assert extract_publication_year("Study 2 of 1000 patients, 2015") == 2015
+
+    @pytest.mark.parametrize("citation", [None, "", "no year here", float("nan")])
+    def test_missing_year_is_none(self, citation):
+        assert extract_publication_year(citation) is None
+
+
+class TestTemporalSplitLeakage:
+    """The split exists to prevent leakage; these are its load-bearing cases."""
+
+    def test_pair_asserted_before_and_after_stays_in_train(self):
+        """
+        A pair first published in 2010 and re-cited in 2020 is not a 2020
+        discovery. Scoring it would credit the model for something it saw.
+        """
+        edges = [("a", "b", 2010), ("a", "b", 2020), ("c", "d", 2020)]
+        split = build_temporal_split(edges, cutoff_year=2015)
+        assert ("a", "b") in split.train_edges
+        assert ("a", "b") not in split.test_edges
+
+    def test_test_edges_never_appear_in_training(self):
+        edges = [("a", "b", 2010), ("b", "c", 2020), ("a", "c", 2012)]
+        split = build_temporal_split(edges, cutoff_year=2015)
+        assert not (split.test_edges & split.train_edges)
+        assert not (split.test_edges & split.backbone_edges)
+
+    def test_backbone_edge_disqualifies_a_test_pair(self):
+        """An edge already in the graph cannot be a prediction target."""
+        edges = [("a", "b", 2020), ("a", "c", 2010), ("b", "c", 2010)]
+        split = build_temporal_split(edges, cutoff_year=2015, backbone_edges=[("a", "b")])
+        assert ("a", "b") not in split.test_edges
+        assert split.excluded_already_known == 1
+
+    def test_cold_start_pairs_are_excluded_and_counted(self):
+        """A node absent from training cannot be scored by any topology."""
+        edges = [("a", "b", 2010), ("y", "z", 2020)]
+        split = build_temporal_split(edges, cutoff_year=2015)
+        assert ("y", "z") not in split.test_edges
+        assert split.excluded_cold_start == 1
+
+    def test_direction_does_not_create_duplicates(self):
+        edges = [("b", "a", 2010), ("a", "b", 2011)]
+        split = build_temporal_split(edges, cutoff_year=2015)
+        assert len(split.train_edges) == 1
+
+    def test_self_loops_are_dropped(self):
+        split = build_temporal_split([("a", "a", 2010), ("a", "b", 2010)], 2015)
+        assert ("a", "a") not in split.train_edges
+
+    def test_undated_edges_become_backbone(self):
+        split = build_temporal_split([("a", "b", None), ("c", "d", 2020)], 2015)
+        assert ("a", "b") in split.backbone_edges
+
+    def test_earliest_year_wins(self):
+        split = build_temporal_split([("a", "b", 2020), ("a", "b", 2001)], 2015)
+        assert split.edge_years[("a", "b")] == 2001
+
+    def test_year_distribution_counts_pairs_not_assertions(self):
+        """Ten papers about one association are one association."""
+        edges = [("a", "b", 2010)] * 10 + [("c", "d", 2011)]
+        assert year_distribution(edges) == {2010: 1, 2011: 1}
+
+
+class TestNegativeSampling:
+    @pytest.fixture
+    def graph(self):
+        g = nx.Graph()
+        g.add_edges_from([("g1", "d1"), ("g2", "d1"), ("g3", "d2"), ("g1", "d2")])
+        return g
+
+    @pytest.fixture
+    def types(self):
+        return {"g1": "GENE", "g2": "GENE", "g3": "GENE",
+                "d1": "DISEASE", "d2": "DISEASE"}
+
+    def test_never_samples_a_real_edge(self, graph, types):
+        """A 'negative' that is a real edge is a mislabelled positive."""
+        positives = [("g2", "d2")]
+        negatives = sample_negatives(
+            positives, graph, node_types=types,
+            negatives_per_positive=20, known_edges=set(graph.edges()) | set(positives),
+        )
+        real = {(u, v) if u <= v else (v, u) for u, v in graph.edges()}
+        assert not (set(negatives) & real)
+        assert ("g2", "d2") not in negatives
+
+    def test_type_matching_respects_endpoint_types(self, graph, types):
+        """Untyped negatives make the task 'is this type pair plausible?'."""
+        positives = [("g1", "d1")]
+        negatives = sample_negatives(
+            positives, graph, node_types=types, negatives_per_positive=5, seed=1
+        )
+        for u, v in negatives:
+            assert {types[u], types[v]} == {"GENE", "DISEASE"}
+
+    def test_no_self_loops(self, graph, types):
+        negatives = sample_negatives(
+            [("g1", "d1")], graph, node_types=types, negatives_per_positive=10
+        )
+        assert all(u != v for u, v in negatives)
+
+    def test_sampling_is_deterministic(self, graph, types):
+        kwargs = dict(node_types=types, negatives_per_positive=3, seed=7)
+        first = sample_negatives([("g1", "d1")], graph, **kwargs)
+        second = sample_negatives([("g1", "d1")], graph, **kwargs)
+        assert first == second
+
+    def test_degree_matching_changes_the_pool(self):
+        """Degree matching is what separates structure from popularity."""
+        g = nx.Graph()
+        g.add_edges_from([("hub", f"n{i}") for i in range(32)])
+        g.add_edge("low1", "low2")
+        types = {n: "X" for n in g}
+        matched = sample_negatives(
+            [("hub", "low1")], g, node_types=types,
+            negatives_per_positive=5, seed=3, degree_matched=True,
+        )
+        # A degree-32 endpoint must not be replaced by a degree-1 node.
+        assert matched
+        assert any(g.degree(u) > 4 or g.degree(v) > 4 for u, v in matched)
+
+
+class TestPredictors:
+    @pytest.fixture
+    def graph(self):
+        g = nx.Graph()
+        g.add_edges_from([("a", "x"), ("b", "x"), ("a", "y"), ("b", "y"), ("c", "z")])
+        return g
+
+    def test_common_neighbors_counts_shared(self, graph):
+        p = CommonNeighborsPredictor().fit(graph)
+        assert p.score("a", "b") == 2.0
+        assert p.score("a", "c") == 0.0
+
+    def test_adamic_adar_downweights_hubs(self, graph):
+        """A shared hub is weaker evidence than a shared rare neighbour."""
+        hub = nx.Graph()
+        hub.add_edges_from([("a", "h"), ("b", "h")] + [(f"n{i}", "h") for i in range(20)])
+        rare = nx.Graph()
+        rare.add_edges_from([("a", "r"), ("b", "r")])
+        assert (AdamicAdarPredictor().fit(hub).score("a", "b")
+                < AdamicAdarPredictor().fit(rare).score("a", "b"))
+
+    def test_adamic_adar_handles_degree_one_neighbour(self, graph):
+        """log(1) is 0; a naive implementation divides by zero here."""
+        g = nx.Graph([("a", "s"), ("b", "s")])
+        score = AdamicAdarPredictor().fit(g).score("a", "b")
+        assert math.isfinite(score) and score > 0
+
+    def test_jaccard_normalises(self, graph):
+        assert JaccardPredictor().fit(graph).score("a", "b") == 1.0
+
+    def test_preferential_attachment_ignores_shared_structure(self, graph):
+        p = PreferentialAttachmentPredictor().fit(graph)
+        assert p.score("a", "c") == 2.0 * 1.0
+
+    def test_unknown_nodes_score_zero_not_crash(self, graph):
+        for predictor in (AdamicAdarPredictor(), CommonNeighborsPredictor(),
+                          JaccardPredictor(), PreferentialAttachmentPredictor()):
+            assert predictor.fit(graph).score("nope", "a") == 0.0
+
+    def test_random_is_reproducible(self, graph):
+        a = RandomPredictor(seed=5).fit(graph).score_pairs([("a", "b"), ("a", "c")])
+        b = RandomPredictor(seed=5).fit(graph).score_pairs([("a", "b"), ("a", "c")])
+        assert a == b
+
+
+class TestMetrics:
+    def test_perfect_separation(self):
+        m = evaluate_scores([0.9, 0.8], [0.1, 0.2])
+        assert m.auc == 1.0
+        assert m.hits_at_1 == 1.0
+        assert m.mrr == 1.0
+
+    def test_inverted_separation(self):
+        assert evaluate_scores([0.1, 0.2], [0.9, 0.8]).auc == 0.0
+
+    def test_all_ties_do_not_count_as_perfect(self):
+        """
+        A predictor scoring everything 0 ranks nothing. Optimistic tie handling
+        would report Hits@1 of 1.0 for a predictor that has no information --
+        the exact failure this harness must not have, since 85% of test pairs
+        score 0 on shared-neighbour methods.
+        """
+        m = evaluate_scores([0.0] * 5, [0.0] * 50)
+        assert m.hits_at_1 == 0.0
+        assert m.mrr < 0.1
+
+    def test_hits_at_k_and_mrr(self):
+        assert hits_at_k([1, 2, 11], 10) == pytest.approx(2 / 3)
+        assert mean_reciprocal_rank([1, 2]) == pytest.approx(0.75)
+
+    def test_empty_inputs_do_not_crash(self):
+        m = evaluate_scores([], [1.0])
+        assert math.isnan(m.auc)
+
+
+class TestStructuralCoverage:
+    def test_reports_fraction_sharing_a_neighbour(self):
+        g = nx.Graph([("a", "x"), ("b", "x"), ("c", "y")])
+        assert structural_coverage(g, [("a", "b")]) == 1.0
+        assert structural_coverage(g, [("a", "c")]) == 0.0
+        assert structural_coverage(g, [("a", "b"), ("a", "c")]) == 0.5
+
+    def test_missing_nodes_count_as_uncovered(self):
+        g = nx.Graph([("a", "x")])
+        assert structural_coverage(g, [("a", "absent")]) == 0.0
+
+
+class TestHarnessEndToEnd:
+    def test_random_predictor_lands_near_half(self):
+        """If the harness leaks, random will not score 0.5."""
+        edges = [(f"g{i}", f"d{i % 7}", 2000 + (i % 20)) for i in range(400)]
+        split = build_temporal_split(edges, cutoff_year=2012)
+        report = evaluate_baselines(split, negatives_per_positive=10, seed=0)
+        if "random" in report.results and report.results["random"].positives:
+            assert 0.35 < report.results["random"].auc < 0.65
+
+    def test_empty_test_set_is_reported_not_crashed(self):
+        split = build_temporal_split([("a", "b", 2000)], cutoff_year=2015)
+        report = evaluate_baselines(split)
+        assert not report.results
+        assert any("No test edges" in n for n in report.notes)
+
+    def test_low_coverage_produces_a_warning(self):
+        """A metric that is undefined for most pairs must say so."""
+        edges = [(f"g{i}", f"d{i}", 2000) for i in range(50)]
+        edges += [(f"g{i}", f"d{i + 1}", 2020) for i in range(49)]
+        split = build_temporal_split(edges, cutoff_year=2015)
+        report = evaluate_baselines(split, negatives_per_positive=5)
+        if report.results:
+            assert "structural_coverage" in report.diagnostics
