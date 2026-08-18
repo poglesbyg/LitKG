@@ -19,10 +19,9 @@ from datetime import datetime, timedelta
 
 import spacy
 import torch
-from transformers import (
-    AutoTokenizer, AutoModel, AutoModelForTokenClassification,
-    pipeline, BertTokenizer, BertModel
-)
+# Only the NER pipeline is built here; `pipeline` resolves the tokenizer and
+# the token-classification model from the configured checkpoint itself.
+from transformers import pipeline
 from Bio import Entrez
 import requests
 import pandas as pd
@@ -378,30 +377,13 @@ class BiomedicalNLP(LoggerMixin):
             self.logger.error("scispacy model not found. Please install it first.")
             raise
         
-        # Load PubMedBERT
-        try:
-            self.pubmedbert_tokenizer = AutoTokenizer.from_pretrained(
-                self.models_config["pubmedbert"]
-            )
-            self.pubmedbert_model = AutoModel.from_pretrained(
-                self.models_config["pubmedbert"]
-            )
-            self.logger.info("Loaded PubMedBERT model")
-        except Exception as e:
-            self.logger.error(f"Error loading PubMedBERT: {e}")
-        
-        # Load BioBERT
-        try:
-            self.biobert_tokenizer = BertTokenizer.from_pretrained(
-                self.models_config["biobert"]
-            )
-            self.biobert_model = BertModel.from_pretrained(
-                self.models_config["biobert"]
-            )
-            self.logger.info("Loaded BioBERT model")
-        except Exception as e:
-            self.logger.error(f"Error loading BioBERT: {e}")
-        
+        # PubMedBERT and BioBERT encoders were downloaded and held here as
+        # `self.pubmedbert_model` / `self.biobert_model` and never read by
+        # anything -- ~800MB and two model loads per run, for nothing. The
+        # encoders that are actually used live elsewhere and pick their own
+        # checkpoints: `litkg.phase2.node_features` for text features and
+        # `litkg.models.huggingface_models.ModelRegistry` for embeddings.
+
         # Create the BERT NER pipeline
         self.ner_pipeline = None
         model_name = self.models_config.get(

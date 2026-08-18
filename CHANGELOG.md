@@ -5,6 +5,24 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Removed
+
+- **Two encoders `BiomedicalNLP` downloaded on every run and never read.**
+  `_load_models` populated `self.pubmedbert_model`/`self.pubmedbert_tokenizer`
+  and `self.biobert_model`/`self.biobert_tokenizer` from the `pubmedbert` and
+  `biobert` config keys. Nothing in `src/`, `scripts/` or `tests/` referenced
+  those attributes -- roughly 800MB fetched and two model loads paid per run to
+  populate names no code path touched, plus two config keys that advertised a
+  setting which changed nothing.
+
+  Both loads and both config keys are gone, along with the now-unused
+  `AutoModel`/`AutoTokenizer`/`BertModel`/`BertTokenizer` imports. The encoders
+  that are actually used are unaffected and pick their own checkpoints:
+  `litkg.phase2.node_features` (PubMedBERT, for text features) and
+  `litkg.models.huggingface_models.ModelRegistry` (which registers both under
+  its own keys). `scripts/setup_models.py` still pre-fetches them for those
+  paths.
+
 ### Fixed
 
 - **The BERT NER path extracted nothing on every document.** The pipeline was

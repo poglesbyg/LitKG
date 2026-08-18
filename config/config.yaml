@@ -5,8 +5,10 @@ phase1:
   literature:
     # Biomedical LLM models
     models:
-      pubmedbert: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
-      biobert: "dmis-lab/biobert-base-cased-v1.1"
+      # `pubmedbert` and `biobert` keys used to live here. Nothing read them
+      # except two model loads in BiomedicalNLP._load_models whose results were
+      # never used. The encoders that are used choose their own checkpoints:
+      # litkg.phase2.node_features and litkg.models.huggingface_models.
       scispacy_model: "en_core_sci_md"
       # Token-classification checkpoint for the BERT NER path. It must be a
       # model that was fine-tuned for NER: a base LM such as
