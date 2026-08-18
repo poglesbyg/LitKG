@@ -343,6 +343,72 @@ the hybrid.** Text alone is far above the random floor but nowhere near
 topology, and it is only in combination that it earns its keep. The features
 help the model generalise across similar entities, not match substrings.
 
+### Literature context features do not work
+
+Node names carry no biology — "Imatinib" as a string says nothing about what it
+treats — so the obvious next step was to characterise each entity by the
+sentences it appears in. `litkg.phase2.literature_context` fetches pre-cutoff
+PubMed abstracts per entity, extracts mentioning sentences, and feeds the pooled
+embedding to the model in place of the name.
+
+**It does not work, and the way it fails is the interesting part.**
+
+Measured on the full 2016 test set, context looked like a large win over names:
+
+| text feature | AUC | AP |
+|---|---|---|
+| names | 0.562 [0.549, 0.577] | 0.108 |
+| context | **0.684 [0.668, 0.698]** | 0.193 |
+
+Disjoint intervals, +0.12 AUC, nearly matching the structural baseline. That
+number is an artefact.
+
+Coverage is partial, and nodes without context fall back to their name. That
+makes "has literature context" a feature in itself — and it is a popularity
+proxy:
+
+| | count | median degree |
+|---|---|---|
+| nodes with context | 697 | **6** |
+| nodes without | 1914 | **2** |
+
+A 3x degree difference, and the two groups' feature strings are 1677 versus 12
+characters, so a model can separate them trivially. Well-studied entities have
+more edges, and more edges means more held-out pairs.
+
+Restricting the evaluation to pairs where **both** endpoints have context
+removes the confound, since every node in that comparison is equally covered:
+
+| predictor | covered-only subset (750 positives) |
+|---|---|
+| weighted_l3 | 0.563 [0.542, 0.583] |
+| l3_paths | 0.547 [0.527, 0.565] |
+| names | 0.544 [0.522, 0.564] |
+| **context** | **0.485 [0.464, 0.506]** |
+
+Context lands **below chance**. The entire apparent gain was the availability
+signal, not the content. Every predictor scores lower on this subset because it
+is restricted to well-connected nodes where degree-matched negatives are
+genuinely comparable — which is the point of it.
+
+In the full hybrid, context also *hurts*: 0.737 ± 0.024 against 0.747 ± 0.009
+without text, with variance nearly tripled. A redundant, noisy popularity proxy
+on top of a model that already has log-degree as a feature.
+
+**Why it fails.** Mean-pooling a dozen sentences into one vector per entity
+describes what an entity is generally discussed alongside, not how it relates to
+any particular partner. An "average context" cannot encode that *this* drug
+treats *that* disease. Entity-level context is the wrong granularity.
+
+The plausible fix is pair-level: retrieve sentences mentioning **both**
+endpoints and score the pair from those, which is a co-mention feature rather
+than a node feature. That is a different design and is not implemented. Note it
+would need the same date discipline, and a co-mention in a pre-cutoff abstract
+is close to being the label itself — so it needs care, not just plumbing.
+
+The fetching machinery is sound and tested and the cache is reusable, so trying
+that costs the experiment, not the infrastructure.
+
 ### Cold start: coverage without much signal
 
 The split excludes 366 pairs whose endpoints never appear in training, because

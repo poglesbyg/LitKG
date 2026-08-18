@@ -5,6 +5,28 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Literature-context features, measured and rejected.** Entity names carry no
+  biology, so `litkg.phase2.literature_context` characterises each entity by
+  pre-cutoff PubMed sentences instead. On the full test set this looked like a
+  large win -- AUC 0.684 [0.668, 0.698] against 0.562 for names, disjoint
+  intervals.
+
+  **The gain was a confound.** Coverage is partial and uncovered nodes fall back
+  to their name, so "has literature context" becomes a feature -- and covered
+  nodes have median degree 6 against 2 for uncovered ones. Restricting the
+  comparison to pairs where both endpoints have context removes it, and context
+  then scores **0.485 [0.464, 0.506]**: below chance. In the hybrid it also
+  hurts, 0.737 +/- 0.024 against 0.747 +/- 0.009, with tripled variance.
+
+  Mean-pooling sentences per entity describes what an entity is discussed
+  alongside, not how it relates to a specific partner. Entity-level context is
+  the wrong granularity; a pair-level co-mention feature is the plausible fix
+  and is not implemented. The fetching machinery is kept -- it is sound, tested,
+  date-guarded and cached, so the next attempt costs an experiment rather than
+  the infrastructure.
+
 ### Fixed
 
 - **A unit test overwrote the real literature-context cache.**
