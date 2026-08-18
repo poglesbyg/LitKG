@@ -67,14 +67,21 @@ class LiteratureContextFetcher(LoggerMixin):
 
     def __init__(self, config: ContextConfig):
         self.config = config
-        self._contexts: Dict[str, List[str]] = {}
+        # {entity key: [abstract text]}. Sentences are extracted on read.
+        self._abstracts: Dict[str, List[str]] = {}
         self._last_request = 0.0
         self._loaded = False
 
     # ------------------------------------------------------------------
 
     def _cache_path(self) -> Path:
-        return Path(self.config.cache_dir) / f"contexts_pre{self.config.cutoff_year}.json"
+        # v2 stores retrieved abstracts rather than extracted sentences, so a
+        # change to the matcher costs nothing instead of forcing a refetch of
+        # every entity. Caching derived data was a mistake worth not repeating.
+        return (
+            Path(self.config.cache_dir)
+            / f"abstracts_pre{self.config.cutoff_year}.json"
+        )
 
     def load(self) -> None:
         if self._loaded:
@@ -85,14 +92,14 @@ class LiteratureContextFetcher(LoggerMixin):
                 payload = json.loads(path.read_text())
                 if payload.get("cutoff_year") != self.config.cutoff_year:
                     raise ValueError("cutoff mismatch")
-                self._contexts = payload.get("contexts", {})
+                self._abstracts = payload.get("abstracts", {})
                 self.logger.info(
-                    f"Loaded contexts for {len(self._contexts)} entities "
+                    f"Loaded abstracts for {len(self._abstracts)} entities "
                     f"(pre-{self.config.cutoff_year})"
                 )
             except Exception as e:
                 self.logger.warning(f"Ignoring unusable context cache: {e}")
-                self._contexts = {}
+                self._abstracts = {}
         self._loaded = True
 
     def save(self) -> None:
@@ -100,7 +107,7 @@ class LiteratureContextFetcher(LoggerMixin):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({
             "cutoff_year": self.config.cutoff_year,
-            "contexts": self._contexts,
+            "abstracts": self._abstracts,
         }))
 
     # ------------------------------------------------------------------
@@ -195,33 +202,31 @@ class LiteratureContextFetcher(LoggerMixin):
     # ------------------------------------------------------------------
 
     def contexts_for(self, name: str) -> List[str]:
-        """Cached sentences mentioning `name`, fetching them if absent."""
+        """Sentences mentioning `name`, fetching its abstracts if not cached."""
         self.load()
         key = name.strip().lower()
-        if key in self._contexts:
-            return self._contexts[key]
+        if key not in self._abstracts:
+            term = self._query_term(name)
+            texts: List[str] = []
+            if term:
+                try:
+                    pmids = self._search(term)
+                    texts = [a["text"] for a in self._fetch_abstracts(pmids)]
+                except Exception as e:
+                    self.logger.warning(f"Context fetch failed for {name!r}: {e}")
+            self._abstracts[key] = texts
 
         sentences: List[str] = []
-        term = self._query_term(name)
-        if not term:
-            self._contexts[key] = []
-            return []
-        try:
-            pmids = self._search(term)
-            for article in self._fetch_abstracts(pmids):
-                sentences.extend(_sentences_mentioning(article["text"], name))
-                if len(sentences) >= self.config.max_contexts:
-                    break
-        except Exception as e:
-            self.logger.warning(f"Context fetch failed for {name!r}: {e}")
-
-        self._contexts[key] = sentences[: self.config.max_contexts]
-        return self._contexts[key]
+        for text in self._abstracts[key]:
+            sentences.extend(_sentences_mentioning(text, name))
+            if len(sentences) >= self.config.max_contexts:
+                break
+        return sentences[: self.config.max_contexts]
 
     def gather(self, names: Iterable[str], save_every: int = 25) -> Dict[str, List[str]]:
         """Fetch contexts for many names, saving periodically so runs resume."""
         self.load()
-        pending = [n for n in dict.fromkeys(names) if n.strip().lower() not in self._contexts]
+        pending = [n for n in dict.fromkeys(names) if n.strip().lower() not in self._abstracts]
         if pending:
             self.logger.info(
                 f"Fetching pre-{self.config.cutoff_year} contexts for "
@@ -245,9 +250,19 @@ class LiteratureContextFetcher(LoggerMixin):
         self.load()
         text: Dict[str, str] = {}
         for node_id, name in node_names.items():
-            sentences = self._contexts.get(name.strip().lower(), [])
+            sentences = self.contexts_for_cached(name)
             text[node_id] = " ".join([name] + sentences) if sentences else name
         return text
+
+    def contexts_for_cached(self, name: str) -> List[str]:
+        """Sentences from already-cached abstracts only; never fetches."""
+        self.load()
+        sentences: List[str] = []
+        for text in self._abstracts.get(name.strip().lower(), []):
+            sentences.extend(_sentences_mentioning(text, name))
+            if len(sentences) >= self.config.max_contexts:
+                break
+        return sentences[: self.config.max_contexts]
 
     def coverage(self, node_names: Dict[str, str]) -> float:
         """Fraction of nodes with at least one retrieved context sentence."""
@@ -255,8 +270,7 @@ class LiteratureContextFetcher(LoggerMixin):
         if not node_names:
             return 0.0
         covered = sum(
-            1 for name in node_names.values()
-            if self._contexts.get(name.strip().lower())
+            1 for name in node_names.values() if self.contexts_for_cached(name)
         )
         return covered / len(node_names)
 
@@ -277,12 +291,46 @@ def _publication_year(article_info: Dict) -> Optional[int]:
     return int(match.group()) if match else None
 
 
+def _mention_patterns(name: str) -> List[re.Pattern]:
+    """
+    Patterns that count as a mention of `name`.
+
+    Requiring the literal gene-qualified string finds almost nothing: the graph
+    calls a variant "FLT3 ITD" while abstracts write "FLT3-ITD", and most write
+    "V600E" without repeating the gene. Multi-word names hit 13% under exact
+    matching against 62% for single-word names.
+
+    Two relaxations, both safe because retrieval already scoped the abstracts to
+    this entity: separators between tokens are flexible, and the distinctive
+    trailing token ("V600E", "ITD") counts on its own.
+    """
+    tokens = [t for t in re.split(r"[\s\-_:]+", str(name).strip()) if t]
+    if not tokens:
+        return []
+
+    patterns = [
+        re.compile(
+            r"\b" + r"[\s\-_:]*".join(re.escape(t) for t in tokens) + r"\b",
+            re.IGNORECASE,
+        )
+    ]
+    if len(tokens) > 1:
+        # The specifier, not the gene: matching the gene alone would pull in
+        # sentences about the gene that say nothing about this variant.
+        specifier = tokens[-1]
+        if len(specifier) >= 2:
+            patterns.append(re.compile(rf"\b{re.escape(specifier)}\b", re.IGNORECASE))
+    return patterns
+
+
 def _sentences_mentioning(text: str, name: str) -> List[str]:
-    """Sentences from `text` that mention `name`, word-bounded."""
-    pattern = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+    """Sentences from `text` that mention `name` under any accepted form."""
+    patterns = _mention_patterns(name)
+    if not patterns:
+        return []
     found = []
     for sentence in re.split(r"(?<=[.!?])\s+", text):
         sentence = sentence.strip()
-        if 20 < len(sentence) < 600 and pattern.search(sentence):
+        if 20 < len(sentence) < 600 and any(p.search(sentence) for p in patterns):
             found.append(sentence)
     return found

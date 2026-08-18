@@ -121,13 +121,70 @@ class TestLeakageGuards:
         assert "2012" in early.name and "2018" in late.name
 
     def test_cache_with_a_mismatched_cutoff_is_rejected(self, tmp_path):
-        path = tmp_path / "contexts_pre2016.json"
-        path.write_text(json.dumps({"cutoff_year": 2020, "contexts": {"braf": ["leaked"]}}))
+        path = tmp_path / "abstracts_pre2016.json"
+        path.write_text(json.dumps({
+            "cutoff_year": 2020,
+            "abstracts": {"braf": ["A leaked 2020 abstract about BRAF."]},
+        }))
         fetcher = LiteratureContextFetcher(
             ContextConfig(cutoff_year=2016, cache_dir=tmp_path)
         )
         fetcher.load()
-        assert fetcher._contexts == {}
+        assert fetcher._abstracts == {}
+
+
+class TestCacheStoresRawAbstracts:
+    """
+    The cache holds abstracts, not extracted sentences. Caching derived data
+    meant any change to the matcher forced a refetch of every entity from
+    PubMed -- which is exactly what happened when the matcher had to be relaxed.
+    """
+
+    def test_cache_filename_marks_the_abstract_format(self):
+        path = LiteratureContextFetcher(ContextConfig(cutoff_year=2016))._cache_path()
+        assert path.name.startswith("abstracts_pre")
+
+    def test_matcher_changes_need_no_refetch(self):
+        """Sentences are derived on read, so the same cache serves both forms."""
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher._loaded = True
+        fetcher._abstracts = {"flt3 itd": ["FLT3-ITD confers poor prognosis in AML."]}
+        assert fetcher.contexts_for_cached("FLT3 ITD")
+
+    def test_cached_lookup_never_fetches(self):
+        fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
+        fetcher._loaded = True
+        fetcher._abstracts = {}
+        fetcher._search = lambda *a, **k: pytest.fail("must not fetch")
+        assert fetcher.contexts_for_cached("ANYTHING") == []
+
+
+class TestFlexibleMentionMatching:
+    """
+    Requiring the literal gene-qualified string found almost nothing: 13% of
+    multi-word names against 62% of single-word names. Abstracts hyphenate
+    ("FLT3-ITD") and usually drop the gene ("V600E").
+    """
+
+    def test_separator_variants_match(self):
+        for written in ("FLT3-ITD", "FLT3 ITD", "FLT3_ITD"):
+            assert _sentences_mentioning(
+                f"{written} confers poor prognosis in this cohort.", "FLT3 ITD"
+            )
+
+    def test_specifier_alone_matches(self):
+        assert _sentences_mentioning(
+            "The V600E substitution activates the kinase strongly.", "BRAF V600E"
+        )
+
+    def test_gene_alone_does_not_match_a_variant(self):
+        """
+        Sentences about the gene say nothing about this variant, and the graph
+        already carries a gene-variant edge for that relationship.
+        """
+        assert not _sentences_mentioning(
+            "BRAF is a serine threonine kinase of interest here.", "BRAF V600E"
+        )
 
 
 class TestContextText:
@@ -138,7 +195,7 @@ class TestContextText:
         """
         fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
         fetcher._loaded = True
-        fetcher._contexts = {"braf": ["BRAF drives melanoma."]}
+        fetcher._abstracts = {"braf": ["BRAF drives melanoma in many patients."]}
         text = fetcher.context_text({"g1": "BRAF", "g2": "OBSCURE1"})
         assert "melanoma" in text["g1"]
         assert text["g2"] == "OBSCURE1"
@@ -146,13 +203,16 @@ class TestContextText:
     def test_name_is_retained_alongside_context(self):
         fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
         fetcher._loaded = True
-        fetcher._contexts = {"braf": ["Some sentence."]}
+        fetcher._abstracts = {"braf": ["BRAF is a kinase implicated in melanoma."]}
         assert text_starts_with(fetcher.context_text({"g1": "BRAF"})["g1"], "BRAF")
 
     def test_coverage_counts_only_entities_with_sentences(self):
         fetcher = LiteratureContextFetcher(ContextConfig(cutoff_year=2016, cache_dir=None))
         fetcher._loaded = True
-        fetcher._contexts = {"braf": ["A sentence."], "kras": []}
+        fetcher._abstracts = {
+            "braf": ["BRAF drives melanoma in many patients."],
+            "kras": [],
+        }
         coverage = fetcher.coverage({"a": "BRAF", "b": "KRAS", "c": "TP53"})
         assert coverage == pytest.approx(1 / 3)
 

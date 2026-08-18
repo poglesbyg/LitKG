@@ -9,6 +9,7 @@ This module handles:
 """
 
 import json
+import os
 import re
 from collections import defaultdict
 
@@ -426,39 +427,95 @@ class CivicProcessor(LoggerMixin):
         self.civic_config = config.phase1.knowledge_graphs.civic
         self.ontology_mapper = OntologyMapper(config)
     
-    def download_civic_data(self) -> bool:
-        """Download latest CIVIC data."""
-        self.logger.info("Downloading CIVIC data...")
-        
-        # CIVIC data URLs
-        urls = {
-            "variants": "https://civicdb.org/downloads/01-Feb-2024/01-Feb-2024-VariantSummaries.tsv",
-            "evidence": "https://civicdb.org/downloads/01-Feb-2024/01-Feb-2024-ClinicalEvidenceSummaries.tsv",
-            "genes": "https://civicdb.org/downloads/01-Feb-2024/01-Feb-2024-GeneSummaries.tsv"
+    # CIVIC publishes dated monthly releases and a rolling nightly build. The
+    # default is pinned: a nightly build changes under you, so results stop
+    # being reproducible and a regression cannot be told from a data update.
+    # Override with LITKG_CIVIC_RELEASE=nightly (or another date) to refresh.
+    DEFAULT_RELEASE = "01-Aug-2026"
+
+    # Columns each file must contain for processing to mean anything. CIVIC has
+    # renamed columns across releases -- an earlier version of this code read
+    # 'drugs', 'variant_id' and 'clinical_significance' from an evidence file
+    # that had none of them, and produced 4125 dangling edges in silence. A
+    # missing column is now an error, not an empty string.
+    REQUIRED_COLUMNS = {
+        "evidence": (
+            "evidence_id", "molecular_profile", "disease", "therapies",
+            "evidence_type", "significance", "evidence_level", "citation",
+        ),
+        "variants": ("variant_id", "variant", "gene"),
+        "genes": ("name", "entrez_id"),
+    }
+
+    @classmethod
+    def release(cls) -> str:
+        """The CIVIC release to download; env var wins over the pinned default."""
+        return os.environ.get("LITKG_CIVIC_RELEASE", cls.DEFAULT_RELEASE).strip()
+
+    @classmethod
+    def download_urls(cls, release: Optional[str] = None) -> Dict[str, str]:
+        """
+        Download URLs for a release.
+
+        "nightly" uses the rolling build; anything else is treated as a dated
+        release directory ("01-Aug-2026"), which CIVIC names with the date
+        repeated in the filename.
+        """
+        release = (release or cls.release()) or cls.DEFAULT_RELEASE
+        files = {
+            "variants": "VariantSummaries",
+            "evidence": "ClinicalEvidenceSummaries",
+            "genes": "GeneSummaries",
         }
-        
+        prefix = "nightly" if release.lower() == "nightly" else release
+        return {
+            key: f"https://civicdb.org/downloads/{prefix}/{prefix}-{name}.tsv"
+            for key, name in files.items()
+        }
+
+    def download_civic_data(self, release: Optional[str] = None) -> bool:
+        """Download a CIVIC release, verifying each file's schema on arrival."""
+        release = release or self.release()
+        self.logger.info(f"Downloading CIVIC release {release}...")
+
         data_dir = get_data_dir() / "external" / "civic"
         data_dir.mkdir(parents=True, exist_ok=True)
-        
-        for data_type, url in urls.items():
+
+        for data_type, url in self.download_urls(release).items():
             try:
                 response = requests.get(url, timeout=300)
                 response.raise_for_status()
-                
-                filename = f"civic_{data_type}.tsv"
-                filepath = data_dir / filename
-                
-                with open(filepath, 'wb') as f:
-                    f.write(response.content)
-                
-                self.logger.info(f"Downloaded {data_type} data to {filepath}")
-                
+
+                filepath = data_dir / f"civic_{data_type}.tsv"
+                filepath.write_bytes(response.content)
+
+                # Verify before trusting it. A silently truncated or reshaped
+                # file is worse than a failed download, because the pipeline
+                # will happily build a graph out of nothing.
+                self._verify_schema(data_type, filepath)
+                self.logger.info(f"Downloaded {data_type} to {filepath}")
+
             except Exception as e:
                 self.logger.error(f"Failed to download {data_type} data: {e}")
                 return False
-        
+
+        (data_dir / "RELEASE").write_text(f"{release}\n")
         return True
-    
+
+    def _verify_schema(self, data_type: str, filepath: Path) -> None:
+        """Raise if a downloaded file lacks columns the processor depends on."""
+        required = self.REQUIRED_COLUMNS.get(data_type, ())
+        if not required:
+            return
+        header = pd.read_csv(filepath, sep="\t", nrows=0).columns
+        missing = [c for c in required if c not in header]
+        if missing:
+            raise ValueError(
+                f"CIVIC {data_type} file is missing required columns {missing}. "
+                f"The release schema has changed; update REQUIRED_COLUMNS and the "
+                f"processor rather than letting these read as empty strings."
+            )
+
     def process_civic_data(self) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
         """Process CIVIC data into standardized format."""
         self.logger.info("Processing CIVIC data...")
@@ -495,6 +552,14 @@ class CivicProcessor(LoggerMixin):
         
         return entities, relations
     
+    # Feature types seen in CIVIC releases from 2024 onward.
+    FEATURE_TYPES = {
+        "GENE": "GENE",
+        "FUSION": "FUSION",
+        "FACTOR": "FACTOR",
+        "REGION": "REGION",
+    }
+
     @staticmethod
     def _civic_gene_id(gene_name: Any, entrez_id: Any = None) -> str:
         """
@@ -536,6 +601,14 @@ class CivicProcessor(LoggerMixin):
 
                 if not gene_name or gene_name == 'nan':
                     continue
+
+                # Releases from 2024 onward ship a features file rather than a
+                # genes file: 617 genes alongside 345 fusions, 8 factors and 3
+                # regions. Typing a fusion as a gene would put it in the gene
+                # vocabulary that literature mentions resolve against, so the
+                # declared feature type is honoured where present.
+                feature_type = str(row.get('feature_type', '') or '').strip()
+                entity_type = self.FEATURE_TYPES.get(feature_type.upper(), "GENE")
                 
                 # Map to ontologies
                 cui = self.ontology_mapper.map_to_umls(gene_name, "GENE")
@@ -544,7 +617,7 @@ class CivicProcessor(LoggerMixin):
                 entity = StandardizedEntity(
                     id=self._civic_gene_id(gene_name, entrez_id),
                     name=gene_name,
-                    type="GENE",
+                    type=entity_type,
                     source="CIVIC",
                     original_id=gene_id,
                     synonyms=[],

@@ -5,6 +5,38 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- **CIVIC data updated from the 01-Feb-2024 release to 01-Aug-2026**, and the
+  release is now configurable rather than hard-coded into three URLs. The
+  default stays *pinned* to a dated release: a nightly build changes underneath
+  you, so a regression could not be told apart from a data update. Override
+  with `LITKG_CIVIC_RELEASE=nightly` or another release date. The active release
+  is recorded in `data/external/civic/RELEASE`.
+
+  Evidence grows 4254 -> 4878 rows, variants 1694 -> 1992, and distinct dated
+  pairs 6643 -> 6981. Citations now run to 2025, which makes later cutoffs
+  viable: the 2020 holdout has 513 test pairs against 116 before.
+
+  Releases from 2024 onward ship a *features* file rather than a genes file --
+  617 genes alongside 345 fusions, 8 factors and 3 regions. These were being
+  typed as genes, which would have put fusions into the vocabulary that
+  literature gene mentions resolve against; `feature_type` is now honoured.
+
+  Results at the comparable 2016 cutoff are unchanged (hybrid 0.748 +/- 0.009
+  against 0.750 on the old release), which is the reassuring outcome for a data
+  refresh. At the 2020 cutoff the hybrid reaches 0.791 +/- 0.008 with Hits@100
+  of 0.131 -- **higher because it is an easier problem**, training on 26% more
+  pairs against a smaller test set, not because the method improved.
+
+### Added
+
+- Schema verification on download. An earlier version of this code read
+  `drugs`, `variant_id` and `clinical_significance` from an evidence file that
+  had none of them and produced 4125 dangling edges in silence. A missing
+  required column is now an error at download time, not an empty string at
+  processing time.
+
 ### Added
 
 - **Node text features** (`litkg.phase2.node_features`). Every predictor until

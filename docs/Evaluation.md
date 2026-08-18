@@ -1,5 +1,13 @@
 # Evaluation
 
+> **Data provenance.** All figures below are from the CIVIC **01-Aug-2026**
+> release (4878 evidence rows, 1992 variants, 973 features). Numbers reported
+> before this release came from 01-Feb-2024 and differ; the release is recorded
+> in `data/external/civic/RELEASE`. Change it with
+> `LITKG_CIVIC_RELEASE=nightly` (or another dated release) and re-run — the
+> default is pinned so a regression cannot be confused with a data update.
+
+
 Every figure this project reported before this harness existed was a count:
 how many nodes, how many edges, how many cross-modal links. Counts cannot
 distinguish *more* edges from *better* edges. This harness measures whether the
@@ -175,6 +183,24 @@ In rough order of expected return per unit of effort:
    AUC saturates, so more edges should be judged on ranking quality, not AUC.
 4. **Reframe to a narrower task.** Ranking therapies for a given variant is
    better posed than open link prediction and the typed graph supports it.
+
+## Which cutoff to use
+
+The 01-Aug-2026 release carries citations through 2025, which makes later
+cutoffs viable. They are not equivalent problems:
+
+| cutoff | train pairs | test pairs | weighted_l3 AUC | hybrid AUC | hybrid H@100 |
+|---|---|---|---|---|---|
+| 2016 | 4913 | 1388 | 0.693 [0.679, 0.708] | 0.748 ± 0.009 | 0.073 |
+| 2020 | 6194 | 513 | 0.768 [0.747, 0.790] | **0.791 ± 0.008** | **0.131** |
+
+**2020 scores higher because it is an easier problem, not because the method
+improved.** It trains on 26% more pairs and predicts a smaller, denser test set.
+Quote the cutoff with any number, and compare methods only at the same cutoff.
+
+2016 remains the reference point for method comparisons in this document,
+because every earlier result was measured there. 2020 is the more realistic
+setting if the question is "what would this surface today".
 
 ## Trained models
 
