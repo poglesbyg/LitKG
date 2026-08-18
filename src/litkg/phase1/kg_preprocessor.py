@@ -9,10 +9,11 @@ This module handles:
 """
 
 import json
+import re
 from collections import defaultdict
 
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Set, Tuple
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from datetime import datetime
@@ -480,10 +481,14 @@ class CivicProcessor(LoggerMixin):
             entities.extend(variant_entities)
             relations.extend(variant_relations)
         
-        # Process evidence
+        # Process evidence. Needs the variants file to resolve the molecular
+        # profile names evidence records use to identify their subject.
         evidence_file = data_dir / "civic_evidence.tsv"
         if evidence_file.exists():
-            evidence_relations = self._process_civic_evidence(evidence_file)
+            evidence_entities, evidence_relations = self._process_civic_evidence(
+                evidence_file, variants_file
+            )
+            entities.extend(evidence_entities)
             relations.extend(evidence_relations)
         
         self.logger.info(f"Processed {len(entities)} entities and {len(relations)} relations from CIVIC")
@@ -612,62 +617,317 @@ class CivicProcessor(LoggerMixin):
         
         return entities, relations
     
-    def _process_civic_evidence(self, evidence_file: Path) -> List[StandardizedRelation]:
-        """Process CIVIC evidence data."""
-        relations = []
-        
+    # CIVIC evidence carries the clinical layer of the graph: which disease a
+    # variant is implicated in, which therapy it predicts response to, and what
+    # the direction of that prediction is. Mapped onto the same predicate
+    # vocabulary the literature extractor emits so both sides are comparable.
+    EVIDENCE_PREDICATES = {
+        # (evidence_type, significance) -> (predicate, object_kind)
+        ("Predictive", "Sensitivity/Response"): ("SENSITIZES_TO", "therapy"),
+        ("Predictive", "Resistance"): ("RESISTANT_TO", "therapy"),
+        ("Predictive", "Reduced Sensitivity"): ("RESISTANT_TO", "therapy"),
+        ("Predictive", "Adverse Response"): ("RESISTANT_TO", "therapy"),
+        ("Prognostic", "Poor Outcome"): ("PREDICTS_POOR_OUTCOME", "disease"),
+        ("Prognostic", "Better Outcome"): ("PREDICTS_BETTER_OUTCOME", "disease"),
+        ("Diagnostic", "Positive"): ("DIAGNOSTIC_FOR", "disease"),
+        ("Diagnostic", "Negative"): ("EXCLUDES_DIAGNOSIS", "disease"),
+        ("Predisposing", "Predisposition"): ("PREDISPOSES_TO", "disease"),
+        ("Oncogenic", "Oncogenicity"): ("CAUSES", "disease"),
+    }
+
+    # CIVIC's evidence level, from validated clinical evidence down to
+    # inferential. Used instead of a flat 0.8 so downstream filtering by
+    # confidence means something.
+    EVIDENCE_LEVEL_CONFIDENCE = {
+        "A": 0.95,  # validated association
+        "B": 0.80,  # clinical evidence
+        "C": 0.60,  # case study
+        "D": 0.45,  # preclinical
+        "E": 0.30,  # inferential
+    }
+
+    @staticmethod
+    def _civic_disease_id(disease_name: Any, doid: Any = None) -> str:
+        """
+        Canonical node id for a CIVIC disease.
+
+        Prefers the Disease Ontology id, which is a genuine identity
+        identifier -- two records sharing a DOID are the same disease.
+        """
+        raw = str(doid or "").strip()
+        if raw and raw.lower() not in ("nan", "none", "0"):
+            raw = raw[:-2] if raw.endswith(".0") else raw
+            return f"CIVIC:DISEASE:DOID:{raw}"
+        return f"CIVIC:DISEASE:{str(disease_name).strip().upper()}"
+
+    @staticmethod
+    def _civic_therapy_id(therapy_name: Any) -> str:
+        """Canonical node id for a CIVIC therapy."""
+        return f"CIVIC:THERAPY:{str(therapy_name).strip().upper()}"
+
+    @staticmethod
+    def _civic_phenotype_id(phenotype_name: Any) -> str:
+        """Canonical node id for a CIVIC phenotype."""
+        return f"CIVIC:PHENOTYPE:{str(phenotype_name).strip().upper()}"
+
+    @staticmethod
+    def _split_multi_valued(value: Any) -> List[str]:
+        """CIVIC packs therapies and phenotypes into one comma-separated cell."""
+        raw = str(value or "").strip()
+        if not raw or raw.lower() == "nan":
+            return []
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
+    def _build_molecular_profile_index(self, variants_file: Path) -> Dict[str, str]:
+        """
+        Map CIVIC molecular profile names onto variant node ids.
+
+        Evidence records identify their subject by profile name ("JAK2 V617F"),
+        not by variant id, so without this index every evidence relation points
+        at a variant that does not exist.
+        """
+        index: Dict[str, str] = {}
         try:
-            df = pd.read_csv(evidence_file, sep='\t')
-            
+            df = pd.read_csv(variants_file, sep="\t")
+        except Exception as e:
+            self.logger.error(f"Could not index molecular profiles: {e}")
+            return index
+
+        for _, row in df.iterrows():
+            gene = str(row.get("gene", "")).strip().upper()
+            variant = str(row.get("variant", "")).strip().upper()
+            variant_id = str(row.get("variant_id", "")).strip()
+            if not gene or not variant or gene == "NAN" or variant == "NAN":
+                continue
+            index.setdefault(f"{gene} {variant}", f"CIVIC:VARIANT:{variant_id}")
+
+        return index
+
+    def _resolve_molecular_profile(
+        self, profile: str, index: Dict[str, str]
+    ) -> List[str]:
+        """
+        Resolve a profile name to the variant nodes it refers to.
+
+        Compound profiles ("BRAF V600E AND BRAF V600M") assert evidence about a
+        conjunction of variants; each component gets the relation, marked
+        compound in the relation attributes so the distinction is not lost.
+        """
+        key = profile.strip().upper()
+        if key in index:
+            return [index[key]]
+
+        parts = re.split(r"\s+(?:AND|OR)\s+", key)
+        if len(parts) < 2:
+            return []
+        return [index[p.strip()] for p in parts if p.strip() in index]
+
+    def _evidence_confidence(self, row: Any) -> float:
+        """Confidence from CIVIC's own evidence level, adjusted by curator rating."""
+        level = str(row.get("evidence_level", "")).strip().upper()
+        confidence = self.EVIDENCE_LEVEL_CONFIDENCE.get(level, 0.5)
+
+        # Curator rating is 1-5 stars; nudge within the level's band.
+        try:
+            rating = float(row.get("rating"))
+            if rating == rating:  # not NaN
+                confidence *= 0.85 + 0.06 * rating
+        except (TypeError, ValueError):
+            pass
+
+        return round(min(confidence, 1.0), 3)
+
+    def _process_civic_evidence(
+        self, evidence_file: Path, variants_file: Optional[Path] = None
+    ) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
+        """
+        Process CIVIC evidence into clinical entities and relations.
+
+        This is where diseases, therapies and phenotypes enter the graph. The
+        previous version emitted relations pointing at CIVIC:DISEASE and
+        CIVIC:DRUG nodes that were never created, and read column names the
+        file does not have ('variant_id', 'drugs', 'clinical_significance'),
+        so every subject was the empty string and no therapy relation was ever
+        built. The result was 4125 dangling edges out of 5825.
+        """
+        entities: List[StandardizedEntity] = []
+        relations: List[StandardizedRelation] = []
+        seen_entities: Set[str] = set()
+
+        profile_index: Dict[str, str] = {}
+        if variants_file and variants_file.exists():
+            profile_index = self._build_molecular_profile_index(variants_file)
+            self.logger.info(f"Indexed {len(profile_index)} molecular profiles")
+
+        def add_entity(entity: StandardizedEntity) -> None:
+            if entity.id not in seen_entities:
+                seen_entities.add(entity.id)
+                entities.append(entity)
+
+        unresolved = 0
+
+        try:
+            df = pd.read_csv(evidence_file, sep="\t")
+
             for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing CIVIC evidence"):
-                evidence_id = str(row.get('evidence_id', ''))
-                variant_id = str(row.get('variant_id', ''))
-                disease = str(row.get('disease', ''))
-                drug = str(row.get('drugs', ''))
-                
-                if not evidence_id or evidence_id == 'nan':
+                evidence_id = str(row.get("evidence_id", "")).strip()
+                if not evidence_id or evidence_id == "nan":
                     continue
-                
-                # Create variant-disease relation
-                if disease and disease != 'nan':
-                    relation = StandardizedRelation(
-                        id=f"CIVIC:REL:VARIANT_DISEASE:{evidence_id}",
-                        subject=f"CIVIC:VARIANT:{variant_id}",
-                        predicate="ASSOCIATED_WITH",
-                        object=f"CIVIC:DISEASE:{disease}",
+
+                profile = str(row.get("molecular_profile", "")).strip()
+                subjects = self._resolve_molecular_profile(profile, profile_index)
+                if not subjects:
+                    unresolved += 1
+                    continue
+
+                evidence_type = str(row.get("evidence_type", "")).strip()
+                significance = str(row.get("significance", "")).strip()
+                direction = str(row.get("evidence_direction", "")).strip()
+                # "Does Not Support" is evidence against the association. It is
+                # kept, not dropped, but must not be asserted as a plain fact.
+                negated = direction == "Does Not Support"
+                confidence = self._evidence_confidence(row)
+                citation = str(row.get("citation", "")).strip()
+
+                predicate, object_kind = self.EVIDENCE_PREDICATES.get(
+                    (evidence_type, significance), ("ASSOCIATED_WITH", "disease")
+                )
+
+                shared_attributes = {
+                    "evidence_type": evidence_type,
+                    "significance": significance,
+                    "evidence_direction": direction,
+                    "evidence_level": str(row.get("evidence_level", "")).strip(),
+                    "negated": negated,
+                    "compound_profile": len(subjects) > 1,
+                    "molecular_profile": profile,
+                }
+                evidence_text = [f"CIVIC evidence {evidence_id}"]
+                if citation and citation != "nan":
+                    evidence_text.append(citation)
+
+                # --- Disease ---
+                disease_name = str(row.get("disease", "")).strip()
+                disease_id = None
+                if disease_name and disease_name != "nan":
+                    doid = row.get("doid")
+                    disease_id = self._civic_disease_id(disease_name, doid)
+                    doid_str = str(doid or "").strip()
+                    doid_str = doid_str[:-2] if doid_str.endswith(".0") else doid_str
+                    add_entity(StandardizedEntity(
+                        id=disease_id,
+                        name=disease_name,
+                        type="DISEASE",
                         source="CIVIC",
-                        confidence=0.8,
-                        evidence=[f"CIVIC evidence {evidence_id}"],
-                        attributes={
-                            "evidence_type": str(row.get('evidence_type', '')),
-                            "significance": str(row.get('clinical_significance', ''))
-                        }
-                    )
-                    
-                    relations.append(relation)
-                
-                # Create variant-drug relation
-                if drug and drug != 'nan':
-                    relation = StandardizedRelation(
-                        id=f"CIVIC:REL:VARIANT_DRUG:{evidence_id}",
-                        subject=f"CIVIC:VARIANT:{variant_id}",
-                        predicate="RESPONDS_TO",
-                        object=f"CIVIC:DRUG:{drug}",
+                        original_id=f"DOID:{doid_str}" if doid_str not in ("", "nan") else disease_name,
+                        synonyms=[],
+                        attributes={"doid": doid_str} if doid_str not in ("", "nan") else {},
+                    ))
+
+                # --- Therapies ---
+                therapy_ids = []
+                for therapy_name in self._split_multi_valued(row.get("therapies")):
+                    therapy_id = self._civic_therapy_id(therapy_name)
+                    therapy_ids.append(therapy_id)
+                    add_entity(StandardizedEntity(
+                        id=therapy_id,
+                        name=therapy_name,
+                        type="DRUG",
                         source="CIVIC",
-                        confidence=0.8,
-                        evidence=[f"CIVIC evidence {evidence_id}"],
+                        original_id=therapy_name,
+                        synonyms=[],
                         attributes={
-                            "evidence_type": str(row.get('evidence_type', '')),
-                            "significance": str(row.get('clinical_significance', ''))
-                        }
-                    )
-                    
-                    relations.append(relation)
-        
+                            "interaction_type": str(row.get("therapy_interaction_type", "")).strip(),
+                        },
+                    ))
+
+                # --- Phenotypes ---
+                phenotype_ids = []
+                for phenotype_name in self._split_multi_valued(row.get("phenotypes")):
+                    phenotype_id = self._civic_phenotype_id(phenotype_name)
+                    phenotype_ids.append(phenotype_id)
+                    add_entity(StandardizedEntity(
+                        id=phenotype_id,
+                        name=phenotype_name,
+                        type="PHENOTYPE",
+                        source="CIVIC",
+                        original_id=phenotype_name,
+                        synonyms=[],
+                    ))
+
+                for subject in subjects:
+                    suffix = subject.rsplit(":", 1)[-1]
+
+                    # Predictive evidence is about a therapy; everything else
+                    # is about the disease. Emitting a therapy predicate onto a
+                    # disease node is what makes a graph unusable downstream.
+                    if object_kind == "therapy" and therapy_ids:
+                        for therapy_id in therapy_ids:
+                            relations.append(StandardizedRelation(
+                                id=f"CIVIC:REL:VARIANT_THERAPY:{evidence_id}:{suffix}:{therapy_id.rsplit(':', 1)[-1]}",
+                                subject=subject,
+                                predicate=predicate,
+                                object=therapy_id,
+                                source="CIVIC",
+                                confidence=confidence,
+                                evidence=list(evidence_text),
+                                attributes=dict(shared_attributes, disease_context=disease_id),
+                            ))
+
+                    if disease_id:
+                        disease_predicate = (
+                            predicate if object_kind == "disease" else "ASSOCIATED_WITH"
+                        )
+                        relations.append(StandardizedRelation(
+                            id=f"CIVIC:REL:VARIANT_DISEASE:{evidence_id}:{suffix}",
+                            subject=subject,
+                            predicate=disease_predicate,
+                            object=disease_id,
+                            source="CIVIC",
+                            confidence=confidence,
+                            evidence=list(evidence_text),
+                            attributes=dict(shared_attributes),
+                        ))
+
+                    for phenotype_id in phenotype_ids:
+                        relations.append(StandardizedRelation(
+                            id=f"CIVIC:REL:VARIANT_PHENOTYPE:{evidence_id}:{suffix}:{phenotype_id.rsplit(':', 1)[-1]}",
+                            subject=subject,
+                            predicate="PRESENTS_WITH",
+                            object=phenotype_id,
+                            source="CIVIC",
+                            confidence=confidence,
+                            evidence=list(evidence_text),
+                            attributes=dict(shared_attributes),
+                        ))
+
+                    # Therapy is indicated for the disease it was evidenced in.
+                    if disease_id and object_kind == "therapy":
+                        for therapy_id in therapy_ids:
+                            relations.append(StandardizedRelation(
+                                id=f"CIVIC:REL:THERAPY_DISEASE:{evidence_id}:{therapy_id.rsplit(':', 1)[-1]}",
+                                subject=therapy_id,
+                                predicate="TREATS",
+                                object=disease_id,
+                                source="CIVIC",
+                                confidence=confidence,
+                                evidence=list(evidence_text),
+                                attributes=dict(shared_attributes),
+                            ))
+
+            if unresolved:
+                self.logger.warning(
+                    f"{unresolved} evidence rows had no resolvable molecular profile"
+                )
+
         except Exception as e:
             self.logger.error(f"Error processing CIVIC evidence: {e}")
-        
-        return relations
+
+        self.logger.info(
+            f"CIVIC evidence produced {len(entities)} clinical entities "
+            f"and {len(relations)} relations"
+        )
+        return entities, relations
 
 
 class TCGAProcessor(LoggerMixin):
@@ -1012,7 +1272,7 @@ class KnowledgeGraphBuilder(LoggerMixin):
     # decisive when two entities share one. Function/process annotations such as
     # go_id are excluded on purpose: they describe what an entity does and are
     # shared by many distinct entities by design.
-    IDENTITY_IDENTIFIERS = ("cui",)
+    IDENTITY_IDENTIFIERS = ("cui", "doid")
 
     @staticmethod
     def _normalize_name(name: str) -> str:

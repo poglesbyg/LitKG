@@ -5,6 +5,39 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Clinical entities from CIVIC evidence.** The knowledge graph held only
+  genes and variants, so the diseases and chemicals typed NER extracts had
+  nothing to link against. CIVIC evidence now contributes 270 diseases (keyed
+  by Disease Ontology id where present), 381 therapies and 59 phenotypes, with
+  predicates derived from `evidence_type` × `significance` and drawn from the
+  same vocabulary the literature extractor emits. Confidence comes from
+  CIVIC's evidence level and curator rating rather than a flat 0.8, and the
+  498 "Does Not Support" rows are flagged `negated` rather than asserted.
+  Cross-modal links rose 92 → 167, now including 51 disease↔disease and 35
+  chemical↔drug pairs.
+
+### Fixed
+
+- **4125 of 5825 KG edges dangled.** `_process_civic_evidence` emitted
+  relations pointing at `CIVIC:DISEASE:` and `CIVIC:DRUG:` nodes it never
+  created, and read three columns the evidence file does not have
+  (`variant_id`, `drugs`, `clinical_significance`). Every evidence subject was
+  the empty string and no therapy relation was ever built. Evidence subjects
+  are now resolved through a molecular-profile index (92.7% direct, the rest
+  compound profiles split into components; 1 row of 4254 unresolvable).
+- **Overlapping NER spans produced duplicate mentions.** Running two
+  specialized models over one text left 109 spans double-tagged with
+  disagreeing labels. The first model in `NER_MODELS` now claims a span.
+- **Mention keys ignored the entity label,** so a link made against a mention
+  read as CHEMICAL landed on the entity resolved as GENE — "BRAF" the gene
+  linked to "BRAF Inhibitor" the drug.
+- **Entity normalization stripped identity-bearing words.** Removing
+  `inhibitor`, `receptor` and `kinase` equated a drug with its target, a
+  ligand with its receptor, and turned "anaplastic lymphoma kinase" into
+  "anaplastic lymphoma". Only `gene` and `protein` are stripped now.
+
 ### Fixed
 
 - **NER entity typing.** Every extracted literature entity was typed `GENE`,

@@ -432,6 +432,14 @@ class BiomedicalNLP(LoggerMixin):
         and their labels are mapped onto this project's vocabulary.
         """
         entities = []
+        # Both models read the same text, so the same span is often tagged
+        # twice with different labels -- bc5cdr calls CHEK2 a DISEASE where
+        # bionlp13cg calls it a GENE. Two mentions at one span corrupt mention
+        # counts and, because downstream maps key on (document, start, end),
+        # silently route a link onto whichever entity was written last.
+        # NER_MODELS is ordered by preference; the first model to claim a span
+        # keeps it.
+        claimed: Dict[Tuple[int, int], str] = {}
 
         for pipeline in self.ner_pipelines:
             try:
@@ -444,6 +452,11 @@ class BiomedicalNLP(LoggerMixin):
                 label = self.NER_LABEL_MAP.get(ent.label_, ent.label_)
                 if label not in self.entity_types:
                     continue
+
+                span = (ent.start_char, ent.end_char)
+                if span in claimed:
+                    continue
+                claimed[span] = label
 
                 entities.append(Entity(
                     text=ent.text,
