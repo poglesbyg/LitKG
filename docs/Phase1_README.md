@@ -66,7 +66,7 @@ Phase 1 establishes the foundation for LitKG-Integrate by implementing three cor
 **Key Features**:
 - Unified entity standardization across data sources
 - Ontology mapping to UMLS and Gene Ontology
-- Entity deduplication and merging
+- Entity resolution (see cascade below)
 - Relation standardization and validation
 - Graph construction with NetworkX
 
@@ -75,6 +75,48 @@ Phase 1 establishes the foundation for LitKG-Integrate by implementing three cor
 - Harmonized relations with confidence scores
 - Ontology mappings (CUI, GO IDs)
 - Cross-source entity linking
+
+#### Entity resolution cascade
+
+`merge_duplicate_entities` decides when two records describe the same
+real-world thing. Everything graph-shaped depends on it: degree, centrality
+and link prediction are all computed on whatever nodes survive, so a
+fragmented graph corrupts every downstream signal.
+
+Rules run strongest evidence first, accumulating matches in a **union-find** so
+resolution is transitive — if A matches B and B matches C, all three collapse
+even when A and C would not have matched directly.
+
+| Rule | Evidence | Example |
+|---|---|---|
+| 1 | Shared identity identifier (UMLS CUI) | `BRCA1` = `breast cancer 1` via `C0376571` |
+| 2 | Identical normalized name | `BRCA-1` = `BRCA1` (punctuation folded) |
+| 3 | Synonym overlap | `p53` = `TP53` |
+| 4 | Fuzzy similarity ≥ `similarity_threshold` | `EGFR1` ≈ `EGFR` |
+
+```python
+stats = builder.merge_duplicate_entities(similarity_threshold=0.9)
+# {'ontology': 0, 'exact_name': 393, 'synonym': 0, 'fuzzy': 54, 'merged': 447, ...}
+```
+
+The canonical survivor of a cluster is the member carrying an ontology
+identifier, then the one with the richest synonym set, so merging never
+discards the best-described record. Every surface form in the cluster is
+preserved as a synonym.
+
+**Two design points that are easy to get wrong:**
+
+*GO IDs are not identity evidence.* A Gene Ontology term annotates what an
+entity **does**, not which entity it **is**. BRCA1 and BRCA2 both carry
+`GO:0006281` ("DNA repair") — correctly — so treating that as identity merges
+two distinct genes. Only identifiers listed in `IDENTITY_IDENTIFIERS` are
+decisive.
+
+*Only rule 4 uses blocking.* Blocking (comparing only candidates sharing a type
+and first character) makes the quadratic fuzzy pass tractable. But synonyms are
+exactly where surface forms diverge at the first character — `TP53` blocks
+under "t" and its synonym `p53` under "p" — so rules 1–3 run globally via an
+O(n) index instead.
 
 ### 3. Entity Linking (`entity_linker.py`)
 
@@ -195,22 +237,40 @@ Phase 1 generates several output files in `data/processed/`:
 - `phase1_integrated_dataset.json`: Complete integrated dataset
 - `phase2_graph_data.json`: Graph structure for Phase 2
 
-## Performance Metrics
+## Measured results
 
-### Literature Processing
-- **Throughput**: ~50-100 documents per minute
-- **Entity Extraction**: 85-95% precision for major entity types
-- **Relation Extraction**: 70-80% precision for common relations
+From `make run-phase1` on the bundled sample data. These are counts the
+pipeline reports, not benchmark accuracy — no labelled evaluation set exists
+for this corpus yet.
 
-### Knowledge Graph Integration
-- **Entity Standardization**: >95% success rate
-- **Cross-source Linking**: 60-80% entity overlap
-- **Ontology Mapping**: 70-90% coverage for common entities
+| Metric | Value |
+|---|---|
+| Documents processed | 100 |
+| Graph size | 2766 nodes, 5990 edges |
+| Entities merged by resolution | 447 |
+| High-confidence linking rate | 91.5% |
+| Cross-modal entities (literature ↔ KG) | 12 |
+| Novel literature entities | 1339 |
 
-### Entity Linking
-- **Overall Linking Rate**: 60-80% of literature entities
-- **High-confidence Links**: 70-85% precision
-- **Disambiguation Accuracy**: 80-90% for conflicts
+### Reading these honestly
+
+**Resolution's real gain is smaller than 447 suggests.** Node count moves from
+2822 to 2766, so roughly 56 merges are new; the remainder were already caught
+by exact-name matching before the cascade existed.
+
+**The ontology rule fires zero times on this data.** It is correct and
+unit-tested, but CIVIC/TCGA sample records carry no CUIs, so rule 1 never
+matches. Set `UMLS_API_KEY` for real coverage. The bottleneck here is input
+identifier coverage, not the algorithm.
+
+**Cross-modal linking is weak.** 12 literature↔KG links against 1339 "novel"
+literature entities. Most of that 1339 is unlinked rather than genuinely
+novel — literature↔KG linking runs through `EntityLinker`, a separate path
+from KG-internal resolution, and has not had the same attention.
+
+**No precision or recall figures are given** because there is no gold standard
+to compute them against. Earlier versions of this document quoted precision
+ranges; they had no basis and have been removed.
 
 ## Quality Assessment
 
