@@ -613,12 +613,19 @@ class RelationPredictor(nn.Module):
         relation_probs = F.softmax(relation_logits, dim=-1)
         
         # Link prediction
-        link_probs = self.link_predictor(combined)
+        # Emit the pre-sigmoid score alongside the probability. A decoder that
+        # only returns a squashed probability cannot be trained with a ranking
+        # loss: recovering the logit from it saturates and the gradient
+        # vanishes, which left this model at chance while a plain dot product
+        # on the same representations reached 0.650.
+        link_logits = self.link_predictor[:-1](combined)
+        link_probs = self.link_predictor[-1](link_logits)
         
         results = {
             'relation_logits': relation_logits,
             'relation_probs': relation_probs,
-            'link_probs': link_probs
+            'link_probs': link_probs,
+            'link_logits': link_logits
         }
         
         # Confidence estimation

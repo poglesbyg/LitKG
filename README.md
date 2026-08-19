@@ -61,15 +61,16 @@ not survive replication that is said rather than omitted.
 | Discovery pipeline | **Real data** | `make discover`: ranks candidates and fetches the literature for each |
 | Discovery (Phase 3) | **Real data, measured** | `scripts/assess_predictions.py`: the confidence scorer carries little signal (AUC 0.613); the plausibility score is a four-valued type prior |
 | Prospective validation | **Does not replicate** | 35× lift at a 2016 cutoff, 5× at 2018, **0× at 2020**. The discovery claim is withdrawn |
-| Hybrid GNN (Phase 2) | **Real data, scores at chance** | `HybridGNNModel` reaches AUC 0.492 ± 0.020 against 0.744 for a far simpler model. Its node representations collapse to a single vector — an open bug |
+| Hybrid GNN (Phase 2) | **Real data, measured** | `HybridGNNModel` reaches AUC 0.633 ± 0.024 against 0.752 for a far simpler model. The collapse that held it at chance was input anisotropy, now corrected |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
 **533 tests pass**, enforced by CI on every push and pull request.
 
 Two entries deserve emphasis, because they are the ones a reader would
 otherwise assume work. `HybridGNNModel` — the cross-modal architecture this
-project is named for — is measured at chance, and the link-prediction result
-above comes from the much simpler model in `litkg/phase2/link_prediction.py`.
+project is named for — reaches 0.633 after a fix for anisotropic input features,
+against 0.752 for the much simpler model in `litkg/phase2/link_prediction.py`,
+which is where the headline link-prediction result comes from.
 And the prospective discovery result held at one time cutoff and vanished at
 two others.
 

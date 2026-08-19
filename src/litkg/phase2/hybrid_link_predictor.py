@@ -59,6 +59,9 @@ class HybridTrainingConfig:
     # and the model scores at chance. The simpler baseline carries such an
     # embedding, so withholding one here would not be a fair comparison.
     embedding_dim: int = 64
+    # Score with the shipped RelationPredictor instead of an inner product.
+    # Off by default because it measures at chance; see _score.
+    use_model_decoder: bool = False
 
 
 class HybridGNNLinkPredictor(LinkPredictor, LoggerMixin):
@@ -105,13 +108,35 @@ class HybridGNNLinkPredictor(LinkPredictor, LoggerMixin):
                     if node in vectors:
                         text_matrix[i] = vectors[node]
 
+                # Remove the dominant direction. Mean-pooled transformer
+                # vectors are anisotropic: PubMedBERT puts distinct entities at
+                # a mean pairwise cosine of 0.930 before the model sees them,
+                # so every node starts out nearly parallel and message passing
+                # only has to close the last gap. That is what collapsed the
+                # representations to a single vector -- not over-smoothing, which
+                # is why fewer layers did not help. Centring takes the input to
+                # 0.214.
+                populated = text_matrix.any(axis=1)
+                if populated.sum() > 1:
+                    centre = text_matrix[populated].mean(axis=0, keepdims=True)
+                    text_matrix[populated] -= centre
+                    norms = np.linalg.norm(text_matrix, axis=1, keepdims=True)
+                    text_matrix = text_matrix / np.maximum(norms, 1e-8)
+
         extra = np.zeros((len(nodes), len(types) + 1), dtype=np.float32)
         for i, node in enumerate(nodes):
             extra[i, type_index[self.node_types.get(node, "UNKNOWN")]] = 1.0
             extra[i, -1] = math.log1p(graph.degree(node) if node in graph else 0)
 
         parts = [extra] if text_matrix is None else [text_matrix, extra]
-        return torch.tensor(np.concatenate(parts, axis=1), dtype=torch.float32)
+        matrix = np.concatenate(parts, axis=1)
+
+        # Centre the whole vector, not only the text block. One-hot type
+        # indicators are non-negative, so they carry their own shared direction
+        # (0.757 cosine on this graph) and would re-introduce the anisotropy
+        # the text centring just removed.
+        matrix = matrix - matrix.mean(axis=0, keepdims=True)
+        return torch.tensor(matrix, dtype=torch.float32)
 
     @staticmethod
     def _edge_index(index: Dict[str, int], edges: Sequence[Edge]) -> torch.Tensor:
@@ -275,10 +300,25 @@ class HybridGNNLinkPredictor(LinkPredictor, LoggerMixin):
         return out
 
     def _score(self, representations: torch.Tensor, pairs) -> torch.Tensor:
+        """
+        Score pairs by inner product of their representations.
+
+        The architecture ships a `RelationPredictor`, and it was tried: scored
+        through it the model sits at chance (0.477 +/- 0.018) while a dot
+        product on the very same representations reaches 0.650. The decoder
+        concatenates the two endpoints and pushes that through an MLP, which
+        cannot express a pairwise interaction the way an element-wise product
+        does; exposing its pre-sigmoid logits, so a ranking loss could use it at
+        all, did not change the outcome. Set `use_model_decoder=True` to
+        reproduce that comparison.
+        """
         if not pairs:
             return torch.zeros(0)
         index = torch.tensor(pairs, dtype=torch.long)
-        return (representations[index[:, 0]] * representations[index[:, 1]]).sum(-1)
+        first, second = representations[index[:, 0]], representations[index[:, 1]]
+        if self.config.use_model_decoder:
+            return self.model.relation_predictor(first, second)["link_logits"].squeeze(-1)
+        return (first * second).sum(-1)
 
     def _loss(self, representations, positives, negatives) -> torch.Tensor:
         positive = self._score(representations, positives)
