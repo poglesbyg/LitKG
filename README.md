@@ -10,9 +10,32 @@ Runs entirely on a local LLM by default. No API key required.
 make quickstart          # install dependencies and models
 ollama pull qwen3:8b     # the default local model
 make run-phase1          # literature -> KG -> entity linking
+make discover TOP=20     # rank candidate associations, with their evidence
 ```
 
 ---
+
+## The end-to-end run
+
+`make discover` is the whole thing in one command: build the graph, train a link
+predictor, rank the pairs it has never seen, fetch the literature about each
+one, and ask the local model what support actually exists.
+
+```bash
+make discover TOP=20 EXPLAIN=5          # propose, using all available evidence
+make discover CUTOFF=2016 TOP=20        # reproduce the evaluation setting
+```
+
+With `CUTOFF` set, the graph and the literature are both restricted to before
+that year and candidates curated afterwards are marked, so the output can be
+checked rather than trusted.
+
+It produces candidates for a person to judge, not findings. The ranking's
+precision does not replicate across cutoffs (35x lift at 2016, 5x at 2018, 0x at
+2020), so the evidence attached to each candidate is the part worth reading. The
+model is asked to say what the retrieved passages do *not* support, and it does:
+on a variant later confirmed by CIVIC, it correctly reported that the passages
+retrieved spoke only of VHL mutations in general and not that variant.
 
 ## What this actually is
 

@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-years train-lp rag rag-coverage build-queryset eval-retrieval run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
+.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-years train-lp rag rag-coverage build-queryset eval-retrieval discover run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
 
 # Default target
 help:
@@ -36,6 +36,7 @@ help:
 	@echo "  rag-coverage Report RAG index coverage without calling the LLM"
 	@echo "  build-queryset Build the CIVIC-judged retrieval query set"
 	@echo "  eval-retrieval Score retrieval against the judged queries"
+	@echo "  discover     End to end: rank candidates and gather their evidence"
 	@echo "  evaluate-years Show year distribution for choosing a cutoff"
 	@echo "  run-examples Run all example scripts"
 	@echo "  run-lit      Run literature processing example"
@@ -241,3 +242,6 @@ build-queryset:
 
 eval-retrieval:
 	PYTHONPATH=$(PWD)/src uv run python scripts/evaluate_retrieval.py $(if $(SWEEP),--sweep,)
+
+discover:
+	PYTHONPATH=$(PWD)/src uv run python scripts/discover.py --top $(or $(TOP),20) --explain $(or $(EXPLAIN),5) $(if $(CUTOFF),--cutoff $(CUTOFF),)
