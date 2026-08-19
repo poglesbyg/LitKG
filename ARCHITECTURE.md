@@ -101,14 +101,24 @@ Four retrievers, all implementing the LangChain `BaseRetriever` interface:
 - `CrossModalAttention` lets each modality attend to the other. Query and key/value have **different** sequence lengths here — literature and KG subgraphs rarely have equal node counts — which is why the attention implementation tracks `tgt_len` and `src_len` separately.
 - `CrossModalFusion` combines them; `RelationPredictor` scores entity pairs. Fusion operates on **node** embeddings: pooling each graph to one vector first left `fused_representation` with a single row, so `entity_pairs` could only ever index row 0 and a per-pair prediction was not expressible.
 
-**Measured, and it does not work.** `HybridGNNLinkPredictor` runs this model
-through the same harness as everything else and it reaches AUC 0.492 ± 0.020 --
-chance -- against 0.744 for the much simpler `link_prediction` model. Its node
-representations collapse: mean pairwise cosine between distinct nodes is 0.793
-at the input, 0.998 after the KG encoder and 1.000 after fusion. A learned
-per-node embedding and a single-layer encoder both failed to fix it, so it is
-not ordinary depth-driven over-smoothing. Treat it as an open bug and
-re-measure against 0.744 before building on it.
+**Measured, and it underperforms.** `HybridGNNLinkPredictor` runs this model
+through the same harness as everything else. It reaches AUC 0.633 ± 0.024
+against 0.752 for the much simpler `link_prediction` model.
+
+It used to score 0.492 -- chance -- because its node representations collapsed:
+mean pairwise cosine between distinct nodes ran 0.793 at the input, 0.998 after
+the KG encoder and 1.000 after fusion. A learned per-node embedding and a
+single-layer encoder both failed to fix it, which was the clue that it was not
+depth-driven over-smoothing. The cause was **anisotropic inputs**: mean-pooled
+PubMedBERT vectors sit at 0.930 mean pairwise cosine before the model sees them,
+so the collapse was almost finished before layer one. Centring the whole feature
+matrix -- one-hot type indicators included, since non-negative vectors carry a
+shared direction of their own -- takes the input to 0.214. Check input
+anisotropy before blaming a GNN.
+
+The gap that remains is architectural rather than a defect: cross-modal
+attention costs about 0.12 AUC on this graph. Re-measure against 0.752 before
+building on it.
 
 Subgraph extraction uses a `MultiGraph`, not a simple graph, because edge features one-hot encode `relation_type`. Collapsing parallel edges would keep only the last relation between a pair and hide the rest from the model.
 

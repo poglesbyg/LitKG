@@ -355,8 +355,9 @@ For more details, see the complete implementation in `src/litkg/phase2/` and run
 ## HybridGNNModel on the real graph
 
 The cross-modal architecture this phase is named for had only ever run on
-`torch.randn`. Wiring it to real data required fixing something first, and the
-result is worth stating plainly: **it scores at chance.**
+`torch.randn`. Wiring it to real data took three fixes, and the result is worth
+stating plainly: **it reaches 0.633 ± 0.024, against 0.752 for a far simpler
+model.** It started at 0.492, which is chance.
 
 ### It could not express a per-pair prediction
 
