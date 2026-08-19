@@ -53,6 +53,34 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **The variant-level CIVIC/GDC join does not work either, and the arithmetic
+  says why.** The gene-level join failed on granularity: TP53 links to 14 of 15
+  diseases in the joined graph, so the edge approximates a prior. CIVIC's unit
+  is the variant, and at that level the signal is sharp -- BRAF is mutated
+  across most cohorts while BRAF V600E concentrates in thyroid (283) and
+  melanoma (200). It also targets the largest test category, since 39% of
+  held-out pairs are DISEASE-MUTATION.
+
+  It is still unmeasurable. Of 546 DISEASE-MUTATION test pairs, 186 of 463
+  variants are simple protein changes, 85 of those were observed in TCGA, and
+  only 14 of 78 test diseases correspond to a TCGA cohort. **20 pairs survive
+  both filters -- 1.4% of the test set.** The predictor scores AUC 0.501 at 0.9%
+  coverage, which is an abstention rate rather than a result.
+
+  Improving the cohort mapping from 22 to 30 of 33 changed the pair count **not
+  at all**, which is the load-bearing observation: the bottleneck is not join
+  quality. TCGA is 33 common adult solid tumours; CIVIC spans 246 diseases
+  including rare and haematological ones TCGA never sequenced. The two sources
+  cover different diseases, and no amount of ontology work changes that.
+
+- **`litkg.phase1.disease_ontology`**, added while chasing the above. Resolves
+  cohort names to DOIDs against the Disease Ontology's synonym list and `is_a`
+  hierarchy, so the CIVIC join runs on identifiers rather than strings: 22 of 33
+  cohorts against 14 by name. Ancestry matches are flagged `via_ancestor`,
+  because mapping a lung-adenocarcinoma cohort onto a lung-cancer node is a
+  generalisation and should be visible as one. Useful independently of the
+  result it failed to rescue.
+
 - **The GDC edges do not improve link prediction.** Added to the training
   backbone across 8 seeds, `weighted_l3` moves from 0.693 ± 0.001 to
   0.691 ± 0.001 at a 2016 cutoff (seed ranges overlap -- indistinguishable) and
