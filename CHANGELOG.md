@@ -5,6 +5,36 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `HybridGNNModel` representation collapse, root-caused and corrected.**
+  It scored at chance (0.492) because every node ended up the same vector.
+  Over-smoothing was the obvious diagnosis and was wrong: a single message
+  passing layer collapsed just as completely, a learned per-node embedding did
+  not help, and random input features produced no collapse at all.
+
+  The cause was the input. Mean-pooled PubMedBERT vectors are anisotropic --
+  distinct entity strings sit at a mean pairwise cosine of **0.930** before the
+  model sees them -- so every node began nearly parallel and message passing
+  only closed the last gap. Centring the feature matrix takes the input to
+  0.214 and the score from **0.492 to 0.633 ± 0.024** across 5 seeds. One-hot
+  type indicators share a direction for the same reason, so the whole vector is
+  centred rather than the text block alone.
+
+- **`RelationPredictor` returned only a post-sigmoid probability**, which no
+  ranking loss can use: recovering the logit saturates and the gradient
+  vanishes. It now returns `link_logits` alongside `link_probs`.
+
+  That fixed a real defect and did not change the score, which is the
+  informative part. Scored through the shipped decoder the model sits at
+  **0.477 ± 0.018** against **0.633** for an inner product on identical
+  representations -- concatenating two endpoints cannot express a pairwise
+  interaction the way an element-wise product can. The inner product is the
+  default and `use_model_decoder=True` reproduces the comparison.
+
+  Cross-modal attention still costs 0.12 AUC against a simpler model with none.
+  The difference is now an architectural question rather than a bug.
+
 ### Documentation
 
 - **Two README status rows were false.** `HybridGNNModel` and Phase 3 were still

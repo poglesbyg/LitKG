@@ -378,42 +378,57 @@ row per KG node, and the graph-level vector remains available as
 it runs through the identical split, negatives and metrics as everything else.
 Literature side: 162 nodes and 257 edges from the Phase 1 output.
 
-| model | AUC (3 seeds) |
+| model | AUC (5 seeds) |
 |---|---|
-| GNN + evidence-weighted L3 + text | **0.744 ± 0.006** |
-| HybridGNNModel (cross-modal) | **0.492 ± 0.020** |
+| GNN + evidence-weighted L3 + text | **0.752 ± 0.007** |
+| HybridGNNModel, after the fixes below | **0.633 ± 0.024** |
+| HybridGNNModel, as originally shipped | 0.492 ± 0.020 |
 
-Chance is 0.5. The architecture the project is built around does not beat a coin
-flip on the task, while a much simpler model reaches 0.744.
+Chance is 0.5. The architecture started below it and now clears it comfortably,
+though it remains well behind the far simpler model.
 
-### Why: the representations are degenerate
+### The collapse, and what actually caused it
 
-Every node collapses to the same vector. Mean pairwise cosine between distinct
-nodes:
+Every node collapsed to the same vector: mean pairwise cosine between distinct
+nodes ran 0.793 at the input, 0.998 after the KG encoder and 1.000 after fusion.
 
-| stage | cosine |
-|---|---|
-| raw KG input features | 0.793 |
-| after the KG encoder | 0.998 |
-| after cross-modal fusion | **1.000** |
+The obvious diagnosis was over-smoothing, and it was wrong. Reducing message
+passing to a single layer left the cosine at 1.000, and adding a learned
+per-node embedding did not help either. Feeding the encoder random features
+produced no collapse at all, which is what pointed at the input.
 
-Two things were tried and neither helped:
+**Mean-pooled transformer vectors are anisotropic.** PubMedBERT places distinct
+entity strings at a mean pairwise cosine of **0.930** before the model sees
+them. Every node was already nearly parallel to every other, and message
+passing only had to close the remaining gap. Centring the feature matrix --
+subtracting the mean direction, which by construction carries no information
+about any individual node -- takes the input to 0.214 and the score from 0.492
+to 0.633.
 
-- **A learned per-node embedding**, concatenated to the static features. The
-  simpler baseline carries one, so withholding it would not have been a fair
-  test. Score stayed at chance (0.492).
-- **Fewer message-passing layers** (1, 2, 3). Cosine remained 1.000 at every
-  depth, so this is not ordinary depth-driven over-smoothing.
+One-hot entity types have the same problem for a different reason: they are
+non-negative, so they share a direction too (0.757 on this graph). The whole
+feature vector is centred, not just the text block.
 
-The collapse is therefore located but not fully explained. It happens inside the
-KG encoder and is completed by fusion, it survives both a per-node identity
-signal and a single-layer encoder, and the convolution itself carries residual
-connections. Finding the exact cause is a separate investigation.
+### The shipped decoder scores at chance
+
+`RelationPredictor` concatenates the two endpoint representations and pushes
+them through an MLP. Scored that way the model sits at **0.477 ± 0.018**, while
+an inner product on the very same representations reaches **0.633**.
+
+Concatenation cannot express a pairwise interaction the way an element-wise
+product can, and the ordering of the two endpoints leaks into a task that is
+symmetric. The decoder also ended in a sigmoid and returned only the
+probability, which no ranking loss can use -- recovering the logit saturates and
+the gradient vanishes -- so it now returns `link_logits` as well. That fixed a
+real defect and did not change the outcome, which is worth knowing: the problem
+is the concatenation, not the squashing.
+
+The inner product is the default; `use_model_decoder=True` reproduces the
+comparison.
 
 ### What this means
 
-The comparison is fair -- same split, same negatives, same metrics, same loss,
-comparable hyperparameters -- and the answer is that cross-modal attention as
-implemented here contributes nothing on this graph. Anyone planning to build on
-`HybridGNNModel` should fix the collapse first and re-measure against 0.744,
-rather than assume the architecture works because it is elaborate.
+The comparison is fair -- same split, negatives, metrics, loss and comparable
+hyperparameters -- and cross-modal attention still costs 0.12 AUC against a
+model with none. It is no longer broken, which makes the remaining gap a
+question about the architecture rather than about a bug.

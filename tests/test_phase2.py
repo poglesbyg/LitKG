@@ -771,3 +771,85 @@ class TestFusionIsPerNode:
         outputs = model(**inputs)
         assert outputs["lit_node_embeddings"].shape[0] == 20
         assert outputs["kg_node_embeddings"].shape[0] == 15
+
+
+class TestAnisotropyCorrection:
+    """
+    HybridGNNModel scored at chance because its node representations collapsed
+    to a single vector. The cause was not over-smoothing -- fewer layers did not
+    help -- but the input: mean-pooled PubMedBERT vectors sit at a mean pairwise
+    cosine of 0.930 before the model sees them, so every node starts nearly
+    parallel and message passing only closes the last gap.
+    """
+
+    @pytest.fixture
+    def predictor(self):
+        from litkg.phase2.hybrid_link_predictor import (
+            HybridGNNLinkPredictor,
+            HybridTrainingConfig,
+        )
+        return HybridGNNLinkPredictor(config=HybridTrainingConfig(seed=0))
+
+    def test_features_are_centred(self, predictor):
+        """A shared direction across all nodes carries no information."""
+        import networkx as nx
+        import torch
+
+        graph = nx.Graph([(f"n{i}", f"n{i + 1}") for i in range(20)])
+        nodes = sorted(graph.nodes())
+        predictor.node_types = {n: "MUTATION" for n in nodes}
+        features = predictor._features(graph, nodes)
+        assert torch.allclose(features.mean(dim=0), torch.zeros(features.shape[1]),
+                              atol=1e-5)
+
+    def test_centring_reduces_pairwise_similarity(self):
+        """The correction has to actually separate the nodes, not just shift them."""
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        # Anisotropic: a large shared component plus small per-node variation,
+        # which is the shape of mean-pooled transformer output.
+        shared = rng.normal(size=(1, 32)) * 5
+        vectors = shared + rng.normal(size=(50, 32)) * 0.3
+
+        def mean_cosine(matrix):
+            normed = matrix / np.linalg.norm(matrix, axis=1, keepdims=True)
+            sim = normed @ normed.T
+            return sim[~np.eye(len(matrix), dtype=bool)].mean()
+
+        assert mean_cosine(vectors) > 0.9
+        assert mean_cosine(vectors - vectors.mean(axis=0, keepdims=True)) < 0.5
+
+
+class TestRelationPredictorExposesLogits:
+    """
+    A decoder that returns only a post-sigmoid probability cannot be trained
+    with a ranking loss: recovering the logit saturates and the gradient
+    vanishes.
+    """
+
+    def test_link_logits_are_returned(self):
+        import torch
+        from litkg.phase2.hybrid_gnn import RelationPredictor
+
+        predictor = RelationPredictor(input_dim=16, hidden_dim=8, num_relations=3)
+        outputs = predictor(torch.randn(4, 16), torch.randn(4, 16))
+        assert "link_logits" in outputs
+        assert outputs["link_logits"].shape == outputs["link_probs"].shape
+
+    def test_logits_and_probs_agree(self):
+        import torch
+        from litkg.phase2.hybrid_gnn import RelationPredictor
+
+        predictor = RelationPredictor(input_dim=16, hidden_dim=8, num_relations=3)
+        outputs = predictor(torch.randn(4, 16), torch.randn(4, 16))
+        assert torch.allclose(torch.sigmoid(outputs["link_logits"]),
+                              outputs["link_probs"], atol=1e-6)
+
+    def test_inner_product_is_the_default_scorer(self):
+        """
+        The shipped decoder measures at chance on this graph while an inner
+        product on the same representations reaches 0.633, so it is opt-in.
+        """
+        from litkg.phase2.hybrid_link_predictor import HybridTrainingConfig
+        assert HybridTrainingConfig().use_model_decoder is False
