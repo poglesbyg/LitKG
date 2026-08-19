@@ -230,6 +230,10 @@ class GraphExpansionRetriever(BaseRetriever):
     # the ranking is what decides precision. Measured on 55 bridge queries: a
     # pool of 200 contains the answer for 85% of them, against 22% at 5.
     candidate_pool: int = 200
+    # Reciprocal-rank-fusion constant. 60 is the value from the original paper
+    # and is not tuned here: tuning it on 55 queries would fit the query set.
+    fusion_k: int = 60
+    fuse_results: bool = True
 
     def _seed_documents(self, query: str) -> List[Document]:
         """Similarity-search seeds for the walk."""
@@ -286,6 +290,42 @@ class GraphExpansionRetriever(BaseRetriever):
 
         scored.sort(key=lambda item: -item[0])
         return [uid for _, uid in scored]
+
+    def _fuse(
+        self, seeds: List[Document], expanded: List[Document]
+    ) -> List[Document]:
+        """
+        Interleave the two rankings by reciprocal rank fusion.
+
+        Concatenating them put every seed ahead of every expanded passage, so
+        dense retrieval spent half the returned slots whether or not it had
+        found anything useful. On bridge queries it usually had not -- the graph
+        held a path to the answer for 54 of 55 while vector search surfaced a
+        usable seed for 16 -- and those wasted slots were the difference between
+        85% recall in the candidate pool and 24% in the top ten.
+
+        The alternative was predicting which questions are entity-anchored and
+        reallocating accordingly. That was measured and rejected: seed coverage
+        of the query's own entities separates the two query sets far too weakly
+        to switch on (zero coverage fires on 6 of 55 bridge queries), and a
+        classifier keyed on phrasing would fit the templates these queries are
+        generated from rather than anything real.
+
+        Fusion needs no such prediction. A passage ranked highly by either route
+        earns a place, one ranked well by both wins, and neither list can crowd
+        the other out by position alone.
+        """
+        scores: Dict[str, float] = {}
+        documents: Dict[str, Document] = {}
+
+        for ranking in (seeds, expanded):
+            for rank, document in enumerate(ranking):
+                uid = document.metadata.get("chunk_uid") or id(document)
+                documents.setdefault(uid, document)
+                scores[uid] = scores.get(uid, 0.0) + 1.0 / (self.fusion_k + rank + 1)
+
+        ordered = sorted(scores, key=lambda u: -scores[u])
+        return [documents[uid] for uid in ordered]
 
     def _get_relevant_documents(
         self,
@@ -366,6 +406,9 @@ class GraphExpansionRetriever(BaseRetriever):
             document.metadata["via_entity"] = via[uid]
             document.metadata.setdefault("source_type", "literature")
             expanded.append(document)
+
+        if self.fuse_results:
+            return self._fuse(seeds, expanded)
 
         _logger.info(
             f"Graph expansion: {len(seeds)} seed(s) -> {len(reached)} node(s) "

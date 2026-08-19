@@ -447,24 +447,55 @@ at top 5 that reaches **52.7%** against 21.8% for walk order.
 
 | configuration | hit-rate | P@10 | MRR |
 |---|---|---|---|
-| no expansion | 0.200 | 0.025 | 0.043 |
+| no expansion | 0.200 | 0.025 | 0.048 |
 | expansion, similarity-ranked | 0.200 | 0.025 | 0.043 |
-| expansion, context-ranked | **0.236** | 0.031 | 0.047 |
-| context-ranked, 1 seed + 9 expanded | 0.236 | **0.060** | **0.060** |
+| expansion, context-ranked, concatenated | 0.236 | 0.031 | 0.047 |
+| **expansion, context-ranked, rank-fused** | **0.327** | **0.049** | **0.095** |
 
-**This is an improvement, not a solution.** A relevant bridge paper reaches the
-top 10 for about a quarter of these queries, against 98% for single-relationship
-questions. The gap between 85% recall in the candidate pool and 24% in the top
-10 is budget: seeds occupy half the returned passages and, for these queries,
-are usually wrong.
+### Fusing instead of allocating
 
-Single-hop retrieval is unaffected by all of this — identical numbers before and
-after (P@5 0.547, MRR 0.803).
+Concatenating the two lists put every seed ahead of every expanded passage, so
+dense retrieval spent half the returned slots whether or not it had found
+anything. On these queries it usually had not.
 
-### What would be needed next
+The obvious fix — predict which questions are entity-anchored and reallocate —
+was measured and rejected. Seed coverage of the query's own entities separates
+the two query sets far too weakly to switch on: zero coverage fires on only 6 of
+55 bridge queries, and the distributions overlap heavily. A classifier keyed on
+phrasing would fit the templates these queries are generated from rather than
+anything a real user would type.
 
-The remaining problem is allocation, not reachability. A retriever that knew
-when a question is entity-anchored could spend its budget on graph candidates
-instead of dense-retrieval guesses. Doing that properly means predicting query
-type, which is a larger change than tuning a constant, and it should be measured
-on this set rather than argued.
+Reciprocal rank fusion needs no such prediction. A passage ranked highly by
+either route earns a place, one ranked well by both wins, and neither list can
+crowd the other out by position alone. The constant is the published default and
+is deliberately not tuned here, since tuning it on 55 queries would fit the
+query set.
+
+That takes hit-rate from 0.200 to **0.327**, with precision and MRR both roughly
+doubled.
+
+### The trade-off, stated plainly
+
+Fusion costs single-hop precision when expansion is switched on:
+
+| single-relationship set | P@10 | R@10 | nDCG@10 | hit-rate |
+|---|---|---|---|---|
+| `max_hops=0` (the default) | 0.370 | 0.826 | 0.779 | 0.982 |
+| `max_hops=1`, fused | 0.304 | 0.712 | 0.632 | 0.982 |
+
+`max_hops` defaults to **0**, so nothing changes for single-relationship
+questions unless expansion is asked for. Note P@k divides by k regardless of how
+many passages were returned, and the `max_hops=0` row returns five rather than
+ten, which flatters its per-slot precision; the recall difference is the real
+one and is not fully explained by that.
+
+Turning expansion on is now a measured choice rather than a hopeful one: it buys
+reach on questions whose answers are not lexically present, and costs precision
+on questions where dense retrieval was already right.
+
+### Still not solved
+
+A relevant bridge paper reaches the top ten for a third of these queries against
+98% for single-relationship ones, and the candidate pool holds the answer for
+85%. Closing that remaining gap needs a better ranking signal within the graph
+candidates, not more of them.

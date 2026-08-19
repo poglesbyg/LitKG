@@ -709,3 +709,55 @@ class TestMultiHopExpansionRanking:
     def test_query_seeding_is_optional(self):
         from litkg.langchain_integration.rag_system import GraphExpansionRetriever
         assert GraphExpansionRetriever().seed_from_query is True
+
+
+class TestRankFusion:
+    """
+    Concatenating seeds ahead of expanded passages gave dense retrieval half the
+    returned slots whether or not it had found anything. On bridge queries it
+    usually had not, and those wasted slots were the difference between 85%
+    recall in the candidate pool and 24% in the top ten.
+    """
+
+    def _doc(self, uid):
+        from langchain_core.documents import Document
+        return Document(page_content=uid, metadata={"chunk_uid": uid, "pmid": uid})
+
+    def test_a_strong_expanded_passage_can_outrank_a_weak_seed(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        seeds = [self._doc(f"s{i}") for i in range(5)]
+        expanded = [self._doc(f"e{i}") for i in range(5)]
+        order = [d.metadata["chunk_uid"] for d in retriever._fuse(seeds, expanded)]
+        assert order[1] == "e0", "the top expanded passage must beat the second seed"
+        assert order[0] == "s0", "and the top seed still leads"
+
+    def test_a_passage_found_by_both_routes_wins(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        shared = self._doc("shared")
+        seeds = [self._doc("s0"), shared]
+        expanded = [self._doc("e0"), shared]
+        order = [d.metadata["chunk_uid"] for d in retriever._fuse(seeds, expanded)]
+        assert order[0] == "shared"
+
+    def test_every_passage_survives_fusion(self):
+        """Fusion reorders; it must not drop evidence."""
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        seeds = [self._doc(f"s{i}") for i in range(3)]
+        expanded = [self._doc(f"e{i}") for i in range(4)]
+        assert len(retriever._fuse(seeds, expanded)) == 7
+
+    def test_fusion_can_be_disabled(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        assert GraphExpansionRetriever().fuse_results is True
+        assert GraphExpansionRetriever(fuse_results=False).fuse_results is False
+
+    def test_fusion_constant_is_the_published_default(self):
+        """
+        Tuning it on 55 queries would fit the query set rather than improve
+        retrieval, so it stays at the value from the original RRF paper.
+        """
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        assert GraphExpansionRetriever().fusion_k == 60
