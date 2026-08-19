@@ -38,7 +38,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 from tqdm import tqdm
@@ -309,6 +309,71 @@ class GDCClient(LoggerMixin):
             return counts
 
         return self._cached("mutations_by_project", build)
+
+    def variants_by_project(
+        self,
+        pairs: Iterable[Tuple[str, str]],
+        pause: float = 0.0,
+    ) -> Dict[str, Dict[str, int]]:
+        """
+        Occurrences of a specific protein change, broken down by project.
+
+        Keyed "SYMBOL p.CHANGE" (e.g. "BRAF p.V600E"). The gene-level view is
+        too coarse to say anything: BRAF is mutated across most cohorts, while
+        BRAF V600E concentrates in thyroid (283) and melanoma (200). CIVIC's
+        unit is the variant, so this is the granularity the two sources
+        actually share.
+        """
+        pairs = sorted({(str(g).strip(), str(a).strip()) for g, a in pairs})
+
+        def build() -> Dict[str, Dict[str, int]]:
+            counts: Dict[str, Dict[str, int]] = {}
+            for symbol, aa_change in tqdm(pairs, desc="GDC occurrences per variant"):
+                filters = {
+                    "op": "and",
+                    "content": [
+                        {
+                            "op": "in",
+                            "content": {
+                                "field": "case.project.program.name",
+                                "value": [self.program],
+                            },
+                        },
+                        {
+                            "op": "in",
+                            "content": {
+                                "field": "ssm.consequence.transcript.gene.symbol",
+                                "value": [symbol],
+                            },
+                        },
+                        {
+                            "op": "in",
+                            "content": {
+                                "field": "ssm.consequence.transcript.aa_change",
+                                "value": [aa_change],
+                            },
+                        },
+                    ],
+                }
+                try:
+                    buckets = self._facet_buckets(
+                        "ssm_occurrences", filters, "case.project.project_id"
+                    )
+                except GDCTruncationError:
+                    raise
+                except Exception as e:
+                    self.logger.warning(
+                        f"GDC query failed for {symbol} {aa_change}: {e}"
+                    )
+                    continue
+
+                if buckets:
+                    counts[f"{symbol} p.{aa_change}"] = buckets
+                if pause:
+                    time.sleep(pause)
+            return counts
+
+        return self._cached("variants_by_project", build)
 
 
 @dataclass
