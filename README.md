@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/poglesbyg/LitKG/actions/workflows/ci.yml/badge.svg)](https://github.com/poglesbyg/LitKG/actions/workflows/ci.yml)
 
-Integrates biomedical literature with structured knowledge graphs (CIVIC, TCGA, CPTAC) to surface relationships that neither source states on its own.
+Integrates biomedical literature with structured knowledge graphs (CIVIC for curated clinical evidence, TCGA and CPTAC via the GDC for somatic mutation frequencies) to surface relationships that neither source states on its own.
 
 Runs entirely on a local LLM by default. No API key required.
 
@@ -59,6 +59,7 @@ not survive replication that is said rather than omitted.
 | Retrieval | **Real data, measured** | `make eval-retrieval`: MRR 0.81, hit-rate 0.98 on 57 CIVIC-judged queries |
 | Multi-hop retrieval | **Real data, partial** | 55 bridge queries: hit-rate 0.200 → 0.327 with graph expansion. The graph holds a path for 54 of 55; ranking is the limit |
 | Discovery pipeline | **Real data** | `make discover`: ranks candidates and fetches the literature for each |
+| TCGA / CPTAC mutations | **Real data, measured** | GDC open-access API (release 46.0): 528 gene–cancer type edges over 226 Cancer Gene Census genes and 35 cohorts. Does **not** improve link prediction |
 | Discovery (Phase 3) | **Real data, measured** | `scripts/assess_predictions.py`: the confidence scorer carries little signal (AUC 0.613); the plausibility score is a four-valued type prior |
 | Prospective validation | **Does not replicate** | 35× lift at a 2016 cutoff, 5× at 2018, **0× at 2020**. The discovery claim is withdrawn |
 | Hybrid GNN (Phase 2) | **Real data, measured** | `HybridGNNModel` reaches AUC 0.633 ± 0.024 against 0.752 for a far simpler model. The collapse that held it at chance was input anisotropy, now corrected |
@@ -75,7 +76,8 @@ And the prospective discovery result held at one time cutoff and vanished at
 two others.
 
 Numbers from `make run-phase1` on the bundled sample data with the CIVIC
-01-Aug-2026 release: 3822 nodes, 14810 edges, 150 cross-modal links.
+01-Aug-2026 release and GDC data release 46.0: 3026 entities and 14920
+relations, of which 528 are GDC gene–cancer type associations.
 
 ### On reading any number here
 
@@ -237,6 +239,11 @@ Stated plainly, because they affect how far you should trust output:
 - **Ontology coverage is thin.** Entity resolution's strongest rule matches on UMLS CUIs, but the bundled seed carries only six real CUIs. It fires zero times on sample data. Set `UMLS_API_KEY` for real coverage. Fabricated CUIs were deliberately not added: a wrong shared CUI silently merges two distinct entities while looking authoritative.
 - **Literature support classification is a heuristic.** `LiteratureCrossValidator` judges support by scanning for contradiction cues ("no association", "failed to") in title and abstract. It is not entailment, and it does not read full text.
 - **Entity resolution gains are modest on sample data.** The cascade merges 453 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
+- **TCGA and CPTAC contribute mutation frequencies, and they do not help link prediction.** Both now come from the GDC open-access API rather than the fabricated rows that used to stand in for them, and the biology is right: IDH1 at 193x background in lower-grade glioma, GNAQ and GNA11 in uveal melanoma, BRAF in thyroid carcinoma. But adding those edges to the training backbone moves link prediction by -0.002 AUC at a 2016 cutoff (seed ranges overlap, so indistinguishable) and -0.004 at 2020 (disjoint seed ranges, so a small real *degradation*). `--with-gdc` is therefore off by default. The edges are in the graph, where retrieval and the discovery pipeline can use them; the claim that they improve prediction is not made.
+- **Only 14 of 33 TCGA cohorts join CIVIC by name.** GDC names a cohort "Breast Invasive Carcinoma" where CIVIC has "Breast Cancer", and matching is exact after normalisation on purpose: fuzzy matching would merge "Lung Adenocarcinoma" with "Lung Squamous Cell Carcinoma", which are different diseases with different drivers, and nothing downstream would reveal the error. So 153 of 488 TCGA edges reach the evaluation graph. Closing the gap needs a real cohort-to-Disease-Ontology mapping, not a hand-written alias list.
+- **GDC mutation counts are length-corrected, and the correction is not optional.** Ranking genes by raw somatic mutation count measures coding length: the GDC's own endpoint answers "top mutated genes in breast cancer" with OBSCN, PIK3C2B, NID1, NFASC and USH2A, none of which is a breast cancer driver. Restricting to the Cancer Gene Census is not sufficient either — among Census genes the number of cohorts a gene reaches correlates with log CDS length at **+0.798**, higher than the +0.542 for raw counts, because thresholding on a count selects for length. Scoring against a length-aware background rate takes that to **-0.097**. The background model assumes a uniform per-base rate within a cohort, which real tumours violate; it is enough to remove the confound, not enough to call a gene a driver.
+- **The GDC release postdates every cutoff, so early cutoffs are not safe.** Data release 46.0 is from August 2026. TCGA's sequencing was substantially complete years before 2016, so a 2016 or 2020 holdout is defensible, but a cutoff in the early 2010s would be reading the future. A leakage guard drops any GDC edge coinciding with a held-out CIVIC pair; it currently drops zero, because CIVIC has **no direct gene–disease edges at all** (it links gene→variant→disease), which is also why these edges are a new edge type rather than a duplicate one.
+- **CPTAC proteomics is still not integrated.** CPTAC's genomic data is in the GDC and is used; its proteomics is in the Proteomic Data Commons, a separate API. The two CPTAC cohorts contribute 40 mutation edges, not protein expression.
 - **The headline Phase 2 architecture underperforms.** `HybridGNNModel` and its cross-modal attention now run on the real graph and reach AUC 0.633 ± 0.024, up from chance once anisotropic input features were corrected, but still well behind the 0.752 of the much simpler model in `litkg/phase2/link_prediction.py` — which is where every link-prediction number quoted above comes from. Cross-modal attention costs about 0.12 AUC here, which is an architectural question rather than a bug.
 - **BERT NER fails on long abstracts.** Phase 1 logs `size of tensor a (543) must match tensor b (512)` for any abstract over ~512 tokens. The error is caught and the pipeline falls back to other extractors, so it succeeds — but one component silently contributes nothing on long documents.
 - **Multi-hop retrieval works partially, and is measured on a query set built for it.** On 55 bridge queries — where the relevant papers are lexically disjoint from the question by construction — the graph holds a path to the answer for 54, but a relevant paper reaches the top 10 for only about a quarter of them (hit-rate 0.200 → 0.327 with graph expansion and rank fusion). Ranking those candidates by similarity to the query *nullifies* expansion, since bridge evidence is by definition what the question does not resemble; ranking by shared graph context is what works. Expansion remains off by default for single-relationship questions, where it adds nothing. See [docs/RAG_and_Agents.md](docs/RAG_and_Agents.md).

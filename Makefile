@@ -1,7 +1,7 @@
 # LitKG-Integrate Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-years train-lp rag rag-coverage build-queryset eval-retrieval discover run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
+.PHONY: help install install-dev setup test test-all test-integration test-slow test-gpu test-coverage test-specific test-env-check test-env-setup test-env-cleanup test-report lint format clean run-phase1 evaluate evaluate-gdc evaluate-years train-lp rag rag-coverage build-queryset eval-retrieval discover run-examples run-phase3 run-langchain run-discovery run-ollama run-agents
 
 # Default target
 help:
@@ -31,6 +31,7 @@ help:
 	@echo "Run Commands:"
 	@echo "  run-phase1   Run Phase 1 integration pipeline"
 	@echo "  evaluate     Temporal-holdout link prediction evaluation"
+	@echo "  evaluate-gdc Same, with GDC mutation edges in the backbone"
 	@echo "  train-lp     Train the GNN/hybrid link predictors and compare"
 	@echo "  rag          Ask a question over the corpus (Q=\"...\")"
 	@echo "  rag-coverage Report RAG index coverage without calling the LLM"
@@ -224,6 +225,12 @@ quickstart: env install-dev setup
 # Evaluation
 evaluate:
 	python scripts/evaluate_link_prediction.py --cutoff $(or $(CUTOFF),2016) --degree-matched
+
+# GDC edges are off by default: measured across 8 seeds they do not improve
+# link prediction (-0.002 at 2016, -0.004 at 2020). This target exists so the
+# comparison can be re-run, not because it is the better configuration.
+evaluate-gdc:
+	python scripts/evaluate_link_prediction.py --cutoff $(or $(CUTOFF),2016) --degree-matched --with-gdc
 
 evaluate-years:
 	python scripts/evaluate_link_prediction.py --list-years

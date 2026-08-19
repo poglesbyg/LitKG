@@ -24,6 +24,7 @@ import networkx as nx
 from tqdm import tqdm
 import pickle
 
+from litkg.phase1.gdc_client import GDCClient, background_rate_enrichment
 from litkg.utils.config import LitKGConfig, load_config, get_data_dir
 from litkg.utils.logging import LoggerMixin
 
@@ -1003,300 +1004,220 @@ class CivicProcessor(LoggerMixin):
         return entities, relations
 
 
-class TCGAProcessor(LoggerMixin):
-    """Processes TCGA (The Cancer Genome Atlas) data."""
-    
+class GDCMutationProcessor(LoggerMixin):
+    """
+    Builds gene-cancer type associations from GDC open-access somatic mutations.
+
+    The unit is the cohort, not the patient. A patient node joins to exactly one
+    cohort and its own mutations, so it contributes degree-1 leaves carrying no
+    association a predictor could generalise from. The earlier version of this
+    class created them from three fabricated rows.
+
+    Edges are scored by `background_rate_enrichment`, which corrects for coding
+    length. See `litkg.phase1.gdc_client` for why that correction is not
+    optional.
+    """
+
+    PROGRAM = "TCGA"
+    SOURCE = "TCGA"
+
+    # A pair must clear both bars. Enrichment alone lets a single mutation in a
+    # short gene score highly; an occurrence count alone reintroduces the length
+    # bias the enrichment exists to remove.
+    MIN_ENRICHMENT = 3.0
+    MIN_OCCURRENCES = 5
+
     def __init__(self, config: LitKGConfig):
         self.config = config
+        self.ontology_mapper = OntologyMapper(config)
+
+    @property
+    def data_dir(self) -> Path:
+        return get_data_dir() / "external" / self.SOURCE.lower()
+
+    def _client(self) -> GDCClient:
+        return GDCClient(cache_dir=self.data_dir / "gdc", program=self.PROGRAM)
+
+    def _download(self) -> bool:
+        client = self._client()
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            live = client.live_release()
+            if live != client.release:
+                # Not fatal, but the pin is the reason a downstream number moves
+                # only when the code moves. Saying so beats finding out later.
+                self.logger.warning(
+                    f"GDC is serving release {live}; this pipeline is pinned to "
+                    f"{client.release}. Set LITKG_GDC_RELEASE to move the pin."
+                )
+
+            projects = client.projects()
+            genes = client.census_genes()
+            mutations = client.mutations_by_project([g.symbol for g in genes])
+
+            self.logger.info(
+                f"GDC {self.PROGRAM}: {len(projects)} projects, {len(genes)} Cancer "
+                f"Gene Census genes, {len(mutations)} of them mutated"
+            )
+            (self.data_dir / "RELEASE").write_text(f"{client.release}\n")
+            return bool(projects and genes and mutations)
+        except Exception as e:
+            self.logger.error(f"Failed to download {self.PROGRAM} data from the GDC: {e}")
+            return False
+
+    def _process(self) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
+        client = self._client()
+        try:
+            projects = {p.project_id: p for p in client.projects()}
+            genes = {g.symbol: g for g in client.census_genes()}
+            mutations = client.mutations_by_project(list(genes))
+        except Exception as e:
+            self.logger.error(
+                f"{self.PROGRAM} data unavailable ({e}). Run download first."
+            )
+            return [], []
+
+        associations = background_rate_enrichment(
+            mutations=mutations,
+            cds_lengths={s: g.cds_length for s, g in genes.items()},
+            cohort_cases={pid: p.case_count for pid, p in projects.items()},
+        )
+        kept = [
+            a
+            for a in associations
+            if a.enrichment >= self.MIN_ENRICHMENT and a.occurrences >= self.MIN_OCCURRENCES
+        ]
+
+        entities: List[StandardizedEntity] = []
+        relations: List[StandardizedRelation] = []
+        seen_genes: Set[str] = set()
+        seen_diseases: Set[str] = set()
+
+        for a in sorted(kept, key=lambda x: (x.symbol, x.project_id)):
+            gene = genes[a.symbol]
+            project = projects[a.project_id]
+
+            gene_id = f"{self.SOURCE}:GENE:{a.symbol}"
+            if a.symbol not in seen_genes:
+                seen_genes.add(a.symbol)
+                entities.append(
+                    StandardizedEntity(
+                        id=gene_id,
+                        name=a.symbol,
+                        type="GENE",
+                        source=self.SOURCE,
+                        original_id=gene.gene_id or a.symbol,
+                        synonyms=[],
+                        attributes={
+                            "ensembl_id": gene.gene_id,
+                            "cancer_gene_census": True,
+                            # Carried so the length confound stays checkable by a
+                            # reader rather than taken on trust.
+                            "cds_length": gene.cds_length,
+                            "biotype": gene.biotype,
+                        },
+                    )
+                )
+
+            disease_id = f"{self.SOURCE}:DISEASE:{a.project_id}"
+            if a.project_id not in seen_diseases:
+                seen_diseases.add(a.project_id)
+                entities.append(
+                    StandardizedEntity(
+                        id=disease_id,
+                        name=project.name,
+                        type="DISEASE",
+                        source=self.SOURCE,
+                        original_id=a.project_id,
+                        synonyms=list(project.disease_type),
+                        cui=self.ontology_mapper.map_to_umls(project.name, "DISEASE"),
+                        attributes={
+                            "project_id": a.project_id,
+                            "primary_site": project.primary_site,
+                            "disease_type": project.disease_type,
+                            "case_count": project.case_count,
+                        },
+                    )
+                )
+
+            relations.append(
+                StandardizedRelation(
+                    id=f"{self.SOURCE}:REL:MUTATED_IN:{a.symbol}:{a.project_id}",
+                    subject=gene_id,
+                    predicate="RECURRENTLY_MUTATED_IN",
+                    object=disease_id,
+                    source=self.SOURCE,
+                    # Recurrence above a length-aware background, squashed to a
+                    # unit interval. This is a frequency, not curator confidence,
+                    # and the raw enrichment is kept in attributes so nothing has
+                    # to reverse the squashing to read it.
+                    confidence=round(min(a.enrichment / 20.0, 1.0), 4),
+                    evidence=[
+                        f"GDC release {client.release}: {a.occurrences} somatic "
+                        f"mutation occurrences in {a.project_id} "
+                        f"({a.cohort_cases} cases), {a.enrichment:.1f}x the "
+                        f"length-adjusted background rate"
+                    ],
+                    attributes={
+                        "occurrences": a.occurrences,
+                        "cohort_cases": a.cohort_cases,
+                        "cohort_fraction": round(a.cohort_fraction, 4),
+                        "expected_occurrences": round(a.expected, 2),
+                        "enrichment": round(a.enrichment, 2),
+                        "gdc_release": client.release,
+                        "gdc_program": self.PROGRAM,
+                    },
+                )
+            )
+
+        self.logger.info(
+            f"{self.PROGRAM}/GDC produced {len(entities)} entities and "
+            f"{len(relations)} relations ({len(kept)} of {len(associations)} "
+            f"gene-cohort pairs cleared {self.MIN_ENRICHMENT}x enrichment and "
+            f"{self.MIN_OCCURRENCES} occurrences)"
+        )
+        return entities, relations
+
+
+class TCGAProcessor(GDCMutationProcessor):
+    """Processes TCGA data from the GDC (33 cohorts)."""
+
+    PROGRAM = "TCGA"
+    SOURCE = "TCGA"
+
+    def __init__(self, config: LitKGConfig):
+        super().__init__(config)
         self.tcga_config = config.phase1.knowledge_graphs.tcga
-        self.ontology_mapper = OntologyMapper(config)
-    
+
     def download_tcga_data(self) -> bool:
-        """Download TCGA data (simplified for demo)."""
-        self.logger.info("Setting up TCGA data download...")
-        
-        # In a real implementation, this would use the GDC API
-        # For now, we'll create a placeholder structure
-        
-        data_dir = get_data_dir() / "external" / "tcga"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create sample data files
-        sample_clinical = pd.DataFrame({
-            'case_id': ['TCGA-A1-A0SB', 'TCGA-A1-A0SD', 'TCGA-A1-A0SE'],
-            'primary_site': ['Breast', 'Lung', 'Brain'],
-            'disease_type': ['Ductal and Lobular Neoplasms', 'Squamous Cell Neoplasms', 'Gliomas'],
-            'age_at_diagnosis': [50, 65, 45],
-            'gender': ['female', 'male', 'female']
-        })
-        
-        sample_clinical.to_csv(data_dir / "clinical_data.csv", index=False)
-        
-        # Create sample mutation data
-        sample_mutations = pd.DataFrame({
-            'case_id': ['TCGA-A1-A0SB', 'TCGA-A1-A0SD', 'TCGA-A1-A0SE'],
-            'gene_symbol': ['BRCA1', 'TP53', 'IDH1'],
-            'variant_type': ['SNP', 'DEL', 'SNP'],
-            'consequence': ['missense_variant', 'frameshift_variant', 'missense_variant']
-        })
-        
-        sample_mutations.to_csv(data_dir / "mutation_data.csv", index=False)
-        
-        self.logger.info("TCGA sample data created")
-        return True
-    
+        return self._download()
+
     def process_tcga_data(self) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
-        """Process TCGA data into standardized format."""
-        self.logger.info("Processing TCGA data...")
-        
-        data_dir = get_data_dir() / "external" / "tcga"
-        
-        entities = []
-        relations = []
-        
-        # Process clinical data
-        clinical_file = data_dir / "clinical_data.csv"
-        if clinical_file.exists():
-            clinical_entities = self._process_tcga_clinical(clinical_file)
-            entities.extend(clinical_entities)
-        
-        # Process mutation data
-        mutation_file = data_dir / "mutation_data.csv"
-        if mutation_file.exists():
-            mutation_entities, mutation_relations = self._process_tcga_mutations(mutation_file)
-            entities.extend(mutation_entities)
-            relations.extend(mutation_relations)
-        
-        self.logger.info(f"Processed {len(entities)} entities and {len(relations)} relations from TCGA")
-        
-        return entities, relations
-    
-    def _process_tcga_clinical(self, clinical_file: Path) -> List[StandardizedEntity]:
-        """Process TCGA clinical data."""
-        entities = []
-        
-        try:
-            df = pd.read_csv(clinical_file)
-            
-            for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing TCGA clinical"):
-                case_id = str(row['case_id'])
-                primary_site = str(row['primary_site'])
-                disease_type = str(row['disease_type'])
-                
-                # Create patient entity
-                patient_entity = StandardizedEntity(
-                    id=f"TCGA:PATIENT:{case_id}",
-                    name=f"Patient {case_id}",
-                    type="PATIENT",
-                    source="TCGA",
-                    original_id=case_id,
-                    synonyms=[],
-                    attributes={
-                        "primary_site": primary_site,
-                        "disease_type": disease_type,
-                        "age_at_diagnosis": str(row.get('age_at_diagnosis', '')),
-                        "gender": str(row.get('gender', ''))
-                    }
-                )
-                
-                entities.append(patient_entity)
-                
-                # Create disease entity
-                cui = self.ontology_mapper.map_to_umls(disease_type, "DISEASE")
-                
-                disease_entity = StandardizedEntity(
-                    id=f"TCGA:DISEASE:{disease_type.replace(' ', '_')}",
-                    name=disease_type,
-                    type="DISEASE",
-                    source="TCGA",
-                    original_id=disease_type,
-                    synonyms=[],
-                    cui=cui,
-                    attributes={
-                        "primary_site": primary_site
-                    }
-                )
-                
-                entities.append(disease_entity)
-        
-        except Exception as e:
-            self.logger.error(f"Error processing TCGA clinical data: {e}")
-        
-        return entities
-    
-    def _process_tcga_mutations(self, mutation_file: Path) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
-        """Process TCGA mutation data."""
-        entities = []
-        relations = []
-        
-        try:
-            df = pd.read_csv(mutation_file)
-            
-            for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing TCGA mutations"):
-                case_id = str(row['case_id'])
-                gene_symbol = str(row['gene_symbol'])
-                variant_type = str(row['variant_type'])
-                consequence = str(row['consequence'])
-                
-                # Create mutation entity
-                mutation_id = f"{case_id}_{gene_symbol}_{variant_type}"
-                
-                mutation_entity = StandardizedEntity(
-                    id=f"TCGA:MUTATION:{mutation_id}",
-                    name=f"{gene_symbol} {variant_type}",
-                    type="MUTATION",
-                    source="TCGA",
-                    original_id=mutation_id,
-                    synonyms=[],
-                    attributes={
-                        "gene_symbol": gene_symbol,
-                        "variant_type": variant_type,
-                        "consequence": consequence
-                    }
-                )
-                
-                entities.append(mutation_entity)
-                
-                # Create patient-mutation relation
-                relation = StandardizedRelation(
-                    id=f"TCGA:REL:PATIENT_MUTATION:{mutation_id}",
-                    subject=f"TCGA:PATIENT:{case_id}",
-                    predicate="HAS_MUTATION",
-                    object=f"TCGA:MUTATION:{mutation_id}",
-                    source="TCGA",
-                    confidence=0.9,
-                    evidence=[f"TCGA sequencing data for {case_id}"]
-                )
-                
-                relations.append(relation)
-        
-        except Exception as e:
-            self.logger.error(f"Error processing TCGA mutations: {e}")
-        
-        return entities, relations
+        return self._process()
 
 
-class CPTACProcessor(LoggerMixin):
-    """Processes CPTAC (Clinical Proteomic Tumor Analysis Consortium) data."""
-    
+class CPTACProcessor(GDCMutationProcessor):
+    """
+    Processes CPTAC data from the GDC (2 cohorts).
+
+    This is CPTAC's *genomic* data. CPTAC's proteomics lives in the Proteomic
+    Data Commons, which is a different API and is not integrated. The previous
+    version of this class invented three proteomics rows; mutation data that
+    exists is a better answer than proteomics data that does not.
+    """
+
+    PROGRAM = "CPTAC"
+    SOURCE = "CPTAC"
+
     def __init__(self, config: LitKGConfig):
-        self.config = config
+        super().__init__(config)
         self.cptac_config = config.phase1.knowledge_graphs.cptac
-        self.ontology_mapper = OntologyMapper(config)
-    
+
     def download_cptac_data(self) -> bool:
-        """Download CPTAC data (simplified for demo)."""
-        self.logger.info("Setting up CPTAC data download...")
-        
-        data_dir = get_data_dir() / "external" / "cptac"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Create sample proteomics data
-        sample_proteomics = pd.DataFrame({
-            'case_id': ['CPTAC-A1-001', 'CPTAC-A1-002', 'CPTAC-A1-003'],
-            'protein_id': ['P04637', 'P38398', 'P53350'],
-            'gene_symbol': ['TP53', 'BRCA1', 'PLK1'],
-            'expression_level': [2.5, 1.8, 3.2],
-            'cancer_type': ['breast', 'ovarian', 'lung']
-        })
-        
-        sample_proteomics.to_csv(data_dir / "proteomics_data.csv", index=False)
-        
-        self.logger.info("CPTAC sample data created")
-        return True
-    
+        return self._download()
+
     def process_cptac_data(self) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
-        """Process CPTAC data into standardized format."""
-        self.logger.info("Processing CPTAC data...")
-        
-        data_dir = get_data_dir() / "external" / "cptac"
-        
-        entities = []
-        relations = []
-        
-        # Process proteomics data
-        proteomics_file = data_dir / "proteomics_data.csv"
-        if proteomics_file.exists():
-            prot_entities, prot_relations = self._process_cptac_proteomics(proteomics_file)
-            entities.extend(prot_entities)
-            relations.extend(prot_relations)
-        
-        self.logger.info(f"Processed {len(entities)} entities and {len(relations)} relations from CPTAC")
-        
-        return entities, relations
-    
-    def _process_cptac_proteomics(self, proteomics_file: Path) -> Tuple[List[StandardizedEntity], List[StandardizedRelation]]:
-        """Process CPTAC proteomics data."""
-        entities = []
-        relations = []
-        
-        try:
-            df = pd.read_csv(proteomics_file)
-            
-            for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing CPTAC proteomics"):
-                case_id = str(row['case_id'])
-                protein_id = str(row['protein_id'])
-                gene_symbol = str(row['gene_symbol'])
-                expression_level = float(row['expression_level'])
-                cancer_type = str(row['cancer_type'])
-                
-                # Create protein entity
-                cui = self.ontology_mapper.map_to_umls(gene_symbol, "PROTEIN")
-                go_id = self.ontology_mapper.map_to_gene_ontology(gene_symbol)
-                
-                protein_entity = StandardizedEntity(
-                    id=f"CPTAC:PROTEIN:{protein_id}",
-                    name=f"{gene_symbol} protein",
-                    type="PROTEIN",
-                    source="CPTAC",
-                    original_id=protein_id,
-                    synonyms=[gene_symbol],
-                    cui=cui,
-                    go_id=go_id,
-                    attributes={
-                        "gene_symbol": gene_symbol,
-                        "uniprot_id": protein_id
-                    }
-                )
-                
-                entities.append(protein_entity)
-                
-                # Create patient entity
-                patient_entity = StandardizedEntity(
-                    id=f"CPTAC:PATIENT:{case_id}",
-                    name=f"Patient {case_id}",
-                    type="PATIENT",
-                    source="CPTAC",
-                    original_id=case_id,
-                    synonyms=[],
-                    attributes={
-                        "cancer_type": cancer_type
-                    }
-                )
-                
-                entities.append(patient_entity)
-                
-                # Create expression relation
-                relation = StandardizedRelation(
-                    id=f"CPTAC:REL:PROTEIN_EXPRESSION:{case_id}_{protein_id}",
-                    subject=f"CPTAC:PATIENT:{case_id}",
-                    predicate="EXPRESSES",
-                    object=f"CPTAC:PROTEIN:{protein_id}",
-                    source="CPTAC",
-                    confidence=0.9,
-                    evidence=[f"CPTAC proteomics data"],
-                    attributes={
-                        "expression_level": expression_level,
-                        "cancer_type": cancer_type
-                    }
-                )
-                
-                relations.append(relation)
-        
-        except Exception as e:
-            self.logger.error(f"Error processing CPTAC proteomics: {e}")
-        
-        return entities, relations
+        return self._process()
 
 
 class KnowledgeGraphBuilder(LoggerMixin):

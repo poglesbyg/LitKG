@@ -10,6 +10,8 @@ Two sources of biomedical knowledge have complementary failure modes.
 
 **Curated knowledge graphs** (CIVIC, TCGA, CPTAC) are structured and reliable but sparse and lagging: they encode `BRCA1 —SENSITIZES_TO→ PARP inhibitors` explicitly, but only after curators have added it.
 
+CIVIC and the GDC sources carry different kinds of claim, which is why both are here. CIVIC says what a variant means clinically, curated from papers and dated by them. TCGA and CPTAC, through the GDC, say how often a gene is mutated in a cohort — a frequency, undated, derived from sequencing rather than reading. The second is not evidence for the first, and the pipeline keeps them distinguishable rather than averaging them into one notion of "support".
+
 Neither alone answers a multi-hop question. The design joins them so that retrieval over text can *traverse* the graph, and prediction over the graph can be *grounded* in text.
 
 ## Data flow
@@ -24,7 +26,8 @@ PubMed ──> chunking ──> embeddings ──> vector store
               │                      │  │ chunks for node      │ cited answer
 CIVIC ──┐     │ canonical names      │  v                      v
 TCGA  ──┼─> entity resolution ──> knowledge graph ──────> BiomedicalRAGSystem
-CPTAC ──┘                              │                          ^
+CPTAC ──┘   (GDC API for the         │                          ^
+             latter two)             │                          │
                                        │ candidate pairs          │ evidence per candidate
                                        v                          │
                             link prediction ──> ranking ──> DiscoveryPipeline
@@ -50,6 +53,10 @@ The learned path that carries the measured numbers is
 - *Token-sized.* Length is measured in tokens against the embedding model's window, since a longer chunk is silently truncated at embedding time.
 
 **KG preprocessing** (`litkg.phase1.kg_preprocessor`) ingests the curated sources and runs **entity resolution**, the step everything graph-shaped depends on.
+
+**GDC ingestion** (`litkg.phase1.gdc_client`) pulls TCGA and CPTAC somatic mutations from the open-access API, pinned to a data release for the same reason CIVIC is. It produces `gene —RECURRENTLY_MUTATED_IN→ cancer type` edges at the cohort level, not the patient level: a patient node joins to one cohort and its own mutations, so it adds degree-1 leaves carrying no association a predictor could generalise from.
+
+Two decisions there are load-bearing. Genes are restricted to the **Cancer Gene Census**, because raw mutation counts rank by coding length — the GDC's own top-mutated-genes endpoint returns OBSCN, NID1 and USH2A for breast cancer. And counts are scored against a **length-aware background rate**, because the Census restriction alone leaves the confound intact: among Census genes, cohort reach correlates with log CDS length at +0.798, which is worse than the +0.542 for raw counts, since thresholding on a count selects for length. The background model takes it to -0.097 and leaves IDH1 at 193x in lower-grade glioma. Measured, it does not improve link prediction — see the README's known limits.
 
 ### Entity resolution cascade
 

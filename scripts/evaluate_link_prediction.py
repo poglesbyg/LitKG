@@ -14,9 +14,8 @@ Usage:
 import argparse
 import json
 import sys
-from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -95,6 +94,70 @@ def load_dated_edges(
     return dated, backbone, node_types, build_node_text(all_entities)
 
 
+
+def _gdc_backbone_edges(
+    civic_dir: Path,
+    cutoff: int,
+    dated: List["RelationRecord"],
+    backbone: List[Tuple[str, str]],
+) -> Tuple[List[Tuple[str, str]], Dict[str, int]]:
+    """
+    GDC gene-cancer type edges, with anything that leaks the answer removed.
+
+    GDC edges carry no year, so the splitter puts them in the backbone: present
+    at training time, never scored. That is exactly the position from which an
+    edge can leak. If the GDC asserts a gene-disease association that CIVIC only
+    curated after the cutoff, adding it hands the model a test label, and the
+    resulting AUC would measure the leak rather than the method.
+
+    So the held-out pairs are computed first and any GDC edge matching one is
+    dropped before the split is built. Edges CIVIC already knows before the
+    cutoff are also dropped -- not because they leak, but because re-adding an
+    existing edge would inflate the "added N edges" count with no new signal.
+    """
+    from litkg.evaluation.gdc_edges import (
+        drop_leaked_edges,
+        join_to_civic,
+        load_gdc_edges,
+    )
+    from litkg.phase1.gdc_client import GDCClient
+
+    config = load_config()
+    processor = CivicProcessor(config)
+    entities, _ = processor._process_civic_evidence(
+        civic_dir / "civic_evidence.tsv", civic_dir / "civic_variants.tsv"
+    )
+    civic_genes = processor._process_civic_genes(civic_dir / "civic_genes.tsv")
+
+    gene_ids = {g.name: g.id for g in civic_genes}
+    disease_ids = {e.name: e.id for e in entities if e.type == "DISEASE"}
+
+    gdc_dir = get_data_dir() / "external" / "tcga" / "gdc"
+    raw = load_gdc_edges(gdc_dir, release=GDCClient.pinned_release(), program="tcga")
+    joined, join_stats = join_to_civic(raw, gene_ids, disease_ids)
+
+    # The same split this run will use, so "held out" means held out here.
+    reference = build_temporal_split(dated, cutoff, backbone)
+    test_pairs = list(reference.test_edges)
+
+    kept, leaked = drop_leaked_edges(joined, test_pairs)
+
+    existing = {frozenset(e) for e in backbone}
+    existing |= {frozenset((r.subject, r.object)) for r in dated if r.year and r.year <= cutoff}
+    novel = [e for e in kept if frozenset(e) not in existing]
+
+    stats = {
+        **join_stats,
+        "leaked_dropped": len(leaked),
+        "already_present": len(kept) - len(novel),
+        "added": len(novel),
+    }
+    if leaked:
+        print(f"  GDC leakage guard dropped {len(leaked)} edges that duplicate "
+              f"held-out CIVIC test pairs, e.g. {leaked[:2]}")
+    return novel, stats
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cutoff", type=int, default=2016,
@@ -110,6 +173,9 @@ def main() -> int:
     parser.add_argument("--degree-matched", action="store_true",
                         help="Draw negatives from the same degree bucket as the "
                              "positives, controlling for node popularity")
+    parser.add_argument("--with-gdc", action="store_true",
+                        help="Add GDC gene-cancer type associations to the "
+                             "training backbone (leakage-filtered)")
     parser.add_argument("--output", type=Path, default=None,
                         help="Write the report as JSON")
     args = parser.parse_args()
@@ -137,6 +203,11 @@ def main() -> int:
                 print(f"{year + 1:>8} {cumulative:>8} {after:>8}  {after / total * 100:6.1f}%")
         return 0
 
+    gdc_backbone: List[Tuple[str, str]] = []
+    if args.with_gdc:
+        gdc_backbone, gdc_stats = _gdc_backbone_edges(civic_dir, args.cutoff, dated, backbone)
+        backbone = list(backbone) + gdc_backbone
+
     split = build_temporal_split(dated, args.cutoff, backbone)
 
     predictors = [cls() for cls in BASELINE_PREDICTORS]
@@ -158,6 +229,10 @@ def main() -> int:
     print(f"  test edges     : {summary['test_edges']}")
     print(f"  excluded       : {summary['excluded_already_known']} already known before "
           f"the cutoff, {summary['excluded_cold_start']} cold-start")
+    if args.with_gdc:
+        print(f"  GDC backbone   : {len(gdc_backbone)} edges added "
+              f"({gdc_stats['leaked_dropped']} dropped as leakage, "
+              f"{gdc_stats['already_present']} already in CIVIC)")
     print(f"  negatives      : {report.negatives_per_positive} per positive"
           f"{'' if not args.no_type_matching else ', NOT type-matched'}"
           f"{', degree-matched' if args.degree_matched else ''}\n")
