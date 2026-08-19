@@ -196,3 +196,70 @@ make run-discovery     # full novel-discovery pipeline
 - `TemporalValidator` reports a neutral trend when no dated literature is retrieved.
 - Adamic-Adar link prediction is purely structural — it knows nothing about biology beyond graph shape, which is why plausibility screening runs after it.
 - Expert validation returns a zero score when no assessments have been recorded, rather than guessing.
+
+## Running Phase 3 on real predictions
+
+Phase 3 had only ever run on synthetic input -- six hardcoded relationships and
+random tensors -- because nothing produced real predictions to assess.
+`rank_predictions.py` does, so:
+
+```bash
+python scripts/rank_predictions.py  --cutoff 2016 --top 500 --seeds 5
+python scripts/assess_predictions.py --cutoff 2016 --top 500
+```
+
+Evidence is drawn from CIVIC rows published **before** the cutoff only. Later
+evidence describes the very associations being predicted, so including it would
+let Phase 3 grade its own answers. Fields CIVIC does not carry -- impact
+factors, citation counts -- keep the assessor's defaults rather than being
+filled with plausible-looking numbers.
+
+Because the predictions come from a temporal holdout, every one has a known
+outcome, so the scores can be checked rather than displayed.
+
+### What holds up, and what does not
+
+| score | AUC against later curation |
+|---|---|
+| overall confidence (neural assessors) | **0.613** |
+| type-pair prior (called "biological plausibility") | 0.863 |
+
+**The confidence scorer carries little signal.** Its two group means are 0.514
+and 0.512 -- the networks are untrained, so they emit near-constant output and
+the ordering that produces AUC 0.613 is thin.
+
+**The plausibility score is a type prior, not biology.** It takes exactly four
+distinct values across 500 predictions, one per entity-type pair. Its AUC is
+high because those types have very different curation rates, not because
+anything reasoned about mechanism. The rule values were also set by hand while
+fixing the gap below, so that AUC should not be read as validation of anything.
+
+A real gap was fixed on the way: the rule table listed GENE, DISEASE, DRUG,
+PROTEIN and PATHWAY but not MUTATION, which is an endpoint of most predictions
+this graph produces. Every mutation pair fell to the 0.3 default, so the score
+was constant across almost the whole candidate set.
+
+### The result worth acting on
+
+Curation rates differ enormously by entity-type pair:
+
+| type pair | curated | rate |
+|---|---|---|
+| DISEASE–MUTATION | 18 / 55 | **32.7%** |
+| DRUG–MUTATION | 7 / 297 | 2.4% |
+| MUTATION–PHENOTYPE | 0 / 147 | **0%** |
+
+Reading only disease-mutation predictions lifts precision from 5.0% to 32.7% on
+this sample -- a six-fold improvement from a one-line filter, with no model
+involved. Mutation-phenotype predictions were never curated at all, and they are
+29% of the ranked output.
+
+This is an empirical rate, not a claim about biology, and it is measured on one
+cutoff with 25 positives. It is also the most useful thing Phase 3 produced.
+
+### Calibration
+
+Fitted on the first half of the ranking and tested on the second, mean
+calibrated confidence was 0.080 against an observed rate of 0.020. Overconfident
+by roughly four-fold on held-out predictions. Fitting and reporting on the same
+half would have shown a fit rather than a calibration.

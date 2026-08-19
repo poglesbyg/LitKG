@@ -746,6 +746,19 @@ class BiologicalPlausibilityChecker(LoggerMixin):
                 ("PATHWAY", "DISEASE"): 0.6,
                 ("GENE", "GENE"): 0.5,
                 ("PROTEIN", "PROTEIN"): 0.6,
+                # The CIVIC graph is mostly variants, and none of the pairs
+                # above mention them, so every mutation relation fell to the
+                # 0.3 default and the score could not discriminate at all.
+                # A variant is an alteration of a gene, so these mirror the
+                # gene rows; phenotypes and fusions likewise.
+                ("MUTATION", "DISEASE"): 0.8,
+                ("MUTATION", "DRUG"): 0.7,
+                ("MUTATION", "GENE"): 0.6,
+                ("MUTATION", "PHENOTYPE"): 0.6,
+                ("MUTATION", "MUTATION"): 0.5,
+                ("FUSION", "DISEASE"): 0.8,
+                ("FUSION", "DRUG"): 0.7,
+                ("PHENOTYPE", "DISEASE"): 0.7,
             }.items()
         }
 
