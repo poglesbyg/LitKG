@@ -5,6 +5,39 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`HybridGNNModel` could not express a per-pair prediction.** Fusion combined
+  the literature and knowledge graphs at the *graph* level, so
+  `fused_representation` had exactly one row and `entity_pairs` could only ever
+  index row 0 -- the synthetic demo passed `[[0, 0]]` with the comment "only use
+  valid indices", and that comment was load-bearing. Cross-attention already
+  preserved the node dimension, so fusion now operates on node embeddings and
+  indexes the enhanced KG nodes. The graph-level vector remains available as
+  `graph_fused_representation`.
+
+### Added
+
+- **`HybridGNNLinkPredictor`**, which trains `HybridGNNModel` on the real graph
+  and scores it through the standard harness -- same split, negatives, metrics
+  and loss as every other model, so the comparison is like for like.
+
+  **It scores at chance.** AUC 0.492 +/- 0.020 across three seeds, against
+  0.744 +/- 0.006 for the far simpler GNN + weighted-L3 + text hybrid. Chance
+  is 0.5.
+
+  The cause is degenerate representations: mean pairwise cosine between
+  distinct nodes runs 0.793 at the input, 0.998 after the KG encoder and 1.000
+  after fusion, so every node ends up the same vector. Adding a learned
+  per-node embedding -- which the simpler baseline has, so withholding it would
+  not have been a fair test -- did not help, nor did reducing message passing to
+  a single layer, so this is not ordinary depth-driven over-smoothing. The
+  collapse is located but not fully explained, and finding the exact cause is a
+  separate investigation.
+
+  This closes the last synthetic-only component. Every phase now runs on real
+  data, and this one is measured as not working.
+
 ### Added
 
 - **Phase 3 runs on real predictions and its scores are checked, not just
