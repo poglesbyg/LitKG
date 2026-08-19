@@ -5,6 +5,36 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **Prospective validation: rank the real candidate space and check the top
+  predictions against what CIVIC curated afterwards**
+  (`scripts/rank_predictions.py`). Every link-prediction figure so far scored
+  held-out positives against ~10 sampled negatives each, which is not the task
+  a user performs; ranking a million unobserved pairs is.
+
+  Of 988,604 candidate pairs across the four held-out entity-type pairs,
+  206,997 have a three-path and contain 889 of the 1388 later-curated pairs --
+  a **64% ceiling** on what structural ranking can reach.
+
+  Against a base rate of 0.429%, the 5-seed consensus ranking is **13%
+  precision at depth 100, a 30x lift**, decaying to 5.6% at depth 500. This is
+  the first evidence that the system surfaces associations before they are
+  curated rather than only scoring well on a benchmark.
+
+  **Precision@10 is not measurable and the script says so.** Every model
+  concentrates its top predictions on one or two dense clusters (Von
+  Hippel-Lindau with its 295 profiles, or ABL1 resistance mutations against
+  imatinib), so whether those specific pairs were later curated is close to a
+  coin flip: five seeds on identical data scored 3, 2, 0, 8 and 6 hits out of
+  ten, and the five-seed mean moved from 38% to 64% on a re-run.
+
+  Two findings that did not survive scrutiny are recorded rather than dropped:
+  a single seed produced an inverted precision curve plus a supporting
+  statistic about the model ranking obviousness over novelty, and neither
+  survived five seeds; and correcting for node degree makes ranking worse at
+  every depth, so hub concentration is not bias to divide out.
+
 ### Fixed
 
 - **Documented the wrong cause for the single-relationship recall drop.**

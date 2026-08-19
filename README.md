@@ -34,6 +34,7 @@ the code path but say nothing about whether it works on data.
 | KG preprocessing | **Real data** | CIVIC 01-Aug-2026 ingestion, entity resolution cascade |
 | Entity linking | **Real data** | 152 literature↔KG links |
 | Link prediction | **Real data, measured** | `make train-lp`: AUC 0.748 ± 0.009 vs 0.687 structural baseline |
+| Prospective validation | **Real data, measured** | `scripts/rank_predictions.py`: top-100 predictions from a 2016-trained model are 13% later-curated, 30x the base rate |
 | Hybrid GNN (Phase 2) | **Synthetic demo only** | `HybridGNNModel` (1.8M params) instantiates and a training loop runs on `torch.randn`; it has never been trained on `phase2_graph_data.json` |
 | Discovery (Phase 3) | **Synthetic demo only** | Runs on 6 hardcoded relationships |
 | RAG + agents | **Real data, measured** | `make rag Q="..."` answers with citations. Retrieval scored on 57 CIVIC-judged queries: MRR 0.81, hit-rate 0.98 |
