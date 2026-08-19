@@ -475,6 +475,67 @@ Three consequences, all now implemented:
    shared-neighbour methods this is most of them, so their ranking metrics
    describe an undefined score rather than a wrong one.
 
+### What it actually predicts
+
+Every figure above scores held-out positives against roughly ten sampled
+negatives each. That is not the task. A researcher asking "what should we look
+at next" ranks every unobserved pair and reads the top of the list, and
+sampled-negative AUC is an optimistic proxy for that.
+
+```bash
+python scripts/rank_predictions.py --cutoff 2016 --top 100 --seeds 5
+```
+
+This trains only on evidence published before the cutoff, ranks the real
+candidate space, and asks how many of the top predictions CIVIC curated in the
+years after. Prospective validation, using data already on disk.
+
+**The candidate space and its ceiling.** For the four entity-type pairs the
+held-out period contains, the full product is 988,604 pairs. 206,997 of them
+have at least one three-path, which is all a structural score can rank; those
+contain **889 of the 1388** later-curated pairs, so **64% is the ceiling** on
+what this ranking can find. The other 36% are unreachable by construction.
+
+**Results**, 5-seed consensus ranking, against a base rate of 0.429%:
+
+| depth | precision | lift |
+|---|---|---|
+| 50 | 8.0% | 19x |
+| 100 | **13.0%** | **30x** |
+| 250 | 6.8% | 16x |
+| 500 | 5.6% | 13x |
+
+Thirty times better than picking at random from the candidate set. That is a
+real signal, and it is the first evidence in this project that the system
+surfaces associations before they are curated rather than merely scoring well
+on a benchmark.
+
+### Precision at the very top is not measurable here
+
+**Read depth 50 and beyond.** Precision@10 could not be pinned down and the
+reason is worth knowing.
+
+Every model concentrates its top predictions on one or two dense clusters. The
+top ten is invariably Von Hippel-Lindau disease against VHL variants -- VHL has
+295 distinct molecular profiles, the densest neighbourhood in the graph -- or
+ABL1 resistance mutations against imatinib and dasatinib. Whether those specific
+pairs happen to appear in the post-cutoff curation is close to a coin flip.
+
+Across five seeds on identical data, top-ten hits were **3, 2, 0, 8, 6**. Re-run,
+the five-seed mean moved from 38% to 64%. A single number there would be
+meaningless.
+
+Two further cautions from building this:
+
+- A **single seed produced an inverted precision curve** -- worse at depth 100
+  than at depth 500 -- and an accompanying story about the model ranking
+  obviousness over novelty, complete with a supporting statistic (median
+  endpoint-degree product 189 for predictions against 49 for real discoveries).
+  None of it survived five seeds. The curve is monotonic.
+- **Correcting for node degree makes ranking worse** at every depth tried, so
+  the hub concentration is not simply bias to be divided out. Degree carries
+  real signal: well-studied genes genuinely have more true associations.
+
 ### Reading this honestly
 
 AUC 0.750 against an 0.692 baseline is a real gain with disjoint confidence

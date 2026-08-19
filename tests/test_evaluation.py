@@ -658,3 +658,55 @@ class TestRetrievalMetrics:
                                   relevant_pmids=["1"]) for i in range(20)]
         m = evaluate_retrieval(lambda q: ["1"], queries, k=5)
         assert m.precision_ci is not None
+
+
+class TestCandidateEnumeration:
+    """
+    Every link-prediction number before this scored held-out positives against
+    ~10 sampled negatives per positive. The real task ranks every unobserved
+    pair -- about a million here -- so sampled-negative AUC is an optimistic
+    proxy for what a user actually reads.
+    """
+
+    @pytest.fixture
+    def enumerate_candidates(self):
+        import importlib.util, pathlib
+        spec = importlib.util.spec_from_file_location(
+            "rank_predictions",
+            pathlib.Path(__file__).parent.parent / "scripts" / "rank_predictions.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.candidate_pairs
+
+    def test_excludes_pairs_already_in_the_graph(self, enumerate_candidates):
+        """An observed edge is not a prediction."""
+        g = nx.Graph([("m1", "d1"), ("d1", "m2"), ("m2", "d2")])
+        types = {"m1": "MUTATION", "m2": "MUTATION", "d1": "DISEASE", "d2": "DISEASE"}
+        known = {("d1", "m1"), ("d1", "m2"), ("d2", "m2")}
+        found = enumerate_candidates(g, types, {("DISEASE", "MUTATION")}, known)
+        assert not (found & known)
+
+    def test_only_returns_requested_type_pairs(self, enumerate_candidates):
+        """
+        Ranking a type combination the held-out period never contains would pad
+        the denominator with pairs that cannot be scored as correct.
+        """
+        g = nx.Graph([("m1", "d1"), ("d1", "m2"), ("m2", "t1")])
+        types = {"m1": "MUTATION", "m2": "MUTATION",
+                 "d1": "DISEASE", "t1": "DRUG"}
+        found = enumerate_candidates(g, types, {("DISEASE", "MUTATION")}, set())
+        for u, v in found:
+            assert tuple(sorted((types[u], types[v]))) == ("DISEASE", "MUTATION")
+
+    def test_pairs_are_normalised(self, enumerate_candidates):
+        g = nx.Graph([("m1", "d1"), ("d1", "m2"), ("m2", "d2")])
+        types = {"m1": "MUTATION", "m2": "MUTATION", "d1": "DISEASE", "d2": "DISEASE"}
+        found = enumerate_candidates(g, types, {("DISEASE", "MUTATION")}, set())
+        assert all(u <= v for u, v in found)
+
+    def test_no_self_pairs(self, enumerate_candidates):
+        g = nx.Graph([("a", "b"), ("b", "c"), ("c", "a")])
+        types = {n: "MUTATION" for n in "abc"}
+        found = enumerate_candidates(g, types, {("MUTATION", "MUTATION")}, set())
+        assert all(u != v for u, v in found)
