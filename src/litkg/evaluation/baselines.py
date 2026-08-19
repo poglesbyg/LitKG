@@ -123,6 +123,70 @@ class L3PathPredictor(LinkPredictor):
         return total
 
 
+
+class PathPowerPredictor(LinkPredictor):
+    """
+    Degree-normalised count of length-k paths, computed by matrix power.
+
+    Exists because L3 is structurally blind to gene-gene edges, and the
+    blindness is provable rather than empirical. For a length-3 path
+    variant -> a -> b -> disease, the middle hop being a gene-gene edge
+    requires `b` to be a gene adjacent to the disease. CIVIC has **no**
+    gene-disease edges -- 0 of 13059 evidence relations -- so no such path
+    exists. Measured directly: adding 1862 STRING interactions changes the L3
+    path count for **0 of 1388** test pairs.
+
+    At length 5 the same edges are reachable, via
+    variant -> gene -> gene -> variant -> disease, and they help: on the 2016
+    holdout L5 goes 0.7115 -> 0.7278 when STRING edges are present, and
+    0.7834 -> 0.7912 at 2020, with disjoint seed ranges at both cutoffs.
+
+    Scores are entries of (D^-1/2 A D^-1/2)^k, so each path is damped by the
+    degrees along it and hub routes count for less. This normalisation differs
+    from `L3PathPredictor`'s per-hop scheme, so the two are not comparable
+    number-for-number -- compare within one predictor, across configurations.
+
+    Longer paths are not free: k=5 on this graph is dense enough that the
+    matrix power is the expensive step, and beyond k=5 the scores approach the
+    stationary distribution and stop discriminating.
+    """
+
+    def __init__(self, k: int = 5):
+        if k < 2:
+            raise ValueError("path length must be at least 2")
+        self.k = k
+        self.name = f"l{k}_path_power"
+
+    def fit(self, graph: nx.Graph) -> "PathPowerPredictor":
+        import numpy as np
+        import scipy.sparse as sparse
+
+        self.graph = graph
+        self.nodes = list(graph.nodes())
+        self.index = {node: i for i, node in enumerate(self.nodes)}
+
+        adjacency = nx.to_scipy_sparse_array(
+            graph, nodelist=self.nodes, format="csr", dtype=float
+        )
+        degrees = np.asarray(adjacency.sum(axis=1)).ravel()
+        # An isolated node would divide by zero; it has no paths either way.
+        degrees[degrees == 0] = 1.0
+        inv_sqrt = sparse.diags(1.0 / np.sqrt(degrees))
+        step = inv_sqrt @ adjacency @ inv_sqrt
+
+        powered = step.copy()
+        for _ in range(self.k - 1):
+            powered = powered @ step
+        self.matrix = powered.tocsr()
+        return self
+
+    def score(self, u: str, v: str) -> float:
+        i, j = self.index.get(u), self.index.get(v)
+        if i is None or j is None:
+            return 0.0
+        return float(self.matrix[i, j])
+
+
 class WeightedL3PathPredictor(L3PathPredictor):
     """
     L3 with paths weighted by the evidence behind each edge.
