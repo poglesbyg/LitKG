@@ -5,6 +5,33 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **An end-to-end pipeline** (`make discover`, `scripts/discover.py`,
+  `litkg.pipeline`). The project had two chains that never met: one read CIVIC,
+  trained a link predictor and ranked unobserved pairs; the other read the
+  Phase 1 literature and answered questions with citations. Nothing joined a
+  prediction to its evidence.
+
+  Joining them needed more than wiring. The bundled corpus contains **no
+  literal mention** of the entities the top predictions involve -- it is general
+  cancer genomics while the predictions concern VHL variants and ABL1
+  resistance mutations -- so retrieval against it returns unrelated passages.
+  Evidence is now fetched *for each candidate*, querying for both entities
+  together and falling back to single-entity queries that are labelled as such,
+  because a passage mentioning one half of a pair is background rather than
+  support.
+
+  `--cutoff` restricts the graph and the literature to before a given year and
+  marks candidates curated afterwards, so a run can be checked instead of
+  trusted.
+
+  The report states plainly that the ranking's precision does not replicate
+  across cutoffs, and the model is asked what the evidence does *not* support.
+  On a variant CIVIC later confirmed, it correctly reported that the retrieved
+  passages spoke only of VHL mutations in general rather than that variant --
+  right about the evidence, which is the question it was asked.
+
 ### Changed
 
 - **The prospective validation result does not replicate, and the claim is
