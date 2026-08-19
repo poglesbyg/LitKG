@@ -484,14 +484,37 @@ Fusion costs single-hop precision when expansion is switched on:
 | `max_hops=1`, fused | 0.304 | 0.712 | 0.632 | 0.982 |
 
 `max_hops` defaults to **0**, so nothing changes for single-relationship
-questions unless expansion is asked for. Note P@k divides by k regardless of how
-many passages were returned, and the `max_hops=0` row returns five rather than
-ten, which flatters its per-slot precision; the recall difference is the real
-one and is not fully explained by that.
+questions unless expansion is asked for.
 
-Turning expansion on is now a measured choice rather than a hopeful one: it buys
-reach on questions whose answers are not lexically present, and costs precision
-on questions where dense retrieval was already right.
+**Why recall drops, which is not obvious.** Expansion only ever *adds*
+candidates, so a lower recall looks arithmetically impossible. The cause is that
+`k` counts *seed* passages, not results: with expansion on, the retriever
+returns up to `k + expansion_limit` documents. A consumer that truncates back to
+`k` — as the evaluation does, to compare configurations at equal budget — is
+choosing which source to cut, and fusion decides that by rank. Under RRF the
+expanded passage at rank n ties the seed at rank n, so five expanded candidates
+displace exactly the last five seeds. Measured: at k=10 every one of the 57
+queries loses five seed papers from the evaluated window, 282 in total.
+
+An earlier version of this document attributed the drop partly to P@k dividing
+by k while the `max_hops=0` row returns fewer passages. That is true of P@k and
+irrelevant to recall, and it was the wrong explanation.
+
+**No evidence is lost on the answer path.** `BiomedicalRAGSystem.answer`
+consumes every document the retriever returns without truncating, so fusion
+changes the order of the prompt and nothing else. The recall figures above
+describe a fixed-budget comparison, not what the RAG system hands the model.
+
+Turning expansion on is a measured choice: it buys reach on questions whose
+answers are not lexically present, and costs ranking position for the trailing
+seeds on questions where dense retrieval was already right.
+
+The trade-off is a step, not a slope. Weighting seeds even slightly above
+expanded candidates (1.2x is enough to break every RRF tie) restores
+single-relationship recall to 0.826 exactly, and returns bridge hit-rate to
+0.236. There is no setting between the two: either expanded candidates can tie
+seeds or they cannot. The default lets them tie, because expansion is opt-in and
+its purpose is the bridge case.
 
 ### Still not solved
 

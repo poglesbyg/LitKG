@@ -216,6 +216,15 @@ class GraphExpansionRetriever(BaseRetriever):
     in the other 39. Entities named in the *question* are resolved against the
     same alias index and seed the walk directly, which does not depend on any
     passage being retrieved first.
+
+    ``k`` counts *seed* passages, not results: with expansion on this returns up
+    to ``k + expansion_limit`` documents. A caller that truncates back to ``k``
+    is therefore choosing which source to cut, and fusion decides that by rank
+    -- under RRF expanded passage n ties seed n, so five expanded candidates
+    displace exactly the last five seeds. That displacement, not any metric
+    artefact, is the single-relationship recall drop measured at fixed budget.
+    `BiomedicalRAGSystem.answer` does not truncate, so no evidence is lost on
+    the answer path; only the order of the prompt changes.
     """
 
     vector_store: Any = None
