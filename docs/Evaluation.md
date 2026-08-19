@@ -496,19 +496,34 @@ have at least one three-path, which is all a structural score can rank; those
 contain **889 of the 1388** later-curated pairs, so **64% is the ceiling** on
 what this ranking can find. The other 36% are unreachable by construction.
 
-**Results**, 5-seed consensus ranking, against a base rate of 0.429%:
+**Results at the 2016 cutoff**, 5-seed consensus ranking, base rate 0.429%:
 
 | depth | precision | lift |
 |---|---|---|
-| 50 | 8.0% | 19x |
-| 100 | **13.0%** | **30x** |
-| 250 | 6.8% | 16x |
-| 500 | 5.6% | 13x |
+| 100 | 15.0% | 35x |
+| 500 | 9.0% | 21x |
 
-Thirty times better than picking at random from the candidate set. That is a
-real signal, and it is the first evidence in this project that the system
-surfaces associations before they are curated rather than merely scoring well
-on a benchmark.
+**This does not replicate at other cutoffs**, and the difference is not
+marginal:
+
+| cutoff | held-out | base rate | P@100 | lift@100 | lift@500 |
+|---|---|---|---|---|---|
+| 2016 | 1388 | 0.429% | 15.0% | **35x** | 21x |
+| 2018 | 755 | 0.188% | 1.0% | **5x** | 2x |
+| 2020 | 513 | 0.125% | 0.0% | **0x** | 6x |
+
+`python scripts/replicate_prospective.py` re-runs the comparison.
+
+2016 is an outlier at both depths. The obvious explanation -- later cutoffs
+leave less subsequent curation in the data -- does not fit, because lift is
+already normalised by the base rate and because 2018 is *worse* than 2020 at
+depth 500. Whatever separates 2016 is not simply the amount of future
+remaining.
+
+So the honest statement is: at a 2016 cutoff this system ranked later-curated
+associations far above chance, and that result is specific to that cutoff. It
+is not evidence that the system surfaces discoveries in general, and the
+earlier version of this document said it was.
 
 ### Precision at the very top is not measurable here
 
