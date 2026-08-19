@@ -7,6 +7,45 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Phase 3 runs on real predictions and its scores are checked, not just
+  displayed** (`scripts/assess_predictions.py`). Confidence scoring, plausibility
+  and novelty had only ever seen six hardcoded relationships and random tensors,
+  because nothing produced real predictions to assess.
+
+  Evidence comes from pre-cutoff CIVIC rows only; later evidence describes the
+  associations being predicted. Because the predictions come from a temporal
+  holdout, every one has a known outcome, so the scores can be measured.
+
+  **The neural confidence scorer carries little signal** -- AUC 0.613, with
+  group means of 0.514 and 0.512. The assessors are untrained and emit
+  near-constant output.
+
+  **The plausibility score is a type prior rather than biology.** It takes four
+  distinct values across 500 predictions, one per entity-type pair, so its AUC
+  of 0.863 reflects differing curation rates by type and not reasoning about
+  mechanism. Those rule values were also hand-set while fixing the gap below,
+  so the number is not validation.
+
+  **The finding worth acting on needs no model at all:** curation rates are
+  32.7% for disease-mutation pairs, 2.4% for drug-mutation and 0% for
+  mutation-phenotype. Reading only the first lifts precision from 5.0% to 32.7%
+  on this sample, and mutation-phenotype pairs -- never curated once -- are 29%
+  of the ranked output.
+
+  Calibration, fitted on one half and tested on the other, is overconfident by
+  about four-fold (0.080 predicted against 0.020 observed).
+
+### Fixed
+
+- **The plausibility rule table had no MUTATION entry**, and mutations are an
+  endpoint of most predictions this graph produces, so every such pair fell to
+  the 0.3 default and the score was constant across almost the whole candidate
+  set. Added MUTATION, FUSION and PHENOTYPE pairs, mirroring the gene rows.
+- The assessment script read `plausibility_score` from a method that returns
+  `score`, silently yielding 0.0 for every prediction.
+
+### Added
+
 - **Prospective validation: rank the real candidate space and check the top
   predictions against what CIVIC curated afterwards**
   (`scripts/rank_predictions.py`). Every link-prediction figure so far scored
