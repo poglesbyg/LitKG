@@ -720,3 +720,54 @@ class TestPhase2Integration:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+class TestFusionIsPerNode:
+    """
+    Fusion combined the two graphs at the *graph* level, so
+    `fused_representation` had exactly one row and `entity_pairs` could only
+    ever index row 0. Per-pair link prediction was not expressible at all --
+    which is why the synthetic demo passed `[[0, 0]]` with the comment "only
+    use valid indices".
+    """
+
+    @pytest.fixture
+    def model(self):
+        from litkg.phase2.hybrid_gnn import HybridGNNModel
+        return HybridGNNModel(
+            lit_node_dim=32, lit_edge_dim=4, kg_node_dim=32, kg_edge_dim=4,
+            kg_relation_dim=2, hidden_dim=16, num_gnn_layers=1, num_heads=2,
+        )
+
+    @pytest.fixture
+    def inputs(self):
+        import torch
+        return {
+            "lit_x": torch.randn(20, 32),
+            "lit_edge_index": torch.randint(0, 20, (2, 30)),
+            "lit_edge_attr": torch.randn(30, 4),
+            "kg_x": torch.randn(15, 32),
+            "kg_edge_index": torch.randint(0, 15, (2, 25)),
+            "kg_edge_attr": torch.randn(25, 4),
+            "kg_relation_types": torch.randn(25, 2),
+        }
+
+    def test_fused_representation_has_one_row_per_kg_node(self, model, inputs):
+        outputs = model(**inputs)
+        assert outputs["fused_representation"].shape[0] == inputs["kg_x"].shape[0]
+
+    def test_entity_pairs_can_index_beyond_row_zero(self, model, inputs):
+        """The whole point: a prediction about nodes 5 and 9, not 0 and 0."""
+        import torch
+        outputs = model(**inputs, entity_pairs=torch.tensor([[0, 3], [5, 9], [2, 14]]))
+        assert outputs["link_probs"].shape[0] == 3
+
+    def test_graph_level_vector_is_still_available(self, model, inputs):
+        """Kept for callers that want a whole-graph summary."""
+        outputs = model(**inputs)
+        assert outputs["graph_fused_representation"].shape[0] == 1
+
+    def test_differing_graph_sizes_are_allowed(self, model, inputs):
+        """Cross-attention queries KG nodes against a literature set of another size."""
+        outputs = model(**inputs)
+        assert outputs["lit_node_embeddings"].shape[0] == 20
+        assert outputs["kg_node_embeddings"].shape[0] == 15

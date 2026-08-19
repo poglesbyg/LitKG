@@ -815,8 +815,15 @@ class HybridGNNModel(nn.Module, LoggerMixin):
         
         # Cross-modal fusion
         # Add sequence dimension for attention
-        lit_embeddings = lit_outputs['graph_embedding'].unsqueeze(1)
-        kg_embeddings = kg_outputs['graph_embedding'].unsqueeze(1)
+        # Fuse at the node level, not the graph level. Passing graph embeddings
+        # here collapsed each side to a single vector, so fused_representation
+        # had exactly one row and entity_pairs could only ever index row 0 --
+        # which is why the demo passed [[0, 0]] with the comment "only use
+        # valid indices". Per-pair link prediction was not expressible at all.
+        # Cross-attention already handles differing sequence lengths, so the
+        # node dimension survives.
+        lit_embeddings = lit_outputs['node_embeddings'].unsqueeze(0)
+        kg_embeddings = kg_outputs['node_embeddings'].unsqueeze(0)
         
         fusion_outputs = self.fusion(
             lit_embeddings=lit_embeddings,
@@ -829,14 +836,20 @@ class HybridGNNModel(nn.Module, LoggerMixin):
             'kg_node_embeddings': self.node_output_projection(kg_outputs['node_embeddings']),
             'lit_graph_embedding': lit_outputs['graph_embedding'],
             'kg_graph_embedding': kg_outputs['graph_embedding'],
-            'fused_representation': fusion_outputs['fused_representation']
+            # Per-KG-node representations, each enhanced by attention over the
+            # literature graph. This is what a cross-modal model is supposed to
+            # produce, and what entity_pairs indexes.
+            'fused_representation': fusion_outputs['kg_enhanced'].squeeze(0),
+            'graph_fused_representation': fusion_outputs['fused_representation']
         }
         
         # Relation prediction if entity pairs provided
         if entity_pairs is not None:
             # Get entity embeddings for the pairs
-            entity1_embeddings = fusion_outputs['fused_representation'][entity_pairs[:, 0]]
-            entity2_embeddings = fusion_outputs['fused_representation'][entity_pairs[:, 1]]
+            # Index the per-node representations, not the graph-level vector.
+            node_representations = fusion_outputs['kg_enhanced'].squeeze(0)
+            entity1_embeddings = node_representations[entity_pairs[:, 0]]
+            entity2_embeddings = node_representations[entity_pairs[:, 1]]
             
             relation_outputs = self.relation_predictor(
                 entity1_embeddings, entity2_embeddings

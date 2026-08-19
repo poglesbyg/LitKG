@@ -351,3 +351,69 @@ training_examples = constructor.construct_training_graphs(
 ---
 
 For more details, see the complete implementation in `src/litkg/phase2/` and run the demo with `make run-phase2`.
+
+## HybridGNNModel on the real graph
+
+The cross-modal architecture this phase is named for had only ever run on
+`torch.randn`. Wiring it to real data required fixing something first, and the
+result is worth stating plainly: **it scores at chance.**
+
+### It could not express a per-pair prediction
+
+Fusion combined the two graphs at the *graph* level -- `lit_outputs`
+and `kg_outputs` were pooled to one vector each before cross-attention -- so
+`fused_representation` had exactly one row. `entity_pairs` indexes that tensor,
+so it could only ever reference row 0. The synthetic demo passed `[[0, 0]]` with
+the comment "only use valid indices"; that comment was load-bearing.
+
+Cross-attention already preserved the node dimension and already returned
+`kg_enhanced` at full length, so the fix was to fuse node embeddings rather than
+pooled ones and index the enhanced KG nodes. `fused_representation` is now one
+row per KG node, and the graph-level vector remains available as
+`graph_fused_representation`.
+
+### Measured against the same harness
+
+`HybridGNNLinkPredictor` implements the standard `LinkPredictor` interface, so
+it runs through the identical split, negatives and metrics as everything else.
+Literature side: 162 nodes and 257 edges from the Phase 1 output.
+
+| model | AUC (3 seeds) |
+|---|---|
+| GNN + evidence-weighted L3 + text | **0.744 ± 0.006** |
+| HybridGNNModel (cross-modal) | **0.492 ± 0.020** |
+
+Chance is 0.5. The architecture the project is built around does not beat a coin
+flip on the task, while a much simpler model reaches 0.744.
+
+### Why: the representations are degenerate
+
+Every node collapses to the same vector. Mean pairwise cosine between distinct
+nodes:
+
+| stage | cosine |
+|---|---|
+| raw KG input features | 0.793 |
+| after the KG encoder | 0.998 |
+| after cross-modal fusion | **1.000** |
+
+Two things were tried and neither helped:
+
+- **A learned per-node embedding**, concatenated to the static features. The
+  simpler baseline carries one, so withholding it would not have been a fair
+  test. Score stayed at chance (0.492).
+- **Fewer message-passing layers** (1, 2, 3). Cosine remained 1.000 at every
+  depth, so this is not ordinary depth-driven over-smoothing.
+
+The collapse is therefore located but not fully explained. It happens inside the
+KG encoder and is completed by fusion, it survives both a per-node identity
+signal and a single-layer encoder, and the convolution itself carries residual
+connections. Finding the exact cause is a separate investigation.
+
+### What this means
+
+The comparison is fair -- same split, same negatives, same metrics, same loss,
+comparable hyperparameters -- and the answer is that cross-modal attention as
+implemented here contributes nothing on this graph. Anyone planning to build on
+`HybridGNNModel` should fix the collapse first and re-measure against 0.744,
+rather than assume the architecture works because it is elaborate.
