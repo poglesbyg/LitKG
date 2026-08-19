@@ -64,7 +64,7 @@ not survive replication that is said rather than omitted.
 | Hybrid GNN (Phase 2) | **Real data, measured** | `HybridGNNModel` reaches AUC 0.633 ± 0.024 against 0.752 for a far simpler model. The collapse that held it at chance was input anisotropy, now corrected |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
-**533 tests pass**, enforced by CI on every push and pull request.
+**538 tests pass** (2 skipped: one CUDA-only, one fixture-dependent), enforced by CI on every push and pull request.
 
 Two entries deserve emphasis, because they are the ones a reader would
 otherwise assume work. `HybridGNNModel` — the cross-modal architecture this
@@ -88,6 +88,10 @@ The harnesses that caught them are in the repository, and the working rule is
 that a single-seed or single-cutoff number is a hypothesis. Use `--seeds` and
 more than one `--cutoff` before believing anything, including the figures in
 this table.
+
+Each of the five is written up with its mechanism in
+[Five results that did not replicate](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/),
+including the one that was a step away from shipping as a feature.
 
 ## Install
 
@@ -218,12 +222,13 @@ kg.save_integrated_graph("data/processed/kg.json")
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit, and why |
 | [docs/LLM_Setup.md](docs/LLM_Setup.md) | Ollama, model choice, provider fallback |
 | [docs/Phase1_README.md](docs/Phase1_README.md) | Literature, KG preprocessing, entity resolution |
-| [docs/Phase2_README.md](docs/Phase2_README.md) | Hybrid GNN, cross-modal attention, and why it scores at chance |
+| [docs/Phase2_README.md](docs/Phase2_README.md) | Hybrid GNN, cross-modal attention, and why it trails a far simpler model |
 | [docs/Phase3_README.md](docs/Phase3_README.md) | Confidence, novelty, and what its scores are worth |
 | [docs/RAG_and_Agents.md](docs/RAG_and_Agents.md) | Retrievers, chunking, chunk↔graph linkage |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, conventions |
 | [docs/Evaluation.md](docs/Evaluation.md) | Temporal holdout, baselines, what is and isn't measured |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and when |
+| [Five results that did not replicate](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/) | Write-up of the five withdrawn results and the mechanism behind each |
 
 ## Known limits
 
@@ -232,7 +237,7 @@ Stated plainly, because they affect how far you should trust output:
 - **Ontology coverage is thin.** Entity resolution's strongest rule matches on UMLS CUIs, but the bundled seed carries only six real CUIs. It fires zero times on sample data. Set `UMLS_API_KEY` for real coverage. Fabricated CUIs were deliberately not added: a wrong shared CUI silently merges two distinct entities while looking authoritative.
 - **Literature support classification is a heuristic.** `LiteratureCrossValidator` judges support by scanning for contradiction cues ("no association", "failed to") in title and abstract. It is not entailment, and it does not read full text.
 - **Entity resolution gains are modest on sample data.** The cascade merges 453 entities, but only ~56 beyond what exact matching already caught. The bottleneck is input identifier coverage, not the algorithm.
-- **The headline Phase 2 architecture is unvalidated.** `HybridGNNModel` and its cross-modal attention have only ever seen random tensors. The link prediction numbers quoted above come from a different, much simpler model.
+- **The headline Phase 2 architecture underperforms.** `HybridGNNModel` and its cross-modal attention now run on the real graph and reach AUC 0.633 ± 0.024, up from chance once anisotropic input features were corrected, but still well behind the 0.752 of the much simpler model in `litkg/phase2/link_prediction.py` — which is where every link-prediction number quoted above comes from. Cross-modal attention costs about 0.12 AUC here, which is an architectural question rather than a bug.
 - **BERT NER fails on long abstracts.** Phase 1 logs `size of tensor a (543) must match tensor b (512)` for any abstract over ~512 tokens. The error is caught and the pipeline falls back to other extractors, so it succeeds — but one component silently contributes nothing on long documents.
 - **Multi-hop retrieval works partially, and is measured on a query set built for it.** On 55 bridge queries — where the relevant papers are lexically disjoint from the question by construction — the graph holds a path to the answer for 54, but a relevant paper reaches the top 10 for only about a quarter of them (hit-rate 0.200 → 0.327 with graph expansion and rank fusion). Ranking those candidates by similarity to the query *nullifies* expansion, since bridge evidence is by definition what the question does not resemble; ranking by shared graph context is what works. Expansion remains off by default for single-relationship questions, where it adds nothing. See [docs/RAG_and_Agents.md](docs/RAG_and_Agents.md).
 - **Ranking metrics are noisy.** Each positive is ranked against ~12000 negatives, so MRR is set by a couple of dozen rows and its confidence interval is about as wide as its value. Compare intervals, and prefer Hits@100. See [docs/Evaluation.md](docs/Evaluation.md).
