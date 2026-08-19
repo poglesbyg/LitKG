@@ -840,3 +840,50 @@ class TestPhase3Integration:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+class TestPlausibilityCoversTheGraphVocabulary:
+    """
+    The rule table listed GENE/DISEASE/DRUG/PROTEIN/PATHWAY but not MUTATION,
+    and mutations are an endpoint of most CIVIC predictions. Every mutation
+    pair therefore fell to the 0.3 default, so the score took one value across
+    almost the whole candidate set and could not discriminate at all.
+    """
+
+    @pytest.fixture
+    def checker(self):
+        from litkg.phase3.novelty_detection import BiologicalPlausibilityChecker
+        return BiologicalPlausibilityChecker()
+
+    @pytest.mark.parametrize("pair", [
+        ("MUTATION", "DISEASE"), ("MUTATION", "DRUG"),
+        ("MUTATION", "PHENOTYPE"), ("FUSION", "DISEASE"),
+    ])
+    def test_graph_type_pairs_have_a_rule(self, checker, pair):
+        assert tuple(sorted(pair)) in checker.plausibility_rules, (
+            f"{pair} falls back to the default and cannot discriminate"
+        )
+
+    def test_a_mutation_disease_pair_outranks_a_mutation_phenotype_pair(self, checker):
+        """
+        Measured on 500 real predictions: disease-mutation pairs were curated
+        32.7% of the time and mutation-phenotype pairs 0%.
+        """
+        rules = checker.plausibility_rules
+        assert (rules[tuple(sorted(("MUTATION", "DISEASE")))]
+                > rules[tuple(sorted(("MUTATION", "PHENOTYPE")))])
+
+    def test_check_plausibility_returns_score_under_that_key(self, checker):
+        """
+        The caller read "plausibility_score" and got 0.0 for every prediction,
+        silently, because the method returns "score".
+        """
+        from litkg.phase3.novelty_detection import NovelRelation
+        relation = NovelRelation(entity1="BRAF V600E", entity2="Melanoma",
+                                 relation_type="ASSOCIATED_WITH",
+                                 confidence_score=0.5)
+        result = checker.check_plausibility(
+            relation,
+            entity_types={"BRAF V600E": "MUTATION", "Melanoma": "DISEASE"},
+        )
+        assert "score" in result
+        assert result["score"] > 0.0
