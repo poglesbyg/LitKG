@@ -5,6 +5,32 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The prospective validation result does not replicate, and the claim is
+  withdrawn.** It was measured once, at a 2016 cutoff, and reported as evidence
+  that the system surfaces associations before they are curated. Re-run at
+  other cutoffs (`scripts/replicate_prospective.py`):
+
+  | cutoff | base rate | P@100 | lift@100 | lift@500 |
+  |---|---|---|---|---|
+  | 2016 | 0.429% | 15.0% | 35x | 21x |
+  | 2018 | 0.188% | 1.0% | 5x | 2x |
+  | 2020 | 0.125% | 0.0% | 0x | 6x |
+
+  2016 is an outlier at both depths. "Later cutoffs leave less future in the
+  data" does not explain it: lift is normalised by base rate, and 2018 is worse
+  than 2020 at depth 500.
+
+- **The Phase 3 type-pair rates are likewise cutoff-specific.** Disease-mutation
+  read 45% at 2016 and 4-6% at 2018 and 2020; mutation-phenotype looked like a
+  category that never pays off and is ordinary once the cutoff moves. The
+  six-fold filter suggested by those numbers is withdrawn.
+
+  This is the fifth result in this project to fail replication, after "the graph
+  is too sparse", a doubled MRR, an inverted precision curve, and a
+  hub-dominance story. All five looked solid at a single configuration.
+
 ### Fixed
 
 - **`HybridGNNModel` could not express a per-pair prediction.** Fusion combined

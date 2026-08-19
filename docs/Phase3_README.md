@@ -254,8 +254,24 @@ this sample -- a six-fold improvement from a one-line filter, with no model
 involved. Mutation-phenotype predictions were never curated at all, and they are
 29% of the ranked output.
 
-This is an empirical rate, not a claim about biology, and it is measured on one
-cutoff with 25 positives. It is also the most useful thing Phase 3 produced.
+This is an empirical rate, not a claim about biology, measured at one cutoff
+with 25 positives -- and **it does not survive replication**. The same
+measurement at other cutoffs:
+
+| type pair | 2016 | 2018 | 2020 |
+|---|---|---|---|
+| DISEASE–MUTATION | 36/80 (45%) | 1/24 (4%) | 2/31 (6%) |
+| DRUG–MUTATION | 8/391 (2%) | 0/211 (0%) | 1/386 (0.3%) |
+| MUTATION–PHENOTYPE | 1/28 (4%) | 1/265 (0.4%) | 1/79 (1%) |
+
+Disease-mutation looked like a six-fold filter at 2016 and is worth 4-6% at
+later cutoffs. Mutation-phenotype looked like a category that never pays off,
+and it pays off at roughly the same low rate as everything else once the cutoff
+moves.
+
+**Do not use these rates as a filter.** They describe one cutoff. The general
+lesson is the same one this project keeps relearning: a rate computed at a
+single configuration is a hypothesis, not a finding.
 
 ### Calibration
 
