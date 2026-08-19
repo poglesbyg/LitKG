@@ -37,12 +37,17 @@ phase1:
     civic:
       url: "https://civicdb.org/downloads"
       version: "latest"
+    # TCGA and CPTAC both come from the GDC open-access API. Release is pinned
+    # in GDCClient.DEFAULT_RELEASE; LITKG_GDC_RELEASE overrides it.
     tcga:
-      url: "https://portal.gdc.cancer.gov/"
-      data_types: ["clinical", "mutation", "expression"]
+      url: "https://api.gdc.cancer.gov"
+      portal: "https://portal.gdc.cancer.gov/"
+      data_types: ["somatic_mutation"]
     cptac:
-      url: "https://proteomics.cancer.gov/programs/cptac"
-      data_types: ["proteomics", "clinical"]
+      url: "https://api.gdc.cancer.gov"
+      # CPTAC's genomic data only. Its proteomics lives in the Proteomic Data
+      # Commons, a different API, and is not integrated.
+      data_types: ["somatic_mutation"]
     
     # Ontology mapping
     ontologies:

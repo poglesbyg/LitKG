@@ -5,6 +5,70 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Added
+
+- **TCGA and CPTAC now come from the GDC open-access API** (`litkg.phase1.gdc_client`),
+  replacing the placeholder that fabricated them. `TCGAProcessor.download_tcga_data`
+  previously wrote three hardcoded rows to a CSV and read them back; the only
+  trace of the Genomic Data Commons was a URL in `config.yaml` and a comment
+  saying a real implementation would use the API. Those nine invented rows had
+  been reaching the integrated graph as 11 nodes and 7 edges.
+
+  The pipeline now pulls somatic mutations pinned to GDC data release 46.0
+  (`LITKG_GDC_RELEASE` overrides), producing **528 gene–cancer type edges** over
+  226 Cancer Gene Census genes and 35 cohorts: 488 from TCGA's 33 projects and
+  40 from CPTAC's 2. CPTAC's *proteomics* remains unintegrated -- it lives in
+  the Proteomic Data Commons, a different API -- so CPTAC contributes mutation
+  data, not protein expression.
+
+- **A length-aware background rate model for mutation counts**
+  (`background_rate_enrichment`). Ranking genes by raw somatic mutation count
+  measures coding length rather than biology: asked for the top mutated genes in
+  breast cancer, the GDC returns OBSCN, PIK3C2B, NID1, NFASC and USH2A, none of
+  them a breast cancer driver.
+
+  Restricting to the Cancer Gene Census is necessary but **not sufficient**, and
+  the control says so: among Census genes, the number of cohorts a gene reaches
+  correlates with log CDS length at **+0.798**, *higher* than the +0.542 for raw
+  occurrence counts, because thresholding on a count selects for length. Scoring
+  each pair against what its length predicts takes the correlation to **-0.097**
+  and leaves the known drivers on top -- IDH1 at 193x in lower-grade glioma,
+  GNAQ and GNA11 in uveal melanoma, BRAF at 308x in thyroid carcinoma, KRAS at
+  43x in lung adenocarcinoma.
+
+- **A leakage guard for undated edges** (`litkg.evaluation.gdc_edges`). GDC
+  edges carry no year, so `TemporalSplitter` routes them into the backbone:
+  present at training time, never scored, which is precisely the position from
+  which an edge can hand over an answer. Any GDC edge coinciding with a held-out
+  CIVIC pair is dropped before the split is built, undirected, and the count is
+  reported.
+
+  It currently drops zero, for a structural reason worth recording: CIVIC has
+  **no direct gene–disease edges at all** (0 of 13059 evidence relations and 0
+  of 1738 variant relations), linking gene→variant→disease instead. That makes
+  the GDC edges a new edge type rather than a duplicate one -- and makes the
+  guard a standing check rather than a formality, since the release predates no
+  cutoff: GDC 46.0 is from August 2026, and only cutoffs at or after ~2016 are
+  defensible given when TCGA sequencing completed.
+
+### Measured
+
+- **The GDC edges do not improve link prediction.** Added to the training
+  backbone across 8 seeds, `weighted_l3` moves from 0.693 ± 0.001 to
+  0.691 ± 0.001 at a 2016 cutoff (seed ranges overlap -- indistinguishable) and
+  from 0.769 ± 0.002 to 0.765 ± 0.001 at 2020 (disjoint seed ranges -- a small
+  real **degradation**). `--with-gdc` is off by default in
+  `scripts/evaluate_link_prediction.py`, and no claim is made that this data
+  helps prediction. It is in the graph, where retrieval and the discovery
+  pipeline can use it.
+
+- **Only 14 of 33 TCGA cohorts join CIVIC by exact name**, so 153 of 488 TCGA
+  edges reach the evaluation graph. Matching is exact after normalisation
+  deliberately: a fuzzy match would merge "Lung Adenocarcinoma" with "Lung
+  Squamous Cell Carcinoma", different diseases with different drivers, and no
+  downstream metric would reveal it. Closing the gap needs a real
+  cohort-to-Disease-Ontology mapping rather than a hand-written alias list.
+
 ### Fixed
 
 - **The `HybridGNNModel` representation collapse, root-caused and corrected.**
