@@ -5,6 +5,38 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Documentation
+
+- **Two README status rows were false.** `HybridGNNModel` and Phase 3 were still
+  marked "synthetic demo only" after both had been wired to real data and
+  measured. The edits that should have corrected them were string replacements
+  whose anchors no longer matched, and a silent no-op leaves the old claim
+  standing -- which is how a status table ends up asserting the opposite of what
+  shipped.
+
+  The table now lists every component, all of which run on real data, with the
+  harness that produced each number. It also states plainly that
+  `HybridGNNModel` scores at chance and that the prospective discovery result
+  did not replicate, since those are the two entries a reader would otherwise
+  assume work.
+
+- **`make run-phase2`, `run-phase3`, `run-langchain` and `run-discovery` are now
+  labelled as synthetic demonstrations** in the README, alongside the commands
+  that actually touch the real graph. They were previously listed under
+  "Pipelines" as if they were the working entry points.
+
+- **ARCHITECTURE.md** now shows the real prediction path. Its data flow diagram
+  routed prediction through the hybrid GNN, which is the component measured at
+  chance; the measured numbers come from `litkg.phase2.link_prediction`. It also
+  documents `DiscoveryPipeline` as the second place the two halves meet, and
+  records the fusion defect and the representation collapse.
+
+- Test count corrected to 533 and the Phase 1 figures to 3822 nodes, 14810
+  edges, 150 cross-modal links.
+
+- Added a note on how to read any figure in the repository: five results have
+  failed replication, so a single-seed or single-cutoff number is a hypothesis.
+
 ### Added
 
 - **An end-to-end pipeline** (`make discover`, `scripts/discover.py`,

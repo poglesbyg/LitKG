@@ -45,33 +45,48 @@ The payoff is multi-hop questions. Asked *"why are BRCA1 tumours sensitive to ol
 
 ## Status
 
-The distinction that matters here is whether a component has been **run on the
-real graph** or only demonstrated on synthetic inputs. Several `make run-*`
-targets construct `torch.randn` tensors and hardcoded documents; they exercise
-the code path but say nothing about whether it works on data.
+Every component listed here runs on real data. Where a number is given, it comes
+from a harness in this repository that you can re-run, and where a result did
+not survive replication that is said rather than omitted.
 
 | Component | State | Evidence |
 |---|---|---|
 | Literature processing | **Real data** | `make run-phase1`: PubMed retrieval, typed NER, relation extraction |
 | Chunking | **Real data** | Section-aware, sentence-safe, token-sized, with overlap |
 | KG preprocessing | **Real data** | CIVIC 01-Aug-2026 ingestion, entity resolution cascade |
-| Entity linking | **Real data** | 152 literature↔KG links |
-| Link prediction | **Real data, measured** | `make train-lp`: AUC 0.748 ± 0.009 vs 0.687 structural baseline |
-| Prospective validation | **Real data, does not replicate** | `scripts/rank_predictions.py`: a 2016-trained model reaches 35x lift at depth 100, but 5x at a 2018 cutoff and 0x at 2020. The result is cutoff-specific |
-| Hybrid GNN (Phase 2) | **Synthetic demo only** | `HybridGNNModel` (1.8M params) instantiates and a training loop runs on `torch.randn`; it has never been trained on `phase2_graph_data.json` |
-| Discovery (Phase 3) | **Synthetic demo only** | Runs on 6 hardcoded relationships |
-| RAG + agents | **Real data, measured** | `make rag Q="..."` answers with citations. Retrieval scored on 57 CIVIC-judged queries: MRR 0.81, hit-rate 0.98 |
+| Entity linking | **Real data** | 150 literature↔KG links |
+| Link prediction | **Real data, measured** | `make train-lp`: AUC 0.748 ± 0.009 against a 0.687 structural baseline, 8 seeds, disjoint intervals |
+| Retrieval | **Real data, measured** | `make eval-retrieval`: MRR 0.81, hit-rate 0.98 on 57 CIVIC-judged queries |
+| Multi-hop retrieval | **Real data, partial** | 55 bridge queries: hit-rate 0.200 → 0.327 with graph expansion. The graph holds a path for 54 of 55; ranking is the limit |
+| Discovery pipeline | **Real data** | `make discover`: ranks candidates and fetches the literature for each |
+| Discovery (Phase 3) | **Real data, measured** | `scripts/assess_predictions.py`: the confidence scorer carries little signal (AUC 0.613); the plausibility score is a four-valued type prior |
+| Prospective validation | **Does not replicate** | 35× lift at a 2016 cutoff, 5× at 2018, **0× at 2020**. The discovery claim is withdrawn |
+| Hybrid GNN (Phase 2) | **Real data, scores at chance** | `HybridGNNModel` reaches AUC 0.492 ± 0.020 against 0.744 for a far simpler model. Its node representations collapse to a single vector — an open bug |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
-**452 tests pass**, enforced by CI on every push and pull request.
+**533 tests pass**, enforced by CI on every push and pull request.
 
-The two "synthetic demo" rows are the honest gap: those demos each print their
-own "Next Steps: 1. Prepare real data" on completion. The measured link
-prediction result comes from a separate, simpler model in
-`litkg/phase2/link_prediction.py`, not from `HybridGNNModel`.
+Two entries deserve emphasis, because they are the ones a reader would
+otherwise assume work. `HybridGNNModel` — the cross-modal architecture this
+project is named for — is measured at chance, and the link-prediction result
+above comes from the much simpler model in `litkg/phase2/link_prediction.py`.
+And the prospective discovery result held at one time cutoff and vanished at
+two others.
 
 Numbers from `make run-phase1` on the bundled sample data with the CIVIC
-01-Aug-2026 release: 3822 nodes, 14810 edges, 152 cross-modal links.
+01-Aug-2026 release: 3822 nodes, 14810 edges, 150 cross-modal links.
+
+### On reading any number here
+
+Five results in this project failed replication after looking solid: "the graph
+is too sparse for link prediction", a doubled MRR, an inverted precision curve,
+a story about the model ranking obviousness over novelty, and the prospective
+lift above. Each was measured carefully at a single configuration.
+
+The harnesses that caught them are in the repository, and the working rule is
+that a single-seed or single-cutoff number is a hypothesis. Use `--seeds` and
+more than one `--cutoff` before believing anything, including the figures in
+this table.
 
 ## Install
 
@@ -110,11 +125,24 @@ Copy `env.template` to `.env` and fill in what you have. Everything is optional:
 ### Pipelines
 
 ```bash
-make run-phase1      # literature + KG + entity linking
-make run-phase2      # hybrid GNN training
-make run-phase3      # confidence scoring and discovery
-make run-langchain   # RAG and agent demo
+make run-phase1                  # literature + KG + entity linking
+make discover TOP=20             # rank candidates and gather their evidence
+make train-lp SEEDS=8            # train the link predictors and compare
+make rag Q="..."                 # ask a question over the corpus
 ```
+
+Evaluation, all of which re-runs the numbers in the status table:
+
+```bash
+make evaluate                    # temporal-holdout link prediction
+make eval-retrieval SWEEP=1      # retrieval against CIVIC-judged queries
+python scripts/replicate_prospective.py   # the same result at three cutoffs
+```
+
+The `make run-phase2`, `run-phase3`, `run-langchain` and `run-discovery`
+targets are **demonstrations on synthetic input** — `torch.randn` tensors and
+hardcoded documents. They exercise the code paths and say nothing about
+behaviour on data. The commands above are the ones that touch the real graph.
 
 ### Asking questions over your corpus
 
@@ -189,8 +217,8 @@ kg.save_integrated_graph("data/processed/kg.json")
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the pieces fit, and why |
 | [docs/LLM_Setup.md](docs/LLM_Setup.md) | Ollama, model choice, provider fallback |
 | [docs/Phase1_README.md](docs/Phase1_README.md) | Literature, KG preprocessing, entity resolution |
-| [docs/Phase2_README.md](docs/Phase2_README.md) | Hybrid GNN and cross-modal attention |
-| [docs/Phase3_README.md](docs/Phase3_README.md) | Confidence, novelty, hypotheses, validation |
+| [docs/Phase2_README.md](docs/Phase2_README.md) | Hybrid GNN, cross-modal attention, and why it scores at chance |
+| [docs/Phase3_README.md](docs/Phase3_README.md) | Confidence, novelty, and what its scores are worth |
 | [docs/RAG_and_Agents.md](docs/RAG_and_Agents.md) | Retrievers, chunking, chunk↔graph linkage |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, tests, conventions |
 | [docs/Evaluation.md](docs/Evaluation.md) | Temporal holdout, baselines, what is and isn't measured |
