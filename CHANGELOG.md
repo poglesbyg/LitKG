@@ -5,6 +5,30 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Documented the wrong cause for the single-relationship recall drop.**
+  Enabling expansion lowers recall at fixed budget from 0.826 to 0.712, which
+  looks impossible since expansion only adds candidates. The shipped
+  explanation blamed P@k dividing by k; that is true of P@k and irrelevant to
+  recall.
+
+  The real mechanism: `k` counts *seed* passages, not results, so with expansion
+  the retriever returns `k + expansion_limit` documents. A consumer truncating
+  back to `k` chooses which source to cut, and RRF ties expanded passage n with
+  seed n, so five expanded candidates displace exactly the last five seeds.
+  Measured at k=10: all 57 queries lose five seed papers from the evaluated
+  window, 282 in total.
+
+  **No evidence is lost on the answer path** -- `answer()` consumes everything
+  the retriever returns without truncating, so fusion changes prompt order and
+  nothing else. Also recorded: the trade-off is a step rather than a slope, as
+  any seed weight above 1.2x restores 0.826 exactly and returns bridge hit-rate
+  to 0.236.
+
+  Three regression tests pin the behaviour, including that `retrieve()` must
+  not truncate, since the documentation now depends on it.
+
 ### Changed
 
 - **Seeds and graph-expanded passages are now combined by reciprocal rank

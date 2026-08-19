@@ -761,3 +761,56 @@ class TestRankFusion:
         """
         from litkg.langchain_integration.rag_system import GraphExpansionRetriever
         assert GraphExpansionRetriever().fusion_k == 60
+
+
+class TestSeedDisplacementUnderTruncation:
+    """
+    Enabling expansion measurably lowered single-relationship recall at fixed
+    budget (R@10 0.826 -> 0.712), which looked impossible: expansion only adds
+    candidates. It was neither impossible nor a metric artefact.
+
+    `k` counts seeds, not results, so with expansion the retriever returns
+    k + expansion_limit documents. A consumer truncating back to k is choosing
+    which source to cut, and RRF ties expanded passage n with seed n, so the
+    expanded candidates displace exactly the last `expansion_limit` seeds.
+    """
+
+    def _doc(self, uid):
+        from langchain_core.documents import Document
+        return Document(page_content=uid, metadata={"chunk_uid": uid, "pmid": uid})
+
+    def test_expanded_candidates_displace_trailing_seeds_when_truncated(self):
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        seeds = [self._doc(f"s{i}") for i in range(10)]
+        expanded = [self._doc(f"e{i}") for i in range(5)]
+
+        fused = retriever._fuse(seeds, expanded)
+        assert len(fused) == 15, "fusion must not drop evidence"
+
+        top10 = {d.metadata["chunk_uid"] for d in fused[:10]}
+        lost = {d.metadata["chunk_uid"] for d in seeds} - top10
+        assert len(lost) == 5, (
+            "five expanded candidates should displace exactly five seeds; "
+            f"lost {sorted(lost)}"
+        )
+
+    def test_nothing_is_lost_when_the_caller_does_not_truncate(self):
+        """
+        The answer path consumes everything the retriever returns, so the
+        displacement costs ordering, not evidence.
+        """
+        from litkg.langchain_integration.rag_system import GraphExpansionRetriever
+        retriever = GraphExpansionRetriever()
+        seeds = [self._doc(f"s{i}") for i in range(10)]
+        expanded = [self._doc(f"e{i}") for i in range(5)]
+        fused = {d.metadata["chunk_uid"] for d in retriever._fuse(seeds, expanded)}
+        assert {d.metadata["chunk_uid"] for d in seeds} <= fused
+        assert {d.metadata["chunk_uid"] for d in expanded} <= fused
+
+    def test_answer_does_not_truncate_retriever_output(self):
+        """Pinned because the docs now rely on it."""
+        import inspect
+        from litkg.langchain_integration.rag_system import BiomedicalRAGSystem
+        source = inspect.getsource(BiomedicalRAGSystem.retrieve)
+        assert "[:" not in source, "retrieve() must pass through every document"
