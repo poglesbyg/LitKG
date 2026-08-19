@@ -24,13 +24,19 @@ PubMed ──> chunking ──> embeddings ──> vector store
               │                      │  │ chunks for node      │ cited answer
 CIVIC ──┐     │ canonical names      │  v                      v
 TCGA  ──┼─> entity resolution ──> knowledge graph ──────> BiomedicalRAGSystem
-CPTAC ──┘                              │
-                                       │ subgraphs
-                                       v
-                                  hybrid GNN ──> novelty ──> hypotheses ──> validation
+CPTAC ──┘                              │                          ^
+                                       │ candidate pairs          │ evidence per candidate
+                                       v                          │
+                            link prediction ──> ranking ──> DiscoveryPipeline
 ```
 
-The two halves meet at `ChunkGraphIndex`. Everything above it is retrieval; everything below is learned prediction.
+The two halves meet twice. `ChunkGraphIndex` joins chunks to graph nodes for
+retrieval, and `DiscoveryPipeline` closes the loop the other way: it takes the
+pairs the predictor ranks and fetches the literature about each, so a proposed
+association arrives with the evidence for it.
+
+The learned path that carries the measured numbers is
+`litkg.phase2.link_prediction`, not `HybridGNNModel`. See below.
 
 ## Phase 1 — Foundation
 
@@ -93,9 +99,35 @@ Four retrievers, all implementing the LangChain `BaseRetriever` interface:
 
 - `LiteratureGraphEncoder` and `KnowledgeGraphEncoder` encode each modality. Both default missing edge features to zeros at their own configured dimension, so callers need not fabricate them.
 - `CrossModalAttention` lets each modality attend to the other. Query and key/value have **different** sequence lengths here — literature and KG subgraphs rarely have equal node counts — which is why the attention implementation tracks `tgt_len` and `src_len` separately.
-- `CrossModalFusion` combines them; `RelationPredictor` scores entity pairs.
+- `CrossModalFusion` combines them; `RelationPredictor` scores entity pairs. Fusion operates on **node** embeddings: pooling each graph to one vector first left `fused_representation` with a single row, so `entity_pairs` could only ever index row 0 and a per-pair prediction was not expressible.
+
+**Measured, and it does not work.** `HybridGNNLinkPredictor` runs this model
+through the same harness as everything else and it reaches AUC 0.492 ± 0.020 --
+chance -- against 0.744 for the much simpler `link_prediction` model. Its node
+representations collapse: mean pairwise cosine between distinct nodes is 0.793
+at the input, 0.998 after the KG encoder and 1.000 after fusion. A learned
+per-node embedding and a single-layer encoder both failed to fix it, so it is
+not ordinary depth-driven over-smoothing. Treat it as an open bug and
+re-measure against 0.744 before building on it.
 
 Subgraph extraction uses a `MultiGraph`, not a simple graph, because edge features one-hot encode `relation_type`. Collapsing parallel edges would keep only the last relation between a pair and hide the rest from the model.
+
+## The discovery pipeline
+
+`litkg.pipeline` is the end-to-end run: build the graph, train the link
+predictor, rank pairs it has never seen, fetch PubMed literature **for each
+candidate**, and ask the local model what support exists.
+
+Fetching per candidate is not an optimisation. The bundled corpus contains no
+literal mention of the entities the top predictions involve, so retrieving
+against a fixed corpus returns passages about unrelated cancers. Queries ask for
+both entities together, and single-entity fallbacks are labelled as such,
+because a passage mentioning one half of a pair is background rather than
+support for an association.
+
+Passing a cutoff restricts both the graph and the literature to before that year
+and marks candidates curated afterwards, which turns a proposal run into one
+that can be checked.
 
 ## Phase 3 — Discovery
 
