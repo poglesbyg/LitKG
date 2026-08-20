@@ -19,6 +19,7 @@ Two details decide whether this measures anything:
 """
 
 import math
+import copy
 import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
@@ -608,9 +609,19 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
     On the 2016 holdout this reaches AUC 0.745 against 0.692 for L3 alone and
     0.703 for the GNN alone, and beats both on average precision and MRR.
 
-    The blend weight is chosen on a temporal validation slice of the training
-    edges, never on the test set. Every weight between 0.25 and 0.75 beats both
-    components, so the result does not hinge on that choice.
+    The blend is an even split by default. Choosing it on a validation slice was
+    tried and is worse: 0.7404 +/- 0.0214 against 0.7451 +/- 0.0123 for a fixed
+    0.5 across 8 seeds, with average precision 0.243 against 0.271. The slice is
+    only a few hundred edges, so the selected weight is mostly noise -- and
+    every weight between 0.25 and 0.75 beats both components anyway, which is
+    why there was little to gain. `select_weight=True` restores the search.
+
+    When the search does run it now scores the validation slice on a graph with
+    those edges removed. Leaving them in let a path counter walk the very edge
+    it was predicting, inflating L3 scores 3.48x and length-5 scores 4.69x
+    against negatives that get no such boost. That rigged selection toward path
+    counting, and toward whichever counter was longest: with a length-5
+    component in the mix it chose a pure length-5 blend in 8 of 8 seeds.
     """
 
     name = "hybrid"
@@ -621,15 +632,32 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         node_types: Optional[Dict[str, str]] = None,
         edge_years: Optional[Dict[Edge, int]] = None,
         weight: Optional[float] = None,
+        select_weight: bool = False,
         edge_predicates: Optional[Dict[Edge, str]] = None,
         edge_weights: Optional[Dict[Edge, float]] = None,
         node_text: Optional[Dict[str, str]] = None,
+        extra_components: Optional[Sequence["LinkPredictor"]] = None,
     ):
+        # Additional scorers to rank-average alongside the GNN and L3. The
+        # motivating case is a length-5 path counter: L3 cannot see gene-gene
+        # edges at all, because that would need a gene adjacent to a disease and
+        # CIVIC has none, so adding those edges moves the L3 count for 0 of 1388
+        # test pairs. A longer path reaches them.
+        self.extra_components = list(extra_components or [])
         self.config = config or TrainingConfig()
         self.node_types = node_types or {}
         self.edge_years = edge_years or {}
-        self.weight = weight          # None selects on validation
-        self.selected_weight: float = 0.5
+        # Selection is OFF by default, and that is a measured choice rather than
+        # a shortcut. On the 2016 holdout across 8 seeds a fixed even blend
+        # reaches AUC 0.7451 +/- 0.0123 (AP 0.271) while selecting on validation
+        # reaches 0.7404 +/- 0.0214 (AP 0.243) -- worse and twice as noisy. The
+        # validation slice is a few hundred edges, small enough that the chosen
+        # weight is mostly noise, and the class docstring's own observation that
+        # every weight in [0.25, 0.75] beats both components says the choice was
+        # never worth much. Pass select_weight=True to search anyway.
+        self.weight = weight
+        self.select_weight = select_weight
+        self.selected_weight: float = 0.5 if weight is None else weight
         self.edge_predicates = edge_predicates or {}
         # Evidence weights make the structural half strictly better on its own
         # (AP 0.238 vs 0.212, MRR 0.017 vs 0.007), so the ensemble uses them
@@ -654,10 +682,12 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
             WeightedL3PathPredictor(weights=self.edge_weights)
             if self.edge_weights else L3PathPredictor()
         ).fit(graph)
+        for component in self.extra_components:
+            component.fit(graph)
         self._build_reference(graph, random.Random(self.config.seed))
 
-        if self.weight is not None:
-            self.selected_weight = self.weight
+        if self.weight is not None or not self.select_weight:
+            self.selected_weight = 0.5 if self.weight is None else self.weight
             return self
 
         # Select the weight on the most recent training edges against sampled
@@ -690,10 +720,25 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
             self.selected_weight = 0.5
             return self
 
+        # Score the validation slice on a graph with those edges REMOVED.
+        #
+        # Leaving them in lets a path counter walk the very edge it is being
+        # asked to predict, and the inflation is large: on the 2016 split the
+        # mean L3 score for a validation positive is 3.48x higher with its own
+        # edge present, and 4.69x for a length-5 count, because longer walks
+        # reuse the edge more often. The negatives are non-edges and get no such
+        # boost, so the comparison is rigged toward path counting -- and toward
+        # whichever path counter is longest. Selection picked a pure length-5
+        # blend in 8 of 8 seeds before this was fixed.
+        reduced = graph.copy()
+        reduced.remove_edges_from(recent)
+        held_out = self._refit_on(reduced)
+
         labels = np.concatenate([np.ones(len(recent)), np.zeros(len(negatives))])
+        pairs = list(recent) + list(negatives)
         best_auc, best_weight = -1.0, 0.5
-        for weight in (0.25, 0.4, 0.5, 0.6, 0.75):
-            scores = self._combine(list(recent) + list(negatives), weight)
+        for weight in self._weight_grid():
+            scores = held_out._combine(pairs, weight)
             auc = float(roc_auc_score(labels, scores))
             if auc > best_auc:
                 best_auc, best_weight = auc, weight
@@ -702,6 +747,46 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
             f"Hybrid weight {best_weight} selected on validation (AUC {best_auc:.4f})"
         )
         return self
+
+    def _refit_on(self, graph: nx.Graph) -> "HybridLinkPredictor":
+        """
+        A copy of this predictor fitted on `graph`, for weight selection only.
+
+        Every component is refitted, the GNN included: it was trained with the
+        validation edges as supervision, so scoring them on the model that
+        learned them measures memorisation rather than generalisation. Costs one
+        extra GNN fit per model, which is the price of a weight chosen on data
+        the components have not seen.
+        """
+        from litkg.evaluation.baselines import (
+            L3PathPredictor,
+            WeightedL3PathPredictor,
+        )
+
+        clone = HybridLinkPredictor(
+            config=self.config, node_types=self.node_types,
+            edge_years=self.edge_years, weight=0.5,
+            edge_predicates=self.edge_predicates, edge_weights=self.edge_weights,
+            node_text=self.node_text,
+            extra_components=[type(c)(**getattr(c, "_init_kwargs", {}))
+                              if hasattr(c, "_init_kwargs") else copy.deepcopy(c)
+                              for c in self.extra_components],
+        )
+        clone.text_encoder = self.text_encoder
+        clone.graph = graph
+        clone.gnn = GNNLinkPredictor(
+            config=self.config, node_types=self.node_types,
+            edge_years=self.edge_years, edge_predicates=self.edge_predicates,
+            node_text=self.node_text, text_encoder=self.text_encoder,
+        ).fit(graph)
+        clone.l3 = (
+            WeightedL3PathPredictor(weights=self.edge_weights)
+            if self.edge_weights else L3PathPredictor()
+        ).fit(graph)
+        for component in clone.extra_components:
+            component.fit(graph)
+        clone._build_reference(graph, random.Random(self.config.seed))
+        return clone
 
     def _build_reference(self, graph: nx.Graph, rng: random.Random) -> None:
         """
@@ -725,6 +810,10 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
 
         self._reference_gnn = np.sort(np.asarray(self.gnn.score_pairs(sample)))
         self._reference_l3 = np.sort(np.asarray(self.l3.score_pairs(sample)))
+        self._reference_extra = [
+            np.sort(np.asarray(component.score_pairs(sample)))
+            for component in self.extra_components
+        ]
 
     @staticmethod
     def _percentile(values: np.ndarray, reference: np.ndarray) -> np.ndarray:
@@ -736,14 +825,56 @@ class HybridLinkPredictor(LinkPredictor, LoggerMixin):
         right = np.searchsorted(reference, values, side="right")
         return ((left + right) / 2.0) / reference.size
 
-    def _combine(self, pairs: Sequence[Edge], weight: float) -> np.ndarray:
+    def _combine(self, pairs: Sequence[Edge], weight) -> np.ndarray:
+        """
+        Weighted rank-average of every component.
+
+        `weight` is a float for the two-component case (GNN share; L3 takes the
+        rest) or a sequence summing to 1 over [gnn, l3, *extra]. Percentiles
+        rather than raw scores, because path counts and logits share no scale.
+        """
         gnn = self._percentile(
             np.asarray(self.gnn.score_pairs(pairs)), self._reference_gnn
         )
         l3 = self._percentile(
             np.asarray(self.l3.score_pairs(pairs)), self._reference_l3
         )
-        return weight * gnn + (1.0 - weight) * l3
+        if not self.extra_components:
+            return weight * gnn + (1.0 - weight) * l3
+
+        weights = (
+            list(weight)
+            if isinstance(weight, (list, tuple))
+            else [weight, 1.0 - weight] + [0.0] * len(self.extra_components)
+        )
+        total = weights[0] * gnn + weights[1] * l3
+        for component, reference, share in zip(
+            self.extra_components, self._reference_extra, weights[2:]
+        ):
+            total = total + share * self._percentile(
+                np.asarray(component.score_pairs(pairs)), reference
+            )
+        return total
+
+    def _weight_grid(self) -> List:
+        """Candidate blends, over a simplex when there are extra components."""
+        if not self.extra_components:
+            return [0.25, 0.4, 0.5, 0.6, 0.75]
+        # Coarse simplex in quarter steps. Fine enough to show whether a
+        # component earns any share, cheap enough to select on validation.
+        n = 2 + len(self.extra_components)
+        steps = 4
+        grid: List[List[float]] = []
+
+        def walk(prefix: List[int], remaining: int, slots: int) -> None:
+            if slots == 1:
+                grid.append([(v / steps) for v in prefix + [remaining]])
+                return
+            for take in range(remaining + 1):
+                walk(prefix + [take], remaining - take, slots - 1)
+
+        walk([], steps, n)
+        return grid
 
     def score_pairs(self, pairs: Sequence[Edge]) -> List[float]:
         return self._combine(list(pairs), self.selected_weight).tolist()
