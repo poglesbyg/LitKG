@@ -7,6 +7,19 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Gene–gene edges from STRING** (`litkg.phase1.string_ppi`), and a
+  `PathPowerPredictor` that can actually reach them. 1862 experiment-backed
+  interactions among CIVIC's 973 genes. These are the first same-type edges in
+  the graph, which was strictly multipartite: 0 of its edges joined two nodes of
+  the same type. Neither CIVIC nor the GDC can supply them.
+
+- **`PathPowerPredictor`**, degree-normalised length-k path counts via sparse
+  matrix powers, because length 3 is structurally blind to the new edges. For a
+  path `variant -> a -> b -> disease`, a gene–gene middle hop needs `b` to be a
+  gene adjacent to the disease, and CIVIC has **no gene–disease edges at all**.
+  Measured, not inferred: adding 1862 interactions changes the L3 path count for
+  **0 of 1388** test pairs.
+
 - **TCGA and CPTAC now come from the GDC open-access API** (`litkg.phase1.gdc_client`),
   replacing the placeholder that fabricated them. `TCGAProcessor.download_tcga_data`
   previously wrote three hardcoded rows to a CSV and read them back; the only
@@ -52,6 +65,35 @@ Notable changes to LitKG-Integrate. Format loosely follows
   defensible given when TCGA sequencing completed.
 
 ### Measured
+
+- **Gene–gene edges are worth +0.017 AUC, at length 5 and not before.** Over 8
+  seeds with degree-matched negatives:
+
+  | cutoff | L3 without / with | L5 without / with |
+  |---|---|---|
+  | 2016 | 0.7045 / 0.7036 (overlap) | 0.7105 / **0.7273** (disjoint) |
+  | 2020 | 0.7814 / 0.7835 (overlap) | 0.7846 / **0.7921** (disjoint) |
+
+  Average precision goes 0.228 -> 0.299 and Hits@100 0.042 -> 0.093, which is
+  the ranking head this project has been weakest at. The largest per-type gain
+  is DRUG-MUTATION, 0.707 -> 0.772. First addition since the node-text features
+  to clear the project's own bar: 8 seeds, two cutoffs, disjoint at both.
+
+- **STRING's `combined_score` would have made this circular, by a wide margin.**
+  It fuses seven channels and one is co-occurrence in PubMed abstracts -- the
+  same papers CIVIC curators read to write the labels. Among CIVIC's genes,
+  textmining alone contributes **14380 edges** against 1862 from physical
+  experiments and 3795 from curated databases. KRAS-BRCA1 scores 0.721 combined,
+  of which 0.721 is textmining and 0.000 is experiments; TP53-BRAF scores 0.887
+  with 0.883 from textmining. `StringPPI.edges` defaults to `experimental` and
+  **raises** on `textmining` or `database` unless `allow_literature_channels=True`.
+
+- **Adding edges to the backbone is not free, and three sources now show it.**
+  GDC gene-cohort edges, GDC variant-cohort edges and STRING interactions are
+  each individually indistinguishable from baseline under L3, and GDC + STRING
+  together are *disjointly worse* (-0.0068 at 2016, -0.0073 at 2020). Under L3
+  they add paths for positives and negatives alike; the predictor, not the data,
+  was the limit.
 
 - **The variant-level CIVIC/GDC join does not work either, and the arithmetic
   says why.** The gene-level join failed on granularity: TP53 links to 14 of 15

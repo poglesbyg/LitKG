@@ -28,7 +28,7 @@ from litkg.evaluation import (
     evaluate_baselines,
     extract_publication_year,
 )
-from litkg.evaluation.baselines import BASELINE_PREDICTORS
+from litkg.evaluation.baselines import BASELINE_PREDICTORS, PathPowerPredictor
 from litkg.evaluation.temporal_split import year_distribution
 from litkg.phase1.kg_preprocessor import CivicProcessor
 from litkg.phase2.node_features import build_node_text
@@ -93,6 +93,46 @@ def load_dated_edges(
     backbone = [(r.subject, r.object) for r in variant_relations]
     return dated, backbone, node_types, build_node_text(all_entities)
 
+
+
+
+def _ppi_backbone_edges(
+    civic_dir: Path,
+    channels: Tuple[str, ...],
+    min_score: int,
+) -> Tuple[List[Tuple[str, str]], Dict[str, int]]:
+    """
+    STRING gene-gene edges, mapped onto CIVIC gene nodes.
+
+    These are the first same-type edges in this graph. Everything else here is
+    strictly multipartite, which is why shared-neighbour predictors are
+    undefined rather than weak.
+
+    The channel choice is the guard. STRING's combined_score fuses seven
+    channels and textmining -- co-occurrence in PubMed abstracts -- is the
+    largest of them here: 14380 edges among CIVIC's genes against 1862 from
+    physical experiments. Those are the same papers the CIVIC labels come from,
+    so an edge built on them predicts the answer from the answer.
+    """
+    from litkg.phase1.string_ppi import StringPPI
+
+    processor = CivicProcessor(load_config())
+    genes = processor._process_civic_genes(civic_dir / "civic_genes.tsv")
+    ids_by_symbol = {g.name: g.id for g in genes}
+
+    ppi = StringPPI(get_data_dir() / "external" / "string")
+    edges = ppi.edges(
+        keep_symbols=set(ids_by_symbol),
+        channels=channels,
+        min_score=min_score,
+    )
+
+    mapped = [
+        (ids_by_symbol[e.gene_a], ids_by_symbol[e.gene_b])
+        for e in edges
+        if e.gene_a in ids_by_symbol and e.gene_b in ids_by_symbol
+    ]
+    return mapped, {"string_edges": len(edges), "mapped": len(mapped)}
 
 
 def _gdc_backbone_edges(
@@ -173,6 +213,15 @@ def main() -> int:
     parser.add_argument("--degree-matched", action="store_true",
                         help="Draw negatives from the same degree bucket as the "
                              "positives, controlling for node popularity")
+    parser.add_argument("--with-ppi", action="store_true",
+                        help="Add STRING gene-gene edges to the training "
+                             "backbone (breaks strict multipartiteness)")
+    parser.add_argument("--ppi-channels", default="experimental",
+                        help="STRING evidence channels, comma separated. "
+                             "textmining and database are refused unless "
+                             "explicitly allowed: both read the literature the "
+                             "labels come from")
+    parser.add_argument("--ppi-min-score", type=int, default=400)
     parser.add_argument("--with-gdc", action="store_true",
                         help="Add GDC gene-cancer type associations to the "
                              "training backbone (leakage-filtered)")
@@ -203,6 +252,13 @@ def main() -> int:
                 print(f"{year + 1:>8} {cumulative:>8} {after:>8}  {after / total * 100:6.1f}%")
         return 0
 
+    ppi_backbone: List[Tuple[str, str]] = []
+    if args.with_ppi:
+        ppi_backbone, ppi_stats = _ppi_backbone_edges(
+            civic_dir, tuple(args.ppi_channels.split(",")), args.ppi_min_score
+        )
+        backbone = list(backbone) + ppi_backbone
+
     gdc_backbone: List[Tuple[str, str]] = []
     if args.with_gdc:
         gdc_backbone, gdc_stats = _gdc_backbone_edges(civic_dir, args.cutoff, dated, backbone)
@@ -212,6 +268,10 @@ def main() -> int:
 
     predictors = [cls() for cls in BASELINE_PREDICTORS]
     predictors.append(WeightedL3PathPredictor(weights=split.edge_weights()))
+    # Length 5 as well as 3, because gene-gene edges are unreachable at 3: the
+    # middle hop would need a gene adjacent to a disease, and CIVIC has none.
+    predictors.append(PathPowerPredictor(3))
+    predictors.append(PathPowerPredictor(5))
 
     report = evaluate_baselines(
         split,
@@ -229,6 +289,10 @@ def main() -> int:
     print(f"  test edges     : {summary['test_edges']}")
     print(f"  excluded       : {summary['excluded_already_known']} already known before "
           f"the cutoff, {summary['excluded_cold_start']} cold-start")
+    if args.with_ppi:
+        print(f"  PPI backbone   : {len(ppi_backbone)} gene-gene edges added "
+              f"from STRING channels {args.ppi_channels} "
+              f"(of {ppi_stats['string_edges']} above score {args.ppi_min_score})")
     if args.with_gdc:
         print(f"  GDC backbone   : {len(gdc_backbone)} edges added "
               f"({gdc_stats['leaked_dropped']} dropped as leakage, "
