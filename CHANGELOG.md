@@ -66,6 +66,36 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **The hybrid's blend weight is no longer chosen on validation, and the
+  selection it replaced was leaking.** Scoring validation positives while their
+  own edge was still in the graph let a path counter walk the edge it was
+  predicting: L3 scores inflated **3.48x** and length-5 scores **4.69x**, while
+  the negatives are non-edges and get no such boost. That rigged selection
+  toward path counting and toward whichever counter was longest -- with a
+  length-5 component present it chose a pure length-5 blend in **8 of 8** seeds.
+  Selection now refits every component, the GNN included, on a graph with the
+  validation edges removed.
+
+  Fixing it flipped the choice to a pure GNN blend in 15 of 16 runs, which was
+  the cue to check whether selecting at all was worth it. It is not: a fixed
+  even split reaches **0.7451 +/- 0.0123 (AP 0.271)** on the 2016 holdout across
+  8 seeds against **0.7404 +/- 0.0214 (AP 0.243)** for selection -- worse and
+  twice as noisy. The slice is a few hundred edges, so the weight was mostly
+  noise. Selection is now opt-in via `select_weight=True`; the default is 0.5.
+
+- **`HybridLinkPredictor` accepts `extra_components`**, rank-averaged alongside
+  the GNN and L3 with weights searched over a coarse simplex. Added to test a
+  length-5 path counter in the blend. Without extra components the weight grid
+  is unchanged, so previously reported two-component numbers still reproduce.
+
+- **Gene-gene edges do not help the hybrid model.** Feeding STRING edges into
+  the message-passing graph, or adding `PathPowerPredictor(5)` to the blend,
+  leaves every configuration overlapping the no-PPI baseline over 8 seeds at
+  both cutoffs, and mostly slightly worse. The standalone length-5 result from
+  the previous entry stands; the hybrid route does not. An earlier 4-seed run
+  of the same comparison showed +0.025 and was a variance artifact -- the sixth
+  small-sample number in this project to fail replication.
+
 - **Gene–gene edges are worth +0.017 AUC, at length 5 and not before.** Over 8
   seeds with degree-matched negatives:
 
