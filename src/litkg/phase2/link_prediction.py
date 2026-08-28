@@ -64,6 +64,31 @@ class TrainingConfig:
     # Text features are projected down rather than concatenated raw: a 384-dim
     # embedding would otherwise dominate the learned node embedding.
     text_feature_dim: int = 64
+    # Mean-centre the text features before they reach the model.
+    #
+    # Sentence-transformer embeddings are anisotropic: distinct entity strings
+    # here sit at a mean pairwise cosine of 0.927 before the model sees them, so
+    # every node starts nearly parallel to every other. L2 normalisation does not
+    # help -- it puts the vectors on the unit sphere and leaves the shared
+    # direction untouched. Subtracting the mean takes 0.927 to 0.000.
+    #
+    # This is the same defect that held HybridGNNModel at chance (0.492 -> 0.633
+    # when fixed, #33). That fix landed in phase2/hybrid_gnn.py and never reached
+    # this model, which is the one carrying the headline number.
+    #
+    # It is worth far less here, and the honest summary is narrow. Over 8 seeds
+    # at two cutoffs, on AUC every centred configuration OVERLAPS the uncentred
+    # one -- there is no distinguishable effect. What is consistent is ranking:
+    # average precision and Hits@100 improve in 8 of 8 comparisons, by 0.002 to
+    # 0.032. Seed spread tightens 4.2x at a 2016 cutoff (0.0968 -> 0.0230 for
+    # the hybrid) and does NOT at 2020, so the "this explains the instability"
+    # story was tested and failed.
+    center_text_features: bool = True
+    # The one-hot type indicators and log-degree are non-negative and so carry a
+    # shared direction of their own, which is why #33 centred the whole vector
+    # rather than the text block alone. Measured separately here because it is a
+    # much smaller block; centring both is mildly better than text alone.
+    center_static_features: bool = True
 
 
 class RelationalGNNEncoder(nn.Module):
@@ -273,6 +298,8 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         for node, i in self.node_index.items():
             features[i, self.type_index[self.node_types.get(node, "UNKNOWN")]] = 1.0
             features[i, -1] = math.log1p(graph.degree(node))
+        if self.config.center_static_features:
+            features = features - features.mean(dim=0, keepdim=True)
         self.static_features = features.to(self.device)
 
         # Text features, aligned to the same node ordering. A node without a
@@ -290,6 +317,8 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
                 for node, i in self.node_index.items():
                     if node in vectors:
                         matrix[i] = vectors[node]
+                if self.config.center_text_features:
+                    matrix = matrix - matrix.mean(axis=0, keepdims=True)
                 self.text_features = torch.tensor(matrix, device=self.device)
 
         self.node_ids = torch.arange(len(self.nodes), device=self.device)

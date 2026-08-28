@@ -66,6 +66,28 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **`GNNLinkPredictor` now mean-centres its input features**, and the effect is
+  smaller than the defect looks. The text embeddings it consumes sit at a mean
+  pairwise cosine of **0.927** -- every node nearly parallel to every other
+  before a single message passes. The encoder's `normalize_embeddings=True` does
+  not address this: it puts the vectors on the unit sphere and leaves the shared
+  direction untouched. Subtracting the mean takes 0.927 to 0.000.
+
+  This is the defect that held `HybridGNNModel` at chance until it was fixed in
+  `phase2/hybrid_gnn.py`; the fix never reached `phase2/link_prediction.py`,
+  which is the model carrying the headline number.
+
+  Measured over 8 seeds at two cutoffs: **on AUC every centred configuration
+  overlaps the uncentred one.** No distinguishable effect. Average precision and
+  Hits@100 improve in **8 of 8** comparisons, by 0.002 to 0.032. Seed spread
+  tightens 4.2x at 2016 (hybrid 0.0968 -> 0.0230) and does NOT at 2020 (0.0751
+  -> 0.0741; the GNN alone gets worse, 0.1502 -> 0.1932), so the hypothesis that
+  anisotropy explained this model's instability was tested and **failed**.
+
+  On by default (`center_text_features`, `center_static_features`) because it is
+  correct and the ranking metrics consistently favour it -- not because it moved
+  the headline number. Both flags can be turned off to reproduce the comparison.
+
 - **The hybrid's blend weight is no longer chosen on validation, and the
   selection it replaced was leaking.** Scoring validation positives while their
   own edge was still in the graph let a path counter walk the edge it was
