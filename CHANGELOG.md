@@ -193,6 +193,47 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Fixed
 
+- **GNN runs are bit-reproducible for a given seed.** They were not, and the
+  repository had recorded non-reproducibility as a fact of life. Two independent
+  causes:
+
+  1. **Edge ordering.** Callers build the training graph from a set, so
+     iteration order varies with `PYTHONHASHSEED` between processes. Many edges
+     share a publication year and the temporal sort is *stable*, so unsorted
+     input silently moved the trainable/validation boundary.
+  2. **Thread count.** Aggregation sums float contributions in whatever order
+     threads finish, so the same seed diverges after the first reduction.
+
+  Sorted edges alone still gave 0.747899 then 0.741107 for seed 0 at a 2020
+  cutoff; sorted edges plus one thread gave 0.759611 twice, and three separate
+  processes now agree to six decimals. `deterministic=False` restores the old
+  behaviour; the fix costs 6.3s against 4.5s per fit and restores the caller's
+  thread count afterwards.
+
+  **Seed variance is not thereby made small.** Spread is 0.027-0.103 across
+  models and cutoffs against 0.023-0.193 before -- better at 2020, worse at
+  2016 -- and that comparison is weak, because the "before" numbers were
+  themselves measured under non-reproducible runs. What changed is that the
+  variance is now *attributable to the seed* rather than to the seed mixed with
+  process noise. Every earlier variance estimate here conflated the two.
+
+- **Validation is scored under a fixed message-passing graph**
+  (`stable_validation_graph`). The supervision mask is redrawn every
+  `resample_every` epochs and validation ran on the same cadence, so successive
+  scores came from different 70% views of the graph and were not comparable --
+  measured trajectories step by up to 0.16 AUC between checks and peak early. It
+  was also inconsistent with inference, which encodes the full training graph, so
+  early stopping optimised a condition that never occurs at test time.
+
+- **Validation tie-breaking is randomised rather than alphabetical.** Sorting
+  edges for determinism and then stable-sorting by year broke ties by node name,
+  putting the alphabetically-last edges of the newest year into validation
+  together. That correlated slice dropped best validation AUC from 0.760 to
+  **0.525** and early-stopped at 11 checks instead of 28 -- a regression
+  introduced by the determinism fix and caught by measuring it. A seeded shuffle
+  before the stable sort keeps determinism without the correlation; validation
+  AUC is now 0.878.
+
 - **The `HybridGNNModel` representation collapse, root-caused and corrected.**
   It scored at chance (0.492) because every node ended up the same vector.
   Over-smoothing was the obvious diagnosis and was wrong: a single message
