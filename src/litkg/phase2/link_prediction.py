@@ -89,6 +89,40 @@ class TrainingConfig:
     # rather than the text block alone. Measured separately here because it is a
     # much smaller block; centring both is mildly better than text alone.
     center_static_features: bool = True
+    # Score the validation slice under a FIXED message-passing graph rather than
+    # whichever supervision mask the epoch happens to be using.
+    #
+    # The mask is redrawn every `resample_every` epochs and validation runs on
+    # the same cadence, so every validation was measured under a freshly drawn
+    # 70% view of the graph. Consecutive scores were therefore not comparable,
+    # and `best_state` was an argmax over mask noise as much as over training
+    # progress: measured trajectories step by up to 0.16 AUC between checks and
+    # peak early, then wander down.
+    #
+    # It was also inconsistent with inference, which encodes the *full* training
+    # graph -- so early stopping optimised a condition that never occurs at test
+    # time. The fixed graph uses every trainable edge, which excludes the
+    # validation slice, so nothing leaks.
+    stable_validation_graph: bool = True
+    # Make a run bit-reproducible for a given seed.
+    #
+    # It was not, and the project had recorded that as a fact of life. Two
+    # independent causes, both fixable:
+    #
+    # 1. Edge ordering. The caller builds the graph from a set, so iteration
+    #    order varies with PYTHONHASHSEED between processes. Many edges share a
+    #    publication year, so a stable sort broke those ties by input order --
+    #    and the trainable/validation split moved with it.
+    # 2. Thread count. Aggregation sums float contributions in whatever order
+    #    threads finish, so the same seed diverges after the first reduction.
+    #
+    # Measured at a 2020 cutoff, seed 0: sorted edges alone still gave 0.747899
+    # then 0.741107; sorted edges plus one thread gave 0.759611 twice.
+    #
+    # This matters beyond tidiness. Every variance number in this project has
+    # been conflating genuine seed variance with run-to-run noise, so quoted
+    # spreads were larger than the seed actually accounts for.
+    deterministic: bool = True
 
 
 class RelationalGNNEncoder(nn.Module):
@@ -415,12 +449,31 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         torch.manual_seed(config.seed)
         rng = random.Random(config.seed)
 
+        previous_threads = torch.get_num_threads()
+        if config.deterministic:
+            # Restored in the finally below, so a caller's threading is not
+            # permanently changed by fitting a model.
+            torch.set_num_threads(1)
+        try:
+            return self._fit(graph, config, rng)
+        finally:
+            if config.deterministic:
+                torch.set_num_threads(previous_threads)
+
+    def _fit(
+        self, graph: nx.Graph, config: "TrainingConfig", rng: random.Random
+    ) -> "GNNLinkPredictor":
+
         self.graph = graph
         self._build_tensors(graph)
 
-        all_edges = [
+        # Sorted, not merely normalised. The caller usually builds this graph
+        # from a set, whose iteration order varies between processes, and the
+        # temporal sort below is stable -- so unsorted input silently moves the
+        # trainable/validation boundary among edges sharing a year.
+        all_edges = sorted(
             (u, v) if u <= v else (v, u) for u, v in graph.edges()
-        ]
+        )
         self.known_pairs: Set[Tuple[int, int]] = {
             (self.node_index[u], self.node_index[v])
             if self.node_index[u] <= self.node_index[v]
@@ -435,6 +488,15 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
         # sample of an easier distribution.
         dated = [(e, self.edge_years.get(e)) for e in all_edges]
         if sum(1 for _, year in dated if year is not None) >= len(all_edges) * 0.5:
+            # Shuffle before the stable sort so ties within a year break
+            # randomly rather than by node name. `all_edges` is sorted for
+            # determinism, and sorting it alphabetically then stable-sorting by
+            # year put the alphabetically-last edges of the newest year into
+            # validation together -- a correlated slice sharing node prefixes.
+            # Measured, that dropped best validation AUC from 0.760 to 0.525 and
+            # early-stopped at 11 checks instead of 28. Seeded, so the split
+            # still varies with the seed, which is variance worth measuring.
+            random.Random(config.seed).shuffle(dated)
             dated.sort(key=lambda item: (item[1] is None, item[1] or 0))
             split_at = max(1, int(len(dated) * 0.85))
             trainable_edges = [e for e, _ in dated[:split_at]]
@@ -452,6 +514,14 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
             (self.node_index[u], self.node_index[v]) for u, v in validation_edges
         ]
         validation_negatives = self._sample_negatives(validation_pairs, random.Random(1234))
+
+        # Fixed view for scoring validation: every trainable edge, matching what
+        # inference will see. Built once so successive checks are comparable.
+        validation_message = (
+            self._edge_tensors(trainable_edges)
+            if config.stable_validation_graph
+            else None
+        )
 
         text_dim = self.text_features.shape[1] if self.text_features is not None else 0
         if config.relational:
@@ -504,8 +574,13 @@ class GNNLinkPredictor(LinkPredictor, LoggerMixin):
             optimizer.step()
 
             if epoch % 5 == 0 or epoch == config.epochs - 1:
+                scoring_index, scoring_type = (
+                    validation_message
+                    if validation_message is not None
+                    else (message_index, message_type)
+                )
                 auc = self._validation_auc(
-                    message_index, message_type, validation_pairs, validation_negatives
+                    scoring_index, scoring_type, validation_pairs, validation_negatives
                 )
                 self.history.append(
                     {"epoch": epoch, "loss": float(loss.item()), "val_auc": auc}
