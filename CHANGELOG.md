@@ -66,6 +66,36 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **The GNN takes 8 optimizer steps per epoch instead of 1.** The loop was
+  full-batch with one step per epoch and early-stopped after 75-135 epochs, so
+  the model was fitted in roughly **150 gradient updates** -- few enough that
+  where it landed was substantially a function of initialisation. Negatives are
+  redrawn for each step after the first; repeating an identical step only fits
+  one draw of negatives harder.
+
+  Every configuration's seed range overlaps the single-step baseline, so range
+  comparison establishes nothing here. The arms share seeds, so the paired
+  comparison is the one that fits: **steps=8 beats steps=1 on AUC for 29 of 32
+  seed-level pairs** across two models and two cutoffs, and on average precision
+  for **31 of 32**. The three AUC losses are at most 0.0089; wins reach 0.1007.
+
+  | | AUC | AP | H@100 |
+  |---|---|---|---|
+  | gnn 2016 | +0.0239 | +0.0309 | +0.0231 |
+  | gnn 2020 | +0.0579 | +0.0611 | +0.0351 |
+  | hybrid 2016 | +0.0126 | +0.0258 | +0.0266 |
+  | hybrid 2020 | +0.0282 | +0.0657 | +0.0465 |
+
+  Best figures now: hybrid 0.8134 AUC / AP 0.371 / Hits@100 0.206 at a 2020
+  cutoff, and 0.7580 / 0.287 / 0.100 at 2016.
+
+  Early stopping fires *earlier* with more steps (178 -> 94 epochs at 2020), so
+  this is about 5.6x the total updates rather than 8x. Costs roughly 5x wall
+  clock per fit (44s -> 223s for 8 seeds); the test suite moves 54s -> 58s
+  because its fixtures train tiny models. The trend from 1 to 8 had **not**
+  plateaued and values above 8 are untested, so 8 is the best measured setting
+  rather than an optimum. `steps_per_epoch=1` restores the old behaviour.
+
 - **`GNNLinkPredictor` now mean-centres its input features**, and the effect is
   smaller than the defect looks. The text embeddings it consumes sit at a mean
   pairwise cosine of **0.927** -- every node nearly parallel to every other
