@@ -252,7 +252,9 @@ Stated plainly, because they affect how far you should trust output:
   | hybrid 2016 | +0.0126 | +0.0258 | +0.0266 |
   | hybrid 2020 | +0.0282 | +0.0657 | +0.0465 |
 
-  Best figures now: hybrid **0.8134 AUC, AP 0.371, Hits@100 0.206** at 2020 and **0.7580 / 0.287 / 0.100** at 2016. Early stopping fires *earlier* with more steps (178 → 94 epochs at 2020), so this is ~5.6× the total updates rather than 8×. Costs about 5× wall clock per fit. The trend from 1 to 8 had **not** plateaued and values above 8 are untested, so 8 is the best measured setting rather than an optimum.
+  Best figures now: hybrid **0.8134 AUC, AP 0.371, Hits@100 0.206** at 2020 and **0.7580 / 0.287 / 0.100** at 2016. Early stopping fires *earlier* with more steps (178 → 94 epochs at 2020), so this is ~5.6× the total updates rather than 8×. Costs about 5× wall clock per fit.
+
+  **8 is where it turns over.** Since the 1→2→4→8 sweep rose monotonically, 16 and 32 were checked against 8 on the GNN at both cutoffs, paired on the same seeds: steps=16 beats 8 in **6 of 16** seeds (mean ΔAUC −0.0113) and steps=32 in **8 of 16** (−0.0045). Neither wins, and the non-monotonicity — 32 recovering most of what 16 loses — suggests the differences past the plateau are mostly noise rather than a clean overfitting trend. Going above 8 also costs 2–4× more training for nothing.
 
 - **GNN runs are now bit-reproducible for a given seed.** They were not, and this repository had recorded that as a fact of life rather than a bug. Two independent causes: the caller builds the training graph from a **set**, so edge iteration order varied with `PYTHONHASHSEED` between processes — and since many edges share a publication year and the temporal sort is *stable*, that silently moved the trainable/validation boundary. Second, aggregation sums float contributions in whatever order threads finish. Sorted edges alone still gave 0.747899 then 0.741107 for seed 0; sorted edges plus one thread gave 0.759611 twice, and three separate processes now agree to six decimals. Costs 6.3s against 4.5s per fit. `deterministic=False` restores the old behaviour.
 

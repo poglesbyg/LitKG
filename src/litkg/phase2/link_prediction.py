@@ -147,9 +147,19 @@ class TrainingConfig:
     # Early stopping fires *earlier* with more steps (178 -> 94 epochs at 2020),
     # so this is about 5.6x the total updates rather than 8x: the model was
     # being fitted in roughly 150 gradient updates. Costs about 5x wall clock
-    # (44s -> 223s for 8 seeds). The trend from 1 to 8 had not plateaued and
-    # values above 8 are untested, so this is the best measured setting rather
-    # than an optimum.
+    # (44s -> 223s for 8 seeds).
+    #
+    # 8 is where it turns over. The sweep 1->2->4->8 rose monotonically, so 16
+    # and 32 were checked against 8 on the GNN at both cutoffs, paired on the
+    # same seeds:
+    #
+    #   steps=16   beats 8 in  6 of 16 seeds, mean dAUC -0.0113
+    #   steps=32   beats 8 in  8 of 16 seeds, mean dAUC -0.0045
+    #
+    # Neither wins, and the non-monotonicity (32 recovering most of what 16
+    # loses) suggests the differences past the plateau are mostly noise rather
+    # than a clean overfitting trend. Above 8 also costs 2-4x more training for
+    # nothing. Not tested on the hybrid: the GNN result settled it.
     steps_per_epoch: int = 8
 
 
