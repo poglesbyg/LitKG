@@ -92,9 +92,17 @@ Notable changes to LitKG-Integrate. Format loosely follows
   Early stopping fires *earlier* with more steps (178 -> 94 epochs at 2020), so
   this is about 5.6x the total updates rather than 8x. Costs roughly 5x wall
   clock per fit (44s -> 223s for 8 seeds); the test suite moves 54s -> 58s
-  because its fixtures train tiny models. The trend from 1 to 8 had **not**
-  plateaued and values above 8 are untested, so 8 is the best measured setting
-  rather than an optimum. `steps_per_epoch=1` restores the old behaviour.
+  because its fixtures train tiny models. `steps_per_epoch=1` restores the old
+  behaviour.
+
+  **8 is where it turns over.** The 1->2->4->8 sweep rose monotonically, so 16
+  and 32 were checked against 8 on the GNN at both cutoffs, paired on the same
+  seeds: steps=16 beats 8 in **6 of 16** seeds (mean dAUC -0.0113) and steps=32
+  in **8 of 16** (-0.0045). Neither wins, and the non-monotonicity -- 32
+  recovering most of what 16 loses -- suggests the differences past the plateau
+  are mostly noise rather than a clean overfitting trend. Above 8 also costs
+  2-4x more training for nothing. Not tested on the hybrid; the GNN result
+  settled it.
 
 - **`GNNLinkPredictor` now mean-centres its input features**, and the effect is
   smaller than the defect looks. The text embeddings it consumes sit at a mean
