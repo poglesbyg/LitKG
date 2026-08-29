@@ -268,6 +268,25 @@ Stated plainly, because they affect how far you should trust output:
 
   It is worth much less here, and the honest summary is narrow. Over 8 seeds at two cutoffs, **on AUC every centred configuration overlaps the uncentred one** — no distinguishable effect. What is consistent is ranking: average precision and Hits@100 improve in **8 of 8** comparisons, by 0.002 to 0.032. Seed spread tightens 4.2× at 2016 (0.0968 → 0.0230 for the hybrid) and does **not** at 2020, so the hypothesis that this explained the model's instability was tested and failed. Centring is on by default because it is correct and the ranking metrics consistently favour it, not because it moved the headline number.
 
+- **Knowledge-graph embedding baselines score far below the structural predictors, so the ceiling here is the data, not the method.** TransE, ComplEx, RotatE and DistMult are the standard family for this task and had never been tried. Wrapped as ordinary predictors and scored by *this* harness — same temporal split, same degree-matched negatives — over 5 seeds at 500 epochs:
+
+  | model | 2016 AUC | 2020 AUC |
+  |---|---|---|
+  | *l5_path_power* | *0.7106* | *0.7835* |
+  | *weighted_l3* | *0.6935* | *0.7692* |
+  | kge_distmult | 0.6640 | 0.6645 |
+  | kge_rotate | 0.6047 | 0.6231 |
+  | kge_transe | 0.6047 | 0.6341 |
+  | kge_complex | 0.5073 | 0.5101 |
+
+  The best embedding model trails the *simplest* structural baseline by 0.03 at 2016 and 0.10 at 2020, and the shipped hybrid (0.7584 / 0.8138) by more. They are not undertrained: RotatE plateaus by 500 epochs and then declines (0.6230 → 0.6233 → 0.6178 → 0.5994 at 200/500/1000/2000), so it converges and overfits rather than being starved.
+
+  The likely reason is scale. The training graph has 2611 entities and 6656 edges — **5.1 triples per entity, with 48% of entities having two edges or fewer** — so nearly half the embeddings are fit from almost no observations, while a path counter reads structure directly without needing a per-entity parameter.
+
+  **ComplEx sits at chance (0.507 / 0.510) and that is more likely a fit problem than a property of the model** — it is a capable model on standard benchmarks, so treat that row as unexplained rather than as evidence against ComplEx.
+
+  Install with `uv sync --extra kge`; PyKEEN is optional because this is a comparison, not a component. **PyKEEN's own evaluation is deliberately ignored:** it ranks against every entity rather than a degree-matched sample, so its numbers would look comparable to this project's while measuring a different task.
+
 - **A fixed three-way blend (GNN + L3 + L5) does not beat the two-way default.** The L5 path counter is the one consumer gene–gene edges do help, so the obvious next step was to blend it with the existing pair at fixed weights rather than by selection, which had degenerated to a corner. Paired on 8 seeds against the shipped default:
 
   | weights (gnn/l3/l5) | cutoff | AUC | AUC wins | AP | H@100 |

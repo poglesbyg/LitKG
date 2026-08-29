@@ -7,6 +7,42 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Knowledge-graph embedding baselines** (`litkg.phase2.kge_baselines`), and the
+  answer they give: the ceiling here is the data, not the method. TransE,
+  ComplEx, RotatE and DistMult are the standard family for this task and had
+  never been tried. Wrapped as ordinary `LinkPredictor`s and scored by this
+  project's harness -- same temporal split, same degree-matched negatives --
+  over 5 seeds at 500 epochs:
+
+  | model | 2016 AUC | 2020 AUC |
+  |---|---|---|
+  | *l5_path_power* | *0.7106* | *0.7835* |
+  | *weighted_l3* | *0.6935* | *0.7692* |
+  | kge_distmult | 0.6640 | 0.6645 |
+  | kge_rotate | 0.6047 | 0.6231 |
+  | kge_transe | 0.6047 | 0.6341 |
+  | kge_complex | 0.5073 | 0.5101 |
+
+  The best embedding model trails the simplest structural baseline by 0.03 at
+  2016 and 0.10 at 2020, and the shipped hybrid (0.7584 / 0.8138) by more.
+
+  Not undertrained: RotatE plateaus by 500 epochs and then declines
+  (0.6230 / 0.6233 / 0.6178 / 0.5994 at 200 / 500 / 1000 / 2000), so it converges
+  and overfits rather than being starved. The likely reason is scale -- 2611
+  entities, 6656 edges, **5.1 triples per entity with 48% of entities having two
+  edges or fewer** -- so nearly half the embeddings are fit from almost no
+  observations, while a path counter reads structure directly.
+
+  **ComplEx sits at chance and that is more likely a fit problem than a property
+  of the model.** It performs well on standard benchmarks; treat that row as
+  unexplained rather than as evidence against ComplEx.
+
+  PyKEEN is an optional extra (`uv sync --extra kge`) because this is a
+  comparison, not a component. **Its own evaluation is deliberately ignored:**
+  it ranks against every entity rather than a degree-matched sample, so its
+  numbers would look comparable to this project's while measuring a different
+  task.
+
 - **Gene–gene edges from STRING** (`litkg.phase1.string_ppi`), and a
   `PathPowerPredictor` that can actually reach them. 1862 experiment-backed
   interactions among CIVIC's 973 genes. These are the first same-type edges in
