@@ -268,6 +268,23 @@ Stated plainly, because they affect how far you should trust output:
 
   It is worth much less here, and the honest summary is narrow. Over 8 seeds at two cutoffs, **on AUC every centred configuration overlaps the uncentred one** — no distinguishable effect. What is consistent is ranking: average precision and Hits@100 improve in **8 of 8** comparisons, by 0.002 to 0.032. Seed spread tightens 4.2× at 2016 (0.0968 → 0.0230 for the hybrid) and does **not** at 2020, so the hypothesis that this explained the model's instability was tested and failed. Centring is on by default because it is correct and the ranking metrics consistently favour it, not because it moved the headline number.
 
+- **A fixed three-way blend (GNN + L3 + L5) does not beat the two-way default.** The L5 path counter is the one consumer gene–gene edges do help, so the obvious next step was to blend it with the existing pair at fixed weights rather than by selection, which had degenerated to a corner. Paired on 8 seeds against the shipped default:
+
+  | weights (gnn/l3/l5) | cutoff | AUC | AUC wins | AP | H@100 |
+  |---|---|---|---|---|---|
+  | *baseline 0.5/0.5, no PPI* | 2016 | **0.7584** | — | 0.287 | 0.098 |
+  | ⅓ / ⅓ / ⅓ | 2016 | 0.7488 | 2/8 | 0.294 | 0.096 |
+  | 0.5 / 0.25 / 0.25 | 2016 | 0.7561 | 4/8 | 0.286 | 0.084 |
+  | 0.25 / 0.25 / 0.5 | 2016 | 0.7434 | **0/8** | **0.299** | **0.104** |
+  | *baseline 0.5/0.5, no PPI* | 2020 | **0.8138** | — | 0.368 | 0.205 |
+  | ⅓ / ⅓ / ⅓ | 2020 | 0.8093 | 4/8 | **0.382** | 0.206 |
+
+  No arm wins on AUC; the best is 4 of 8, a coin flip, with negative mean deltas throughout. **The default stays two-way.**
+
+  Worth recording rather than burying: the L5-heavy blend has the *worst* AUC (0 of 8) and the *best* average precision and Hits@100 — the same split L5 shows standing alone. It orders the top of the list better while ordering the whole list worse. AUC decided this because every other default here was set on AUC, and switching criteria to whichever metric favours the new thing is how a result gets manufactured. If the top of the ranking is what matters for a given use, the L5-heavy blend is worth revisiting on its own terms.
+
+  Note the PPI arms carry gene–gene edges in the graph for the GNN and L3 as well, and those edges are separately neutral-to-slightly-negative for both, so this does not cleanly separate "L5 adds nothing in a blend" from "PPI costs elsewhere what L5 gains". Two of eight arms (gnn-heavy and L5-heavy at 2020) were not run once the decision was settled.
+
 - **Gene–gene edges do not help multi-hop retrieval either, and the reason was predictable before measuring.** Multi-hop bridge queries are built around a bridge entity, and **44 of 44** resolvable bridges in the query set are DISEASE nodes — not one is a gene. A gene–gene edge can only add a route if some relevant passage becomes reachable through it, and it does so for **1 of 55** queries at one hop and **0 of 55** at two hops. Zero at two hops because `gene → variant → gene` already covers whatever `gene → gene` shortcuts.
 
   Measured anyway, with all 1862 STRING edges mapped into the integrated graph: hit-rate is **identical at 0.291** with and without them, at both hop counts, so the same queries are hit either way. MRR falls 0.079 → 0.065 and nDCG 0.047 → 0.042 — the extra edges widen the candidate pool without adding answers. (This comparison uses the plain expansion retriever at `cap=50`, not the rank-fusion configuration that reaches 0.327; both arms share it, so the contrast holds even though the level differs.)

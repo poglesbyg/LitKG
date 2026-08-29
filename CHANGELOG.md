@@ -66,6 +66,34 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **A fixed three-way blend (GNN + L3 + L5) does not beat the two-way default.**
+  L5 is the one consumer gene-gene edges help, so blending it in at fixed
+  weights was the natural next step -- selection having degenerated to a corner.
+  Paired on 8 seeds against the shipped default, no arm wins on AUC:
+
+  | weights (gnn/l3/l5) | cutoff | AUC | AUC wins | AP | H@100 |
+  |---|---|---|---|---|---|
+  | *baseline 0.5/0.5* | 2016 | 0.7584 | -- | 0.287 | 0.098 |
+  | 1/3 each | 2016 | 0.7488 | 2/8 | 0.294 | 0.096 |
+  | 0.5/0.25/0.25 | 2016 | 0.7561 | 4/8 | 0.286 | 0.084 |
+  | 0.25/0.25/0.5 | 2016 | 0.7434 | 0/8 | 0.299 | 0.104 |
+  | *baseline 0.5/0.5* | 2020 | 0.8138 | -- | 0.368 | 0.205 |
+  | 1/3 each | 2020 | 0.8093 | 4/8 | 0.382 | 0.206 |
+
+  Best is 4 of 8 -- a coin flip -- with negative mean deltas throughout. The
+  default stays two-way.
+
+  The L5-heavy blend has the **worst** AUC (0 of 8) and the **best** average
+  precision and Hits@100, the same split L5 shows standing alone: it orders the
+  top of the list better while ordering the whole list worse. AUC decided this
+  because every other default here was set on AUC. If the top of the ranking is
+  what matters for a use, that blend is worth revisiting on its own terms.
+
+  Caveat: the PPI arms put gene-gene edges in the graph for the GNN and L3 too,
+  and those are separately neutral-to-slightly-negative, so this does not
+  cleanly separate "L5 adds nothing in a blend" from "PPI costs elsewhere what
+  L5 gains". Two of eight arms were not run once the decision was settled.
+
 - **Gene-gene edges do not help multi-hop retrieval.** The bridge query set is
   built around a bridge entity, and **44 of 44** resolvable bridges are DISEASE
   nodes -- not one is a gene. A gene-gene edge can only add a route if some
