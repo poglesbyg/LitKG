@@ -66,6 +66,24 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **Gene-gene edges do not help multi-hop retrieval.** The bridge query set is
+  built around a bridge entity, and **44 of 44** resolvable bridges are DISEASE
+  nodes -- not one is a gene. A gene-gene edge can only add a route if some
+  relevant passage becomes reachable through it, and it does so for **1 of 55**
+  queries at one hop and **0 of 55** at two hops; zero at two hops because
+  `gene -> variant -> gene` already covers what `gene -> gene` shortcuts.
+
+  Measured with all 1862 STRING edges mapped into the integrated graph: hit-rate
+  is identical at **0.291** with and without them at both hop counts, so the same
+  queries are hit either way. MRR falls 0.079 -> 0.065 and nDCG 0.047 -> 0.042 --
+  the extra edges widen the candidate pool without adding answers. The
+  comparison uses the plain expansion retriever at `cap=50` rather than the
+  rank-fusion configuration that reaches 0.327; both arms share it.
+
+  Second time the reachability question has settled a data-source question
+  before any evaluation was run, after the length-3 path counter that could not
+  traverse these edges at all.
+
 - **The GNN takes 8 optimizer steps per epoch instead of 1.** The loop was
   full-batch with one step per epoch and early-stopped after 75-135 epochs, so
   the model was fitted in roughly **150 gradient updates** -- few enough that
