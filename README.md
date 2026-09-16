@@ -30,9 +30,12 @@ With `CUTOFF` set, the graph and the literature are both restricted to before
 that year and candidates curated afterwards are marked, so the output can be
 checked rather than trusted.
 
-It produces candidates for a person to judge, not findings. The ranking's
-precision does not replicate across cutoffs (35x lift at 2016, 5x at 2018, 0x at
-2020), so the evidence attached to each candidate is the part worth reading. The
+It produces candidates for a person to judge, not findings. With the current
+model the ranking replicates across cutoffs at a modest size: later-curated
+associations appear in the top 500 at about ten times the base rate at 2016,
+2018 and 2020. That is still only 1-4% precision, and an earlier 35x headline
+did not replicate, so the evidence attached to each candidate is the part worth
+reading. The
 model is asked to say what the retrieved passages do *not* support, and it does:
 on a variant later confirmed by CIVIC, it correctly reported that the passages
 retrieved spoke only of VHL mutations in general and not that variant.
@@ -62,19 +65,19 @@ not survive replication that is said rather than omitted.
 | Gene–gene edges (STRING) | **Real data, measured** | 1862 experiment-backed interactions among CIVIC genes. Useless at path length 3, **+0.017 AUC at length 5** (8 seeds, disjoint at two cutoffs) |
 | TCGA / CPTAC mutations | **Real data, measured** | GDC open-access API (release 46.0): 528 gene–cancer type edges over 226 Cancer Gene Census genes and 35 cohorts. Does **not** improve link prediction |
 | Discovery (Phase 3) | **Real data, measured** | `scripts/assess_predictions.py`: the confidence scorer carries little signal (AUC 0.613); the plausibility score is a four-valued type prior |
-| Prospective validation | **Does not replicate** | 35× lift at a 2016 cutoff, 5× at 2018, **0× at 2020**. The discovery claim is withdrawn |
+| Prospective validation | **Replicates, modestly** | Top 500 at about 10× the base rate at every cutoff (9.8×, 12.8×, 9.6×), and every single-seed run above 5×. The original 35× at 2016 did not replicate, and the top 100 rests on 1–2 hits per cutoff. See [Evaluation](docs/Evaluation.md) |
 | Hybrid GNN (Phase 2) | **Real data, measured** | `HybridGNNModel` reaches AUC 0.633 ± 0.024 against 0.752 for a far simpler model. The collapse that held it at chance was input anisotropy, now corrected |
 | Ontology coverage | **Limited** | Mechanism works; needs a licensed UMLS source |
 
-**538 tests pass** (2 skipped: one CUDA-only, one fixture-dependent), enforced by CI on every push and pull request.
+**644 tests pass** (2 skipped: one CUDA-only, one fixture-dependent), enforced by CI on every push and pull request.
 
 Two entries deserve emphasis, because they are the ones a reader would
 otherwise assume work. `HybridGNNModel` — the cross-modal architecture this
 project is named for — reaches 0.633 after a fix for anisotropic input features,
 against 0.752 for the much simpler model in `litkg/phase2/link_prediction.py`,
 which is where the headline link-prediction result comes from.
-And the prospective discovery result held at one time cutoff and vanished at
-two others.
+And the prospective discovery result replicates only in a modest form: about
+10× the base rate in the top 500 at every cutoff, not the 35× first reported.
 
 Numbers from `make run-phase1` on the bundled sample data with the CIVIC
 01-Aug-2026 release and GDC data release 46.0: 3026 entities and 14920
@@ -85,7 +88,7 @@ relations, of which 528 are GDC gene–cancer type associations.
 Seven results in this project failed replication after looking solid: "the
 graph is too sparse for link prediction", a doubled MRR, an inverted precision
 curve and the degree statistic offered to explain it, a type-pair filter that
-never paid off except at one cutoff, the prospective lift above, a four-seed
+never paid off except at one cutoff, the original 35× prospective lift, a four-seed
 gain from STRING edges in the hybrid model, and the prediction that input
 anisotropy explained the GNN's seed spread. Each was measured carefully at a
 single configuration.

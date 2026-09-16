@@ -102,6 +102,33 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Measured
 
+- **The prospective discovery claim replicates, in a modest form.** It had been
+  withdrawn at 35x / 5x / 0x lift@100 across the 2016 / 2018 / 2020 cutoffs.
+  Re-run with the current model on the same candidates and base rates, with pass
+  criteria fixed before looking (lift@100 above 1x at every cutoff; largest lift
+  no more than 5x the smallest), both pass:
+
+  | cutoff | hits@100 | lift@100 | hits@500 | lift@500 |
+  |---|---|---|---|---|
+  | 2016 | 2 | 4.7x | 21 | 9.8x |
+  | 2018 | 1 | 5.3x | 12 | 12.8x |
+  | 2020 | 1 | 8.0x | 6 | 9.6x |
+
+  Depth 500 carries it: about 10x at every cutoff, and all 15 single-seed
+  rankings are above 5x on their own. Depth 100 passes on one or two hits per
+  cutoff (pooled p about 0.007) and single seeds range from 0 to 11 hits at 2016,
+  which is the likeliest account of the original 35x.
+
+  The criteria had a gap worth recording: a single hit moves lift@100 by 5-8x, so
+  a count threshold belonged alongside the lift threshold. The depth-500 result
+  would pass one; depth 100 would not.
+
+  The length-5-heavy blend, which had won shortlist metrics while losing AUC,
+  fails the agreement test here (2.3x vs 24.1x at depth 100), so the default
+  stays. One optimizer step per epoch fails too, at 0x at two cutoffs. Precision
+  is 1-4% of the top 500, and the pipeline report now says so rather than that
+  the ranking does not replicate.
+
 - **A fixed three-way blend (GNN + L3 + L5) does not beat the two-way default.**
   L5 is the one consumer gene-gene edges help, so blending it in at fixed
   weights was the natural next step -- selection having degenerated to a corner.

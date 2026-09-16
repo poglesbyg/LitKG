@@ -71,9 +71,10 @@ def candidate_pairs(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cutoff", type=int, default=2016,
-                        help="Quote the cutoff with any result. The precision "
-                             "measured here does not generalise across cutoffs: "
-                             "lift@100 is 35x at 2016, 5x at 2018 and 0x at 2020.")
+                        help="Quote the cutoff with any result. With current "
+                             "defaults lift@500 is about 10x at 2016, 2018 and "
+                             "2020; lift@100 rests on 1-2 hits per cutoff and "
+                             "single seeds range from 0 to 11 hits.")
     parser.add_argument("--top", type=int, default=100)
     parser.add_argument("--seeds", type=int, default=5,
                         help="Train this many models and rank by mean percentile. "
