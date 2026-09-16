@@ -82,19 +82,32 @@ relations, of which 528 are GDC gene–cancer type associations.
 
 ### On reading any number here
 
-Five results in this project failed replication after looking solid: "the graph
-is too sparse for link prediction", a doubled MRR, an inverted precision curve,
-a story about the model ranking obviousness over novelty, and the prospective
-lift above. Each was measured carefully at a single configuration.
+Seven results in this project failed replication after looking solid: "the
+graph is too sparse for link prediction", a doubled MRR, an inverted precision
+curve and the degree statistic offered to explain it, a type-pair filter that
+never paid off except at one cutoff, the prospective lift above, a four-seed
+gain from STRING edges in the hybrid model, and the prediction that input
+anisotropy explained the GNN's seed spread. Each was measured carefully at a
+single configuration.
 
 The harnesses that caught them are in the repository, and the working rule is
 that a single-seed or single-cutoff number is a hypothesis. Use `--seeds` and
 more than one `--cutoff` before believing anything, including the figures in
 this table.
 
-Each of the five is written up with its mechanism in
-[Five results that did not replicate](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/),
-including the one that was a step away from shipping as a feature.
+The rule has one exception worth knowing. When two configurations share seeds,
+compare them **seed by seed**, not by whether their ranges overlap. Eight
+optimizer steps per epoch overlapped the single-step baseline in every
+configuration and still won 29 of 32 paired comparisons; judged by range
+overlap, the largest real improvement here would have been discarded.
+
+The first five are written up with their mechanisms in
+[Five results that did not replicate](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/), including the one that was a
+step away from shipping as a feature. Its
+[September update](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/#update-september-2026-seven-and-one-that-went-the-other-way)
+covers the last two, why earlier confidence intervals here were too narrow, and
+the paired-comparison exception under
+[The rule nearly discarded the biggest win](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/#the-rule-nearly-discarded-the-biggest-win).
 
 ## Install
 
@@ -232,6 +245,7 @@ kg.save_integrated_graph("data/processed/kg.json")
 | [docs/Evaluation.md](docs/Evaluation.md) | Temporal holdout, baselines, what is and isn't measured |
 | [CHANGELOG.md](CHANGELOG.md) | What changed and when |
 | [Five results that did not replicate](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/) | Write-up of the five withdrawn results and the mechanism behind each |
+| [September update to that post](https://poglesbyg.github.io/blog/2026/08/19/five-results-that-did-not-replicate/#update-september-2026-seven-and-one-that-went-the-other-way) | Two more failures, why earlier intervals were too narrow, and when overlapping ranges hide a real effect |
 
 ## Known limits
 
