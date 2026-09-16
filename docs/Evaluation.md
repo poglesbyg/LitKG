@@ -525,6 +525,51 @@ associations far above chance, and that result is specific to that cutoff. It
 is not evidence that the system surfaces discoveries in general, and the
 earlier version of this document said it was.
 
+### Re-run with the current model: it replicates, at a modest size
+
+The comparison above was measured before runs were reproducible for a fixed
+seed, before input centring, and with one optimizer step per epoch and a blend
+weight chosen on a leaky validation slice. Re-run in September 2026 with the
+current defaults, on the same candidate pairs and base rates.
+
+The pass criteria were fixed before looking at results: lift@100 above 1x at
+**every** cutoff, and the cutoffs agreeing by the test this script already
+applies, the largest lift no more than 5x the smallest. Both pass.
+
+| cutoff | base rate | hits@100 | lift@100 | hits@500 | lift@500 |
+|---|---|---|---|---|---|
+| 2016 | 0.429% | 2 | 4.7x | 21 | **9.8x** |
+| 2018 | 0.188% | 1 | 5.3x | 12 | **12.8x** |
+| 2020 | 0.125% | 1 | 8.0x | 6 | **9.6x** |
+
+**Depth 500 is the result.** Lift is about 10x at all three cutoffs, and every
+one of the 15 single-seed rankings (5 seeds per cutoff) is above 5x the base
+rate on its own.
+
+**Depth 100 passes the criteria on very little.** Each cutoff rests on one or
+two hits, and a single hit moves lift by 5-8x there. Pooled, 4 hits against 0.74
+expected by chance is p of about 0.007: better than chance, and thin. Single
+seeds range from 0 to 11 hits at 2016, which is also the most likely account of
+the original 35x: the upper tail of seed variance, not a property of that
+cutoff.
+
+Two comparison arms, same candidates and seeds:
+
+| arm | lift@100 (2016 / 2018 / 2020) | lift@500 | depth-100 criteria |
+|---|---|---|---|
+| current default | 4.7 / 5.3 / 8.0 | 9.8 / 12.8 / 9.6 | pass |
+| one optimizer step per epoch | 0.0 / 0.0 / 8.0 | 10.2 / 8.5 / 14.5 | fail (0x at two cutoffs) |
+| length-5-heavy blend (0.25/0.25/0.5) with STRING edges | 2.3 / 10.7 / 24.1 | 5.1 / 5.3 / 19.3 | fail (cutoffs disagree 10x) |
+
+The length-5-heavy blend had won on shortlist metrics while losing AUC, so this
+was the place to decide between them. It does not replicate across cutoffs, and
+the default stays.
+
+The honest statement now: with the current model, later-curated associations
+appear in the top 500 at about ten times the base rate at every cutoff tested.
+That is modest precision, roughly 1-4% of the top 500, so the output is still
+candidates for a person to judge rather than findings.
+
 ### Precision at the very top is not measurable here
 
 **Read depth 50 and beyond.** Precision@10 could not be pinned down and the

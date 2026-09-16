@@ -2,11 +2,12 @@
 """
 Re-run the prospective check at several cutoffs and compare.
 
-The prospective result was measured once, at 2016, and reported as evidence
-that the system surfaces associations before they are curated. It does not
-survive replication: lift at depth 100 is 35x at 2016, 5x at 2018 and 0x at
-2020. This script is what established that, kept so the claim can be re-checked
-rather than re-assumed.
+The prospective result was first measured once, at 2016, as 35x lift at depth
+100. That did not survive replication (5x at 2018, 0x at 2020) and was withdrawn.
+Re-run in September 2026 with the current model, it replicates in a modest form:
+lift@500 is 9.8x, 12.8x and 9.6x at 2016, 2018 and 2020, while depth 100 rests on
+one or two hits per cutoff. See docs/Evaluation.md. Kept so the claim can be
+re-checked rather than re-assumed.
 
 Usage:
     python scripts/replicate_prospective.py --cutoffs 2016 2018 2020

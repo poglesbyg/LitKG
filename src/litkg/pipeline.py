@@ -14,9 +14,10 @@ to be fetched *for the candidates*, not assumed to be present.
 
 What this produces is a ranked list of candidate associations, each with the
 passages that discuss them and a rationale citing those passages. What it does
-not produce is a validated prediction: the ranking's precision does not
-replicate across cutoffs (35x lift at a 2016 cutoff, 5x at 2018, 0x at 2020),
-so the output is material for a human to judge rather than an answer.
+not produce is a validated prediction. The ranking replicates across cutoffs
+only at a modest size, about 10x the base rate in the top 500, which is 1-4%
+precision; an earlier 35x at 2016 did not replicate. The output is material for
+a human to judge rather than an answer.
 """
 
 import json
@@ -241,8 +242,9 @@ class DiscoveryPipeline(LoggerMixin):
             "CANDIDATE ASSOCIATIONS",
             "=" * 72,
             "Ranked by a link predictor trained on the knowledge graph, with the",
-            "literature retrieved for each pair. Precision does not replicate",
-            "across time cutoffs, so treat these as candidates to judge, not",
+            "literature retrieved for each pair. Across time cutoffs, later-",
+            "curated pairs appear in the top 500 at only ~10x the base rate",
+            "(1-4% precision), so treat these as candidates to judge, not",
             "findings. The evidence is the part worth reading.",
             "",
         ]

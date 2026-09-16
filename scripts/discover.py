@@ -15,8 +15,9 @@ trusted.
 
     python scripts/discover.py --cutoff 2016 --top 20
 
-The ranking's precision does not replicate across cutoffs, so this produces
-candidates for a person to judge, not findings.
+The ranking replicates across cutoffs only at a modest size, about 10x the base
+rate in the top 500 (1-4% precision), so this produces candidates for a person
+to judge, not findings.
 """
 
 import argparse

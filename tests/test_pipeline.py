@@ -74,15 +74,16 @@ class TestEvidenceLabelling:
 
 
 class TestReportHonesty:
-    def test_report_states_the_ranking_does_not_replicate(self, tmp_path):
+    def test_report_states_how_weak_the_ranking_is(self, tmp_path):
         """
-        Precision is 35x at a 2016 cutoff and 0x at 2020. A reader who sees only
-        a ranked list will assume it is predictive unless told otherwise.
+        The ranking replicates only modestly: about 10x the base rate in the top
+        500, which is 1-4% precision. A reader who sees only a ranked list will
+        assume it is predictive unless told how little it is worth.
         """
         pipeline = DiscoveryPipeline(DiscoveryConfig(output_dir=tmp_path))
         pipeline.candidates = [make_candidate()]
         report = pipeline.report()
-        assert "does not replicate" in report
+        assert "1-4% precision" in report
         assert "candidates to judge" in report
 
     def test_known_outcomes_are_marked_when_validating(self, tmp_path):
