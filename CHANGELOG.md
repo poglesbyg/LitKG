@@ -7,6 +7,38 @@ Notable changes to LitKG-Integrate. Format loosely follows
 
 ### Added
 
+- **Literature co-mention edges and a length-2 literature path score**
+  (`litkg.phase2.literature_edges`, `scripts/evaluate_literature_paths.py`).
+  Measured, the result is **inconclusive**, and the code ships so the
+  measurement can be re-run rather than re-assumed.
+
+  Graph entities mentioned in the same sentence of a pre-cutoff abstract become
+  edges: 9,953 at 2016 and 13,710 at 2020, from caches fetched for the same
+  3,441 entity names. Gene symbols match case-sensitively so MET, KIT and RET do
+  not match ordinary words; variants are not linked.
+
+  A reachability check looked promising at first: a length-2 literature path for
+  51.1% of held-out pairs against 32.3% of degree-matched negatives, holding
+  within every literature-coverage quartile. The control that mattered came
+  later. Held-out pairs also have graph paths far more often (64% against 32%),
+  and within groups defined by whether a length-3 path already exists, the
+  literature score's AUC is 0.532 / 0.532 at 2016 and 0.520 / 0.586 at 2020.
+
+  | cutoff | path counting | + literature at 0.25 | + literature at 0.5 |
+  |---|---|---|---|
+  | 2016 | 0.6937 | 0.6914 (0/8 better) | 0.6812 (0/8) |
+  | 2020 | 0.7697 | 0.7705 (8/8 better) | 0.7555 (0/8) |
+
+  Negative-result criteria were set before the 2020 run (blend better in at most
+  4 of 8 runs at each weight; within-group AUC below 0.55 in both groups), and
+  2020 failed both. It is still not a gain: the +0.0008 comes from 8 negative
+  samples around identical held-out pairs, and that blend halves Hits@100 (0.145
+  to 0.064). No independent signal at 2016, a small one at 2020, no shortlist
+  improvement at either. Not used by default.
+
+  Two of the 3,447 searches in the 2020 fetch failed with HTTP 400 (`NBN` and
+  `EGFR::BRAF`).
+
 - **Knowledge-graph embedding baselines** (`litkg.phase2.kge_baselines`), and the
   answer they give: the ceiling here is the data, not the method. TransE,
   ComplEx, RotatE and DistMult are the standard family for this task and had

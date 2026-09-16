@@ -62,6 +62,7 @@ not survive replication that is said rather than omitted.
 | Retrieval | **Real data, measured** | `make eval-retrieval`: MRR 0.81, hit-rate 0.98 on 57 CIVIC-judged queries |
 | Multi-hop retrieval | **Real data, partial** | 55 bridge queries: hit-rate 0.200 → 0.327 with graph expansion. The graph holds a path for 54 of 55; ranking is the limit |
 | Discovery pipeline | **Real data** | `make discover`: ranks candidates and fetches the literature for each |
+| Literature co-mention edges | **Real data, inconclusive** | Sentence co-mentions in pre-cutoff PubMed abstracts: no independent signal at 2016, a small one at 2020, and no shortlist improvement at either. Not used by default |
 | Gene–gene edges (STRING) | **Real data, measured** | 1862 experiment-backed interactions among CIVIC genes. Useless at path length 3, **+0.017 AUC at length 5** (8 seeds, disjoint at two cutoffs) |
 | TCGA / CPTAC mutations | **Real data, measured** | GDC open-access API (release 46.0): 528 gene–cancer type edges over 226 Cancer Gene Census genes and 35 cohorts. Does **not** improve link prediction |
 | Discovery (Phase 3) | **Real data, measured** | `scripts/assess_predictions.py`: the confidence scorer carries little signal (AUC 0.613); the plausibility score is a four-valued type prior |
@@ -284,6 +285,15 @@ Stated plainly, because they affect how far you should trust output:
 - **The GNN's text features are now mean-centred, and it matters less than the anisotropy suggests.** The embeddings fed to `GNNLinkPredictor` sit at a mean pairwise cosine of **0.927** — every node starts nearly parallel to every other. L2 normalisation, which the encoder already did, does not touch this: it projects onto the unit sphere and leaves the shared direction intact. Subtracting the mean takes 0.927 to 0.000. This is the same defect that held `HybridGNNModel` at chance until it was fixed there; the fix never reached this model, which is the one carrying the headline number.
 
   It is worth much less here, and the honest summary is narrow. Over 8 seeds at two cutoffs, **on AUC every centred configuration overlaps the uncentred one** — no distinguishable effect. What is consistent is ranking: average precision and Hits@100 improve in **8 of 8** comparisons, by 0.002 to 0.032. Seed spread tightens 4.2× at 2016 (0.0968 → 0.0230 for the hybrid) and does **not** at 2020, so the hypothesis that this explained the model's instability was tested and failed. Centring is on by default because it is correct and the ranking metrics consistently favour it, not because it moved the headline number.
+
+- **Literature co-mention edges are inconclusive.** Graph entities mentioned in the same sentence of a pre-cutoff PubMed abstract become edges: 9,953 from 14,353 abstracts before 2016, and 13,710 from 15,872 before 2020, fetched for the same 3,441 entity names. A reachability check first looked promising, with a length-2 literature path for 51.1% of held-out pairs against 32.3% of degree-matched negatives at 2016, and that gap held within every quartile of literature coverage. But held-out pairs also have graph paths far more often (64% against 32%), and grouping pairs by whether they already have a length-3 path removes most of the gap: within those groups the literature score's AUC is 0.532 and 0.532 at 2016, and 0.520 and 0.586 at 2020.
+
+  | cutoff | path counting | + literature at 0.25 | + literature at 0.5 |
+  |---|---|---|---|
+  | 2016 | 0.6937 | 0.6914 (0/8 better) | 0.6812 (0/8) |
+  | 2020 | 0.7697 | 0.7705 (8/8 better) | 0.7555 (0/8) |
+
+  So there's no independent signal at 2016 and a small one at 2020. The 2020 "win" is +0.0008 AUC, measured over 8 negative samples around identical held-out pairs, which is weaker evidence than 8 training seeds, and it halves Hits@100 (0.145 to 0.064). Neither cutoff shows a better shortlist, so nothing uses this score by default. **A coverage control wasn't enough here; the check that mattered was conditioning on the signal the graph already carries.** Co-mention is a noisy superset of extracted relations, so this doesn't settle whether extracted relations would help. `make evaluate-literature CUTOFF=2020`.
 
 - **Knowledge-graph embedding baselines score far below the structural predictors, so the ceiling here is the data, not the method.** TransE, ComplEx, RotatE and DistMult are the standard family for this task and had never been tried. Wrapped as ordinary predictors and scored by *this* harness — same temporal split, same degree-matched negatives — over 5 seeds at 500 epochs:
 
