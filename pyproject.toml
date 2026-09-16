@@ -102,6 +102,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Knowledge-graph embedding baselines. Optional because they are a comparison,
+# not a component: measured, they score well below the structural predictors
+# already here, so nothing in the pipeline depends on them.
+kge = [
+    "pykeen>=1.11.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
